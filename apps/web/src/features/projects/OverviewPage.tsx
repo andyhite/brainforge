@@ -6,6 +6,7 @@ import { Banner, EmptyState, ErrorBanner, NetworkProblem, NextActions, PageHeade
 import { BLOCKED_TEXT } from "../../components/SpecEditor.tsx";
 import { specRoute, useProject } from "../../lib/use-project.ts";
 import { isDefinitionMissing } from "../assets/missing.ts";
+import { AssetIndex } from "../assets/AssetIndex.tsx";
 
 interface NextStep {
   label: string;
@@ -85,34 +86,44 @@ export function OverviewPage() {
     if (open) next = { label: "Open " + (open.name ?? open.assetId), to: `/assets/${encodeURIComponent(open.assetId)}`, why: `${open.name ?? open.assetId}: ${open.reasons[0] ?? open.state.replaceAll("-", " ")}.` };
     else if (report && report.counts.awaitingReview > 0) next = { label: "Open the review queue", to: "/review", why: `${report.counts.awaitingReview} output(s) are waiting for a decision.` };
     else if (report && report.complete && report.export.status !== "current") next = { label: "Export", to: "/export", why: report.export.detail };
-    else next = { label: "Review assets", to: "/assets", why: "Definitions are in place." };
+    else next = { label: "Review assets", to: "/assets", why: report ? "Definitions are in place." : "Readiness is not available yet; definitions are valid." };
   }
 
+  const taskLink = (assetId: string, state: string) => {
+    const id = encodeURIComponent(assetId);
+    if (state === "no-definition") return `/assets/${id}?step=definition&create=1`;
+    if (state === "invalid-definition") return `/assets/${id}?step=definition`;
+    if (state === "no-promoted-version" || state === "not-activated" || state === "obsolete-version") return `/assets/${id}?step=versions`;
+    if (state === "open-feedback") return `/review?asset=${id}`;
+    return `/assets/${id}`;
+  };
+
   return (
-    <div>
-      <PageHeader title="Overview" />
-      <p style={{ marginBottom: 16 }}><strong>{summary.name}</strong> <span className="mono secondary">{summary.root}</span></p>
+    <div className="stack">
+      <div className="wb-head">
+        <h1>{summary.name}</h1>
+        <span className="mono secondary">{summary.root}</span>
+      </div>
 
       {summary.state === "closing" ? <Banner tone="warn" title="Closing — background work continues, not yet safe to move">The directory is still in use until tracked work finishes.</Banner> : null}
       {!summary.writable ? <Banner tone="warn" title="Read-only">This project cannot be changed (for example a newer schema). See Settings → Project.</Banner> : null}
 
-      <section className="panel" aria-labelledby="next-title">
-        <h2 id="next-title">Next action</h2>
-        <p style={{ marginBottom: 12 }}>{next.why}</p>
+      <section className="wb-next" aria-label="Next action">
+        <p><strong>Next:</strong> {next.why}</p>
         <Link className="button primary" to={next.to}>{next.label}</Link>
-        <NextActions actions={project.envelope?.ok ? project.envelope.nextActions : []} />
       </section>
+      <NextActions actions={project.envelope?.ok ? project.envelope.nextActions : []} />
 
       {allProblems.length > 0 ? (
-        <section className="panel" aria-labelledby="problems-title">
-          <h2 id="problems-title">Project problems</h2>
+        <section aria-labelledby="problems-title">
+          <h2 id="problems-title">Project and specification problems</h2>
           <ProblemList problems={allProblems} blocked={BLOCKED_TEXT} onOpenFile={specRoute} />
         </section>
       ) : null}
 
-      <div className="grid-2" style={{ marginTop: 16 }}>
-        <section className="panel" aria-labelledby="req-title" style={{ marginTop: 0 }}>
-          <h2 id="req-title">Required assets complete</h2>
+      <div className="wb-home">
+        <section className="wb-readiness" aria-labelledby="req-title">
+          <h2 id="req-title">Required assets</h2>
           {report ? (
             <>
               <p>
@@ -120,10 +131,10 @@ export function OverviewPage() {
                   <Status tone={report.complete ? "ok" : "warn"}>{report.counts.complete} of {report.counts.required} complete</Status>
                 )}
               </p>
-              <ul className="plain-list" aria-label="Required assets">
+              <ul aria-label="Required assets">
                 {report.requiredAssets.map((asset) => (
-                  <li key={asset.assetId} className="row" style={{ justifyContent: "space-between" }}>
-                    <Link to={`/assets/${encodeURIComponent(asset.assetId)}`}>{asset.name ?? asset.assetId}</Link>
+                  <li key={asset.assetId}>
+                    <Link to={taskLink(asset.assetId, asset.state)}>{asset.name ?? asset.assetId}</Link>
                     <span className="secondary">{asset.state === "complete" ? `Version ${asset.activeVersionNumber} active` : `${asset.state.replaceAll("-", " ")}${asset.reasons[0] ? ` — ${asset.reasons[0]}` : ""}`}</span>
                   </li>
                 ))}
@@ -136,34 +147,29 @@ export function OverviewPage() {
               {invalid.length > 0 ? <p className="secondary">Invalid definition: {invalid.map((item) => item.id).join(", ")}</p> : null}
             </>
           )}
-        </section>
-        <section className="panel" aria-labelledby="reassess-title" style={{ marginTop: 0 }}>
-          <h2 id="reassess-title">Needs reassessment</h2>
+          <h2>Attention</h2>
           {report ? (
-            <p><Status tone={report.counts.assetsNeedingReassessment > 0 ? "warn" : "idle"}>{report.counts.assetsNeedingReassessment === 0 ? "Nothing needs reassessment" : `${report.counts.assetsNeedingReassessment} asset(s) need reassessment`}</Status></p>
-          ) : <p className="secondary" role="status">Loading…</p>}
+            <ul>
+              <li>
+                <span>Needs reassessment</span>
+                <Status tone={report.counts.assetsNeedingReassessment > 0 ? "warn" : "idle"}>{report.counts.assetsNeedingReassessment === 0 ? "None" : `${report.counts.assetsNeedingReassessment} asset(s)`}</Status>
+              </li>
+              <li>
+                <Link to="/review">Waiting for review</Link>
+                <Status tone={report.counts.awaitingReview + report.counts.needsRevision > 0 ? "warn" : "idle"}>{report.counts.awaitingReview} awaiting · {report.counts.escalated} escalated · {report.counts.needsRevision} with unresolved notes</Status>
+              </li>
+              <li>
+                <Link to="/export">Export</Link>
+                <Status tone={report.export.status === "current" ? "ok" : report.export.status === "failed" || report.export.status === "out-of-date" ? "warn" : "idle"}>{report.export.status.replaceAll("-", " ")}</Status>
+                <span className="secondary" style={{ flexBasis: "100%" }}>{report.export.detail}</span>
+              </li>
+            </ul>
+          ) : completeness.error ? <NetworkProblem error={completeness.error} />
+          : completeness.data && !completeness.data.ok ? <ErrorBanner error={completeness.data.error} extra={<button type="button" onClick={() => void completeness.refetch()}>Retry</button>} />
+          : <p className="secondary" role="status">Loading readiness…</p>}
           <p className="secondary">Changed requirements return affected approvals to review; history is kept.</p>
         </section>
-        <section className="panel" aria-labelledby="waiting-title" style={{ marginTop: 0 }}>
-          <h2 id="waiting-title">Waiting for review</h2>
-          {report ? (
-            <>
-              <p><Status tone={report.counts.awaitingReview + report.counts.needsRevision > 0 ? "warn" : "idle"}>{report.counts.awaitingReview} awaiting a decision</Status></p>
-              <p className="secondary">{report.counts.escalated} escalated to a human · {report.counts.needsRevision} with unresolved required notes</p>
-              <Link to="/review">Open the review queue</Link>
-            </>
-          ) : <p className="secondary" role="status">Loading…</p>}
-        </section>
-        <section className="panel" aria-labelledby="export-title" style={{ marginTop: 0 }}>
-          <h2 id="export-title">Export status</h2>
-          {report ? (
-            <>
-              <p><Status tone={report.export.status === "current" ? "ok" : report.export.status === "failed" || report.export.status === "out-of-date" ? "warn" : "idle"}>{report.export.status.replaceAll("-", " ")}</Status></p>
-              <p className="secondary">{report.export.detail}</p>
-              <Link to="/export">Open export</Link>
-            </>
-          ) : <p className="secondary" role="status">Loading…</p>}
-        </section>
+        <AssetIndex />
       </div>
     </div>
   );

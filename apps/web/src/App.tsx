@@ -1,5 +1,6 @@
-import { Route, Routes } from "react-router-dom";
+import { Link, Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout.tsx";
+import { EmptyState, PageHeader } from "./components/ui.tsx";
 import { AssetPage } from "./features/assets/AssetPage.tsx";
 import { AssetsPage } from "./features/assets/AssetsPage.tsx";
 import { NewAssetWizard } from "./features/families/NewAssetWizard.tsx";
@@ -38,7 +39,7 @@ export function App() {
           <Route path="direction" element={<DirectionPage />} />
           <Route path="agent" element={<AgentSetupPage />} />
         </Route>
-        <Route path="*" element={<p>Page not found.</p>} />
+        <Route path="*" element={<><PageHeader title="Page not found" /><EmptyState title="This workspace is not available"><p>The link may be incomplete or refer to a page that moved.</p><Link className="button primary" to="/">Open Workbench</Link></EmptyState></>} />
       </Route>
     </Routes>
   );

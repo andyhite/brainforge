@@ -42,7 +42,8 @@ export function outputLabel(o: CandidateOutput): string {
     const kind = o.stage === "processed" ? "Processed" : o.role === "matted" ? "Raw matted" : "Raw untouched";
     return `${kind} frames${fps ? ` · ${formatFps(fps)}` : ""}${o.frameCount !== undefined ? ` · ${o.frameCount} frames` : ""}`;
   }
-  return o.role === "matted" ? "Matted (background removed)" : "Untouched";
+  if (o.stage === "processed") return `Processed image · ${o.width}×${o.height}`;
+  return o.role === "matted" ? "Source matted (background removed)" : "Source untouched";
 }
 
 const WARNING_TEXT: Record<ProcessingWarning["code"], string> = {

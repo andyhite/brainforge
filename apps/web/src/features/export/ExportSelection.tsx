@@ -34,9 +34,9 @@ export function ExportSelection({ assets, subset, onSubset, pins, onPin, default
 }) {
   const explicit = subset !== null;
   return (
-    <section className="panel" aria-labelledby="export-select-title">
+    <section className="rel-pane" aria-labelledby="export-select-title">
       <h2 id="export-select-title">What to export</h2>
-      <p className="secondary">
+      <p className="rel-note">
         By default every asset with an active version is exported. Choose assets to export only a subset, or pin a specific promoted version instead of the active one.
         Pinned versions are shown in the plan, never applied silently.
       </p>
@@ -44,9 +44,9 @@ export function ExportSelection({ assets, subset, onSubset, pins, onPin, default
         <input type="checkbox" checked={explicit} onChange={(event) => onSubset(event.target.checked ? defaultIds : null)} />
         Choose specific assets
       </label>
-      {assets.length === 0 ? <p className="secondary">No assets are defined yet.</p> : (
+      {assets.length === 0 ? <div className="rel-empty"><h2>No assets are defined yet</h2><p>Define and promote an asset before exporting.</p></div> : (
         <div className="table-wrap">
-          <table>
+          <table className="rel-pick">
             <caption className="sr-only">Assets and the version to export</caption>
             <thead>
               <tr>
@@ -59,7 +59,7 @@ export function ExportSelection({ assets, subset, onSubset, pins, onPin, default
               {assets.map((asset) => {
                 const included = !explicit || subset.includes(asset.assetId);
                 return (
-                  <tr key={asset.assetId}>
+                  <tr key={asset.assetId} data-included={included}>
                     {explicit ? (
                       <td>
                         <input

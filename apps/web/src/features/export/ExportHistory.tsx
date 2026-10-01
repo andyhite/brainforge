@@ -15,7 +15,7 @@ function ExportInspect({ exportId }: { exportId: string }) {
   if (!query.data.ok) return <ErrorBanner error={query.data.error} />;
   const { export: record, manifest, conflicts } = query.data.data;
   return (
-    <div className="panel" role="region" aria-label={`Export ${exportId.slice(0, 8)} details`} style={{ marginTop: 12 }}>
+    <div className="rel-detail" role="region" aria-label={`Export ${exportId.slice(0, 8)} details`}>
       <h3>Export {record.exportId.slice(0, 8)}</h3>
       <dl className="kv">
         <dt>Preset</dt><dd>{record.preset}</dd>
@@ -35,7 +35,7 @@ function ExportInspect({ exportId }: { exportId: string }) {
       {manifest ? (
         <details>
           <summary>Owned files ({manifest.ownedFiles.length})</summary>
-          <ul className="plain-list mono">{manifest.ownedFiles.map((file) => <li key={file.path}>{file.path} <span className="secondary">{file.size} B</span></li>)}</ul>
+          <ul className="plain-list mono rel-files">{manifest.ownedFiles.map((file) => <li key={file.path} style={{ overflowWrap: "anywhere" }}>{file.path} <span className="secondary">{file.size} B</span></li>)}</ul>
         </details>
       ) : null}
     </div>
@@ -45,13 +45,14 @@ function ExportInspect({ exportId }: { exportId: string }) {
 export function ExportHistory({ selected, onSelect: setSelected }: { selected: string | undefined; onSelect: (exportId: string | undefined) => void }) {
   const query = useOperation("export.list", { limit: 20 });
   return (
-    <section className="panel" id="export-history" aria-labelledby="export-history-title">
+    <section className="rel-pane" id="export-history" aria-labelledby="export-history-title">
       <h2 id="export-history-title">Export history</h2>
+      <p className="rel-note">Exported files are copies. The current export is what <code>current</code> resolves to; earlier exports are preserved.</p>
       {query.error ? <NetworkProblem error={query.error} /> : !query.data ? <p className="secondary" role="status">Loading history…</p> : !query.data.ok ? <ErrorBanner error={query.data.error} /> : query.data.data.exports.length === 0 ? (
         <p className="secondary">Nothing has been exported yet.</p>
       ) : (
         <div className="table-wrap">
-          <table>
+          <table className="rel-history">
             <caption className="sr-only">Exports, newest first</caption>
             <thead>
               <tr><th scope="col">Export</th><th scope="col">State</th><th scope="col">Preset</th><th scope="col">When</th><th scope="col">Notes</th><th scope="col"><span className="sr-only">Actions</span></th></tr>

@@ -93,9 +93,9 @@ export function PromotePanel({ assetId, branchId, base, activeVersionId, onActiv
   }
 
   return (
-    <section className="panel" aria-labelledby="promote-title">
-      <h2 id="promote-title" style={{ marginTop: 0 }}>Promote a version</h2>
-      <p className="secondary">All required deliverables must be ready; nothing is promoted partially. A promoted version is immutable and is not active until you activate it.</p>
+    <section className="rel-pane rel-plan" aria-labelledby="promote-title">
+      <h2 id="promote-title">Promote a version</h2>
+      <p className="rel-note">All required deliverables must be ready; nothing is promoted partially. A promoted version is immutable and is not active until you activate it.</p>
       <div className="row">
         <button type="button" className={plan ? undefined : "primary"} onClick={() => void runPlan()} disabled={planning || starting}>{planning ? "Planning…" : plan ? "Plan again" : "Plan promotion"}</button>
       </div>
@@ -114,58 +114,51 @@ export function PromotePanel({ assetId, branchId, base, activeVersionId, onActiv
         ) : null}
       </div>
       {plan ? (
-        <div style={{ marginTop: 16 }}>
-          <p>
+        <div>
+          <p className="rel-note" style={{ marginTop: 16 }}>
             <strong>Promotion policy: {plan.capability.policy}</strong> — {plan.capability.allowed ? "you can promote." : (plan.capability.reason ?? "you cannot promote.")}
             {" "}Next version: <strong>v{plan.nextVersionNumber}</strong> on branch <span className="mono">{plan.branchId.slice(0, 8)}</span>.
           </p>
-          <div className="table-wrap">
-            <table>
-              <caption className="sr-only">Deliverables in this promotion plan</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Deliverable</th>
-                  <th scope="col">Kind</th>
-                  <th scope="col">Required</th>
-                  <th scope="col">State</th>
-                  <th scope="col">Selected output</th>
-                  <th scope="col">Approval</th>
-                  <th scope="col">Unresolved feedback</th>
-                  <th scope="col">Reuse</th>
-                </tr>
-              </thead>
-              <tbody>
-                {plan.deliverables.map((row) => {
-                  const state = ROW_STATE[row.state];
-                  const candidate = row.candidateId ? `/assets/${encodeURIComponent(assetId)}/candidates/${encodeURIComponent(row.candidateId)}` : undefined;
-                  return (
-                    <tr key={row.deliverableId}>
-                      <th scope="row">
-                        <Link to={`${base}?step=${encodeURIComponent(row.deliverableId)}`}>{row.deliverableId}</Link>
-                        {row.message ? <div className="secondary" style={{ fontWeight: 400 }}>{row.message}</div> : null}
-                      </th>
-                      <td>{row.kind}</td>
-                      <td>{row.required ? "Required" : "Optional"}</td>
-                      <td><Status tone={state.tone}>{state.text}</Status></td>
-                      <td>
-                        {candidate && row.candidateId ? (
-                          <span className="row" style={{ gap: 8 }}>
-                            <DeliverableThumb candidateId={row.candidateId} outputId={row.outputId} label={`Selected output for ${row.deliverableId}`} />
-                            <Link to={candidate}>Open {row.candidateId.slice(0, 8)}</Link>
-                          </span>
-                        ) : "None selected"}
-                      </td>
-                      <td>{row.approval ?? "—"}</td>
-                      <td>
-                        {row.unresolvedFeedback > 0 && candidate ? <Link to={candidate}>{row.unresolvedFeedback} open {row.unresolvedFeedback === 1 ? "note" : "notes"}</Link> : row.unresolvedFeedback}
-                      </td>
-                      <td>{row.reusesVersionId ? <Status tone="info">Reuses an earlier version</Status> : "—"}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="rel-decision">
+            <div className="row">
+              <button type="button" className="primary" disabled={blocked || starting || planning} aria-describedby="promote-why" onClick={() => void start()}>
+                {starting ? "Promoting…" : `Start promotion of v${plan.nextVersionNumber}`}
+              </button>
+            </div>
+            <div id="promote-why" className="rel-why" aria-live="polite">
+              {blocked ? (
+                <>
+                  Start is disabled because:
+                  <ul>{reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
+                </>
+              ) : <>Every required deliverable is ready. Starting creates one immutable version; the active version does not change.</>}
+            </div>
           </div>
+          <ul className="rel-rows" aria-label="Deliverables in this promotion plan">
+            {plan.deliverables.map((row) => {
+              const state = ROW_STATE[row.state];
+              const candidate = row.candidateId ? `/assets/${encodeURIComponent(assetId)}/candidates/${encodeURIComponent(row.candidateId)}` : undefined;
+              return (
+                <li key={row.deliverableId}>
+                  <div className="rel-row-head">
+                    <Link to={`${base}?step=${encodeURIComponent(row.deliverableId)}${branchId ? `&branch=${encodeURIComponent(branchId)}` : ""}`}>{row.deliverableId}</Link>
+                    <Status tone={state.tone}>{state.text}</Status>
+                  </div>
+                  {row.message ? <div className="rel-vmeta">{row.message}</div> : null}
+                  <div className="rel-vmeta">{row.kind} · {row.required ? "Required" : "Optional"} · Approval: {row.approval ?? "—"} · Unresolved feedback: {row.unresolvedFeedback > 0 && candidate ? <Link to={candidate}>{row.unresolvedFeedback} open {row.unresolvedFeedback === 1 ? "note" : "notes"}</Link> : row.unresolvedFeedback}</div>
+                  <div className="row" style={{ gap: 8 }}>
+                    {candidate && row.candidateId ? (
+                      <>
+                        <DeliverableThumb candidateId={row.candidateId} outputId={row.outputId} label={`Selected output for ${row.deliverableId}`} />
+                        <Link to={candidate}>Open {row.candidateId.slice(0, 8)}</Link>
+                      </>
+                    ) : <span className="secondary">None selected</span>}
+                    {row.reusesVersionId ? <Status tone="info">Reuses an earlier version</Status> : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
           <MemberPins
             members={plan.members}
             pins={pins}
@@ -179,7 +172,7 @@ export function PromotePanel({ assetId, branchId, base, activeVersionId, onActiv
             }}
           />
           {plan.blockers.length > 0 ? (
-            <ul className="plain-list" aria-label="Promotion blockers" style={{ marginTop: 16 }}>
+            <ul className="rel-blockers" aria-label="Promotion blockers">
               {plan.blockers.map((blocker) => (
                 <li key={`${blocker.code}-${blocker.message}`}>
                   <Banner tone="warn" title={blocker.code.replaceAll("-", " ").replaceAll("_", " ").toLowerCase()} actions={<ActionLinks actions={blocker.recoveryActions} />}>
@@ -191,19 +184,6 @@ export function PromotePanel({ assetId, branchId, base, activeVersionId, onActiv
               ))}
             </ul>
           ) : null}
-          <div className="row" style={{ marginTop: 16 }}>
-            <button type="button" className="primary" disabled={blocked || starting || planning} aria-describedby="promote-why" onClick={() => void start()}>
-              {starting ? "Promoting…" : `Start promotion of v${plan.nextVersionNumber}`}
-            </button>
-          </div>
-          <div id="promote-why" aria-live="polite">
-            {blocked ? (
-              <div className="secondary" style={{ marginTop: 8 }}>
-                Start is disabled because:
-                <ul style={{ margin: "4px 0 0", paddingLeft: 20 }}>{reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
-              </div>
-            ) : <p className="secondary">Every required deliverable is ready. Starting creates one immutable version; the active version does not change.</p>}
-          </div>
         </div>
       ) : null}
     </section>

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Annotation, CandidateOutput, OperationError } from "@brainforge/contracts";
 import { useMutationOperation } from "../../api/hooks.ts";
-import { ErrorBanner } from "../../components/ui.tsx";
+import { ErrorBanner, Status } from "../../components/ui.tsx";
 import { rangeLabel } from "./AnnotationPanel.tsx";
 
 /** Bundles chosen notes into a revision request. Nothing runs: an external agent must read it. */
@@ -67,7 +67,7 @@ export function NewRevisionForm({ candidateId, annotations, outputs }: { candida
       <div className="row">
         <button type="submit" className="primary" disabled={create.isPending || selection.size === 0 || summary.trim() === ""}>Create revision request</button>
       </div>
-      {done ? <p role="status"><span aria-hidden="true">✓ </span>Created <code>{done}</code>. Its current status is listed below.</p> : null}
+      {done ? <p role="status"><Status tone="ok">Created <code>{done}</code>. Its current status is listed below.</Status></p> : null}
       {error ? <ErrorBanner error={error} /> : null}
     </form>
   );

@@ -1,3 +1,4 @@
+import "../jobs/activity.css";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import type { HistoryExample, JudgmentSummary } from "@brainforge/contracts";
@@ -44,59 +45,58 @@ export function HistoryPage() {
   const projectId = project.data?.project.projectId;
 
   return (
-    <>
+    <div className="activity-page">
       <PageHeader title="History" />
-      <div className="stack">
-        <div className="row">
-          <div className="field compact">
-            <label htmlFor="history-asset">Asset</label>
-            <select id="history-asset" value={assetId} onChange={(e) => set({ asset: e.target.value, step: undefined, offset: undefined })}>
-              {assets.length === 0 ? <option value="">No assets</option> : null}
-              {assets.map((a) => <option key={a.assetId} value={a.assetId}>{a.name ?? a.assetId}</option>)}
-            </select>
-          </div>
-          <div className="field compact">
-            <label htmlFor="history-step">Step</label>
-            <select id="history-step" value={stepId} onChange={(e) => set({ step: e.target.value, offset: undefined })}>
-              <option value="">All steps</option>
-              {stepIds.map((id) => <option key={id} value={id}>{id}</option>)}
-            </select>
-          </div>
+      <div className="history-filters" role="group" aria-label="Scope of the history below">
+        <div className="field compact">
+          <label htmlFor="history-asset">Asset</label>
+          <select id="history-asset" value={assetId} onChange={(e) => set({ asset: e.target.value, step: undefined, offset: undefined })}>
+            {assets.length === 0 ? <option value="">No assets</option> : null}
+            {assets.map((a) => <option key={a.assetId} value={a.assetId}>{a.name ?? a.assetId}</option>)}
+          </select>
         </div>
-
-        <section aria-labelledby="h-examples" className="stack">
-          <h2 id="h-examples">Examples</h2>
-          <p className="secondary">Past decisions the same asset, then the same style and family, then the same family produced. Retrieved by rule (tier, step, human override, newest) — nothing is inferred or invented.</p>
-          {assetId === "" ? <p className="secondary">This project has no assets yet, so there is no history to retrieve.</p>
-            : examples.error ? <NetworkProblem error={examples.error} />
-            : !examples.data ? <p className="secondary" role="status">Loading examples…</p>
-            : !examples.data.ok ? <ErrorBanner error={examples.data.error} />
-            : (
-              <>
-                <p className="secondary" role="status">
-                  {loaded?.total === 0 ? "No decided outputs match yet." : `Showing ${offset + 1}–${offset + list.length} of ${loaded?.total ?? 0}`}
-                  {" · "}{loaded?.accepted ?? 0} accepted · {loaded?.rejected ?? 0} rejected
-                  {loaded ? ` · scope: ${loaded.scope.family}${loaded.scope.styleIds.length > 0 ? `, styles ${loaded.scope.styleIds.join(", ")}` : ""}` : ""}
-                </p>
-                <div className="grid-2">
-                  <ExampleGroup title="Accepted" outcome="accepted" examples={list} projectId={projectId} empty="No accepted outputs yet." />
-                  <ExampleGroup title="Rejected" outcome="rejected" examples={list} projectId={projectId} empty="No rejected outputs yet." />
-                </div>
-                {(loaded?.total ?? 0) > PAGE ? (
-                  <div className="row">
-                    <button type="button" disabled={offset === 0} onClick={() => set({ offset: offset - PAGE <= 0 ? undefined : String(offset - PAGE) })}>Previous {PAGE}</button>
-                    <button type="button" disabled={offset + PAGE >= (loaded?.total ?? 0)} onClick={() => set({ offset: String(offset + PAGE) })}>Next {PAGE}</button>
-                  </div>
-                ) : null}
-              </>
-            )}
-        </section>
-
-        <Judgments query={judgments} />
-
-        <PreferencesPanel examples={list} styleIds={loaded?.scope.styleIds ?? []} />
+        <div className="field compact">
+          <label htmlFor="history-step">Step</label>
+          <select id="history-step" value={stepId} onChange={(e) => set({ step: e.target.value, offset: undefined })}>
+            <option value="">All steps</option>
+            {stepIds.map((id) => <option key={id} value={id}>{id}</option>)}
+          </select>
+        </div>
+        <p className="secondary history-note">Examples follow this asset and step; agent-vs-human judgments follow this asset. Preferences apply to the whole project or one style.</p>
       </div>
-    </>
+
+      <PreferencesPanel examples={list} styleIds={loaded?.scope.styleIds ?? []} />
+
+      <section aria-labelledby="h-examples" className="history-section">
+        <h2 id="h-examples">Decision examples</h2>
+        <p className="secondary history-note">Past decisions the same asset, then the same style and family, then the same family produced. Retrieved by rule (tier, step, human override, newest) — nothing is inferred or invented. Only the page shown below is loaded; this is not the complete decision log.</p>
+        {assetId === "" ? <p className="secondary">This project has no assets yet, so there is no history to retrieve.</p>
+          : examples.error ? <NetworkProblem error={examples.error} />
+          : !examples.data ? <p className="secondary" role="status">Loading examples…</p>
+          : !examples.data.ok ? <ErrorBanner error={examples.data.error} />
+          : (
+            <>
+              <p className="secondary" role="status">
+                {loaded?.total === 0 ? "No decided outputs match yet." : `Showing ${offset + 1}–${offset + list.length} of ${loaded?.total ?? 0}`}
+                {" · "}{loaded?.accepted ?? 0} accepted · {loaded?.rejected ?? 0} rejected
+                {loaded ? ` · scope: ${loaded.scope.family}${loaded.scope.styleIds.length > 0 ? `, styles ${loaded.scope.styleIds.join(", ")}` : ""}` : ""}
+              </p>
+              <div className="history-cols">
+                <ExampleGroup title="Accepted" outcome="accepted" examples={list} projectId={projectId} empty="No accepted outputs yet." />
+                <ExampleGroup title="Rejected" outcome="rejected" examples={list} projectId={projectId} empty="No rejected outputs yet." />
+              </div>
+              {(loaded?.total ?? 0) > PAGE ? (
+                <div className="row">
+                  <button type="button" disabled={offset === 0} onClick={() => set({ offset: offset - PAGE <= 0 ? undefined : String(offset - PAGE) })}>Previous {PAGE}</button>
+                  <button type="button" disabled={offset + PAGE >= (loaded?.total ?? 0)} onClick={() => set({ offset: String(offset + PAGE) })}>Next {PAGE}</button>
+                </div>
+              ) : null}
+            </>
+          )}
+      </section>
+
+      <Judgments query={judgments} />
+    </div>
   );
 }
 
@@ -106,9 +106,9 @@ function ExampleGroup({ title, outcome, examples, projectId, empty }: { title: s
     <section aria-label={`${title} examples`}>
       <h3>{title} ({rows.length})</h3>
       {rows.length === 0 ? <p className="secondary">{empty}</p> : (
-        <ul className="plain stack">
+        <ul className="history-records">
           {rows.map((e) => (
-            <li key={e.decisionId} className="panel">
+            <li key={e.decisionId} className="history-record">
               <div className="row">
                 {e.visuals.map((v) => projectId ? (
                   <a key={v.fileId} href={fileUrl(projectId, v.fileId)} target="_blank" rel="noreferrer">
@@ -116,18 +116,18 @@ function ExampleGroup({ title, outcome, examples, projectId, empty }: { title: s
                   </a>
                 ) : null)}
               </div>
-              <p style={{ margin: "8px 0 0" }}>
+              <p>
                 <Link to={`/assets/${encodeURIComponent(e.assetId)}/candidates/${encodeURIComponent(e.candidateId)}?output=${encodeURIComponent(e.outputId)}`}>{e.candidateLabel}</Link>
                 <span className="secondary"> · {e.assetId} · {e.stepId}</span>
               </p>
-              <p className="secondary" style={{ margin: "4px 0 0" }}>
+              <p className="secondary">
                 <strong>{TIER[e.tier]}</strong>{e.matched.length > 0 ? ` — matched: ${e.matched.join(", ")}` : ""}
               </p>
-              <p className="secondary" style={{ margin: "4px 0 0" }}>
+              <p className="secondary">
                 {e.decision.decision === "approve" ? "Approved" : "Rejected"} by {e.decision.actorId} ({e.decision.actorType}) · {formatTime(e.decision.createdAt)}
                 {e.decision.reasons.length > 0 ? ` — ${e.decision.reasons.join("; ")}` : " — no reasons recorded"}
               </p>
-              {e.humanOverride ? <p style={{ margin: "4px 0 0" }}><Status tone="info">Human override</Status></p> : null}
+              {e.humanOverride ? <p><Status tone="info">Human override</Status></p> : null}
               {e.alternatives.length > 0 ? (
                 <details>
                   <summary>{e.alternatives.length} {e.alternatives.length === 1 ? "alternative" : "alternatives"}</summary>
@@ -153,7 +153,7 @@ function Judgments({ query }: { query: UseQueryResult<Envelope<"history.judgment
   else if (!query.data.ok) body = <ErrorBanner error={query.data.error} />;
   else body = <JudgmentBody summary={query.data.data.summary} />;
   return (
-    <section aria-labelledby="h-judgments" className="stack">
+    <section aria-labelledby="h-judgments" className="history-section">
       <h2 id="h-judgments">Agent judgments vs human decisions</h2>
       <p className="secondary">A record of what agents decided and what a human decided afterwards. These are counts and cases, not a measure of your taste.</p>
       {body}
@@ -174,11 +174,11 @@ function JudgmentBody({ summary }: { summary: JudgmentSummary }) {
   ];
   return (
     <>
-      <dl className="kv" aria-label="Judgment counts">
-        {counts.map(([label, n]) => <div key={label} style={{ display: "contents" }}><dt>{label}</dt><dd>{n}</dd></div>)}
+      <dl className="history-counts" aria-label="Judgment counts">
+        {counts.map(([label, n]) => <div key={label}><dt>{label}</dt><dd>{n}</dd></div>)}
       </dl>
       {summary.cases.length === 0 ? <p className="secondary">No human override of an agent decision has been recorded yet.</p> : (
-        <table aria-label="Override cases">
+        <div className="history-table"><table aria-label="Override cases">
           <thead><tr><th>Candidate</th><th>Step</th><th>Agent said</th><th>Human decided</th><th>Outcome</th></tr></thead>
           <tbody>
             {summary.cases.map((c) => (
@@ -191,7 +191,7 @@ function JudgmentBody({ summary }: { summary: JudgmentSummary }) {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
     </>
   );

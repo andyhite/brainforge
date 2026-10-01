@@ -7,6 +7,8 @@ import { useOperation } from "../../api/hooks.ts";
 import { Banner, EmptyState, ErrorBanner, NetworkProblem, PageHeader } from "../../components/ui.tsx";
 import { useProjectRoot } from "../../lib/project-context.tsx";
 import { ExportHistory } from "./ExportHistory.tsx";
+import { ReleaseKey } from "../production/ProductionState.tsx";
+import "../production/releases.css";
 import { ExportPlanView } from "./ExportPlanView.tsx";
 import { ExportSelection } from "./ExportSelection.tsx";
 
@@ -25,7 +27,7 @@ function CopyPath({ path }: { path: string }) {
     }
   };
   return (
-    <span className="row" style={{ gap: 8 }}>
+    <span className="rel-path">
       <code>{path}</code>
       <button type="button" onClick={() => void copy()}>Copy path</button>
       <span role="status" className="secondary">{state === "copied" ? "Copied" : state === "failed" ? "Copy failed — select the path and copy it manually" : ""}</span>
@@ -36,8 +38,8 @@ function CopyPath({ path }: { path: string }) {
 function SettingsPanel({ plan }: { plan: ExportPlan | undefined }) {
   const hasSettings = plan !== undefined && plan.destination !== "";
   return (
-    <section className="panel" aria-labelledby="export-settings-title">
-      <h2 id="export-settings-title">Export settings</h2>
+    <section className="rel-pane rel-dest" aria-labelledby="export-settings-title">
+      <h2 id="export-settings-title">Destination</h2>
       {hasSettings ? (
         <dl className="kv">
           <dt>Preset</dt><dd>{plan.preset}</dd>
@@ -51,7 +53,7 @@ function SettingsPanel({ plan }: { plan: ExportPlan | undefined }) {
           <pre><code>{"export:\n  preset: generic        # or godot4\n  destination: assets/brainforge\n  godotProjectRoot: .    # godot4 only"}</code></pre>
         </>
       )}
-      <p className="secondary">Exports are copies of immutable promoted versions. Exporting never changes promotion or activation, and files you own in the destination are never overwritten.</p>
+      <p className="rel-note">Exports are copies of immutable promoted versions. Exporting never changes promotion or activation, and files you own in the destination are never overwritten.</p>
       <div className="row">
         <Link className="button" to="/settings/direction">Edit export settings</Link>
         <Link className="button" to="/settings/direction?view=yaml">Edit project.yaml</Link>
@@ -173,65 +175,73 @@ export function ExportPage() {
   const stale = startError !== undefined && (startError.code === "REVISION_CONFLICT" || /plan/i.test(startError.message));
 
   return (
-    <div className="stack">
+    <div className="rel-page">
       <PageHeader title="Export">
-        <Link to="/library">Library</Link>
+        <span className="rel-tools"><Link to="/library">Releases</Link></span>
       </PageHeader>
-      <SettingsPanel plan={plan} />
-      <ExportSelection
-        assets={assets.data?.ok ? assets.data.data.assets : []}
-        subset={subset} onSubset={changeSubset} pins={pins} onPin={changePin}
-        defaultIds={plan?.selection.map((row) => row.assetId) ?? []}
-      />
-      <section className="panel" aria-labelledby="export-plan-title">
-        <div className="row" style={{ justifyContent: "space-between" }}>
-          <h2 id="export-plan-title" style={{ margin: 0 }}>Export plan</h2>
-          <button type="button" onClick={() => { setDone(undefined); void runPlan(); }} disabled={planning || starting}>{planning ? "Planning…" : "Plan again"}</button>
-        </div>
-        <div aria-live="polite" style={{ marginTop: 12 }}>
-          {planError ? <ErrorBanner error={planError} /> : null}
-          {network ? <Banner tone="bad" title="No response from the server">{network} Starting the export again reuses the same request, so it cannot publish twice.</Banner> : null}
-          {startError ? (
-            startError.code === "EXPORT_CONFLICT" ? (
-              <Banner tone="bad" title="Export conflict — nothing was changed" actions={<button type="button" onClick={() => void runPlan()}>Plan again</button>}>
-                {startError.message}
-                <div className="secondary">The previous export is still what <code>current</code> resolves to. Files you own in the destination are never overwritten: restore or move the file named above, or choose another <code>export.destination</code>, then plan again.</div>
-              </Banner>
-            ) : stale ? (
-              <Banner tone="warn" title="The plan changed" actions={<button type="button" onClick={() => void runPlan()}>Plan again</button>}>Something it depends on changed after you planned. Nothing was exported. Review a fresh plan before starting.</Banner>
-            ) : <ErrorBanner error={startError} />
-          ) : null}
-          {assets.error ? <NetworkProblem error={assets.error} /> : null}
-        </div>
-        <div aria-live="polite" ref={doneRef} tabIndex={-1}>
-          {done ? (
-            <Banner tone="ok" title={done.warnings.length > 0 ? "Exported — with warnings" : "Exported"}>
-              <p>Your game reads these files at the stable path <code>{done.publicRoot}</code>. Promotion and activation were not changed.</p>
-              <p className="row" style={{ gap: 8 }}><strong>Open exported files:</strong> <CopyPath path={joinPath(root, done.publicRoot)} /></p>
-              {done.warnings.map((warning) => <div key={warning}>{warning}</div>)}
-            </Banner>
-          ) : null}
-        </div>
-        {plan ? <ExportPlanView plan={plan} onConfirmEmpty={() => setConfirmEmpty(true)} onInspect={showInspect} /> : planning ? <p className="secondary" role="status">Planning export…</p> : null}
-        <div className="row" style={{ marginTop: 16 }}>
-          <button type="button" className="primary" disabled={blocked || starting || planning} aria-describedby="export-why" onClick={() => void start()}>
-            {starting ? "Exporting…" : "Start export"}
-          </button>
-          {publicAbs ? <span className="secondary">Will publish to <code>{publicAbs}</code></span> : null}
-        </div>
-        <div id="export-why" aria-live="polite">
-          {blocked ? (
-            <div className="secondary" style={{ marginTop: 8 }}>
-              Start is disabled because:
-              <ul style={{ margin: "4px 0 0", paddingLeft: 20 }}>{reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
+      <ReleaseKey />
+      <div className="rel-split">
+        <div className="rel-page">
+          <ExportSelection
+            assets={assets.data?.ok ? assets.data.data.assets : []}
+            subset={subset} onSubset={changeSubset} pins={pins} onPin={changePin}
+            defaultIds={plan?.selection.map((row) => row.assetId) ?? []}
+          />
+          <section className="rel-pane rel-plan" aria-labelledby="export-plan-title">
+            <div className="rel-head">
+              <h2 id="export-plan-title">Export plan</h2>
+              <button type="button" onClick={() => { setDone(undefined); void runPlan(); }} disabled={planning || starting}>{planning ? "Planning…" : "Plan again"}</button>
             </div>
-          ) : (
-            <p className="secondary" style={{ marginTop: 8 }}>
-              Publishing switches <code>current</code> to the new snapshot in one step. Files you own in the destination are kept and never overwritten; only files this export wrote earlier are retired.
-            </p>
-          )}
+            <div aria-live="polite" style={{ marginTop: 12 }}>
+              {planError ? <ErrorBanner error={planError} /> : null}
+              {network ? <Banner tone="bad" title="No response from the server">{network} Starting the export again reuses the same request, so it cannot publish twice.</Banner> : null}
+              {startError ? (
+                startError.code === "EXPORT_CONFLICT" ? (
+                  <Banner tone="bad" title="Export conflict — nothing was changed" actions={<button type="button" onClick={() => void runPlan()}>Plan again</button>}>
+                    {startError.message}
+                    <div className="secondary">The previous export is still what <code>current</code> resolves to. Files you own in the destination are never overwritten: restore or move the file named above, or choose another <code>export.destination</code>, then plan again.</div>
+                  </Banner>
+                ) : stale ? (
+                  <Banner tone="warn" title="The plan changed" actions={<button type="button" onClick={() => void runPlan()}>Plan again</button>}>Something it depends on changed after you planned. Nothing was exported. Review a fresh plan before starting.</Banner>
+                ) : <ErrorBanner error={startError} />
+              ) : null}
+              {assets.error ? <NetworkProblem error={assets.error} /> : null}
+            </div>
+            <div aria-live="polite" ref={doneRef} tabIndex={-1}>
+              {done ? (
+                <Banner tone="ok" title={done.warnings.length > 0 ? "Exported — with warnings" : "Exported"}>
+                  <p>Your game reads these files at the stable path <code>{done.publicRoot}</code>. Promotion and activation were not changed.</p>
+                  <p className="row" style={{ gap: 8 }}><strong>Open exported files:</strong> <CopyPath path={joinPath(root, done.publicRoot)} /></p>
+                  {done.warnings.map((warning) => <div key={warning}>{warning}</div>)}
+                </Banner>
+              ) : null}
+            </div>
+            {plan ? <ExportPlanView plan={plan} onConfirmEmpty={() => setConfirmEmpty(true)} onInspect={showInspect} /> : planning ? <p className="secondary" role="status">Planning export…</p> : null}
+          </section>
         </div>
-      </section>
+        <aside className="rel-aside" aria-label="Export destination and decision">
+          <section className="rel-pane" aria-labelledby="export-start-title">
+            <h2 id="export-start-title">Publish</h2>
+            <div className="rel-decision" style={{ borderTop: 0, marginTop: 0, paddingTop: 0 }}>
+              <div className="row">
+                <button type="button" className="primary" disabled={blocked || starting || planning} aria-describedby="export-why" onClick={() => void start()}>
+                  {starting ? "Exporting…" : "Start export"}
+                </button>
+              </div>
+              {publicAbs ? <p className="rel-why">Will publish to <code>{publicAbs}</code></p> : null}
+              <div id="export-why" className="rel-why" aria-live="polite">
+                {blocked ? (
+                  <>
+                    Start is disabled because:
+                    <ul>{reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
+                  </>
+                ) : <>Publishing switches <code>current</code> to the new snapshot in one step. Files you own in the destination are kept and never overwritten; only files this export wrote earlier are retired.</>}
+              </div>
+            </div>
+          </section>
+          <SettingsPanel plan={plan} />
+        </aside>
+      </div>
       <ExportHistory selected={inspectId} onSelect={setInspectId} />
     </div>
   );

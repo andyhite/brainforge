@@ -1,6 +1,9 @@
+import { useEffect, useRef } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import type { OperationData, OperationInput } from "@brainforge/contracts";
 import { useOperation } from "../../api/hooks.ts";
+import { outputUrl } from "../generation/media.tsx";
+import "./review.css";
 import { ErrorBanner, NetworkProblem, Status, type Tone } from "../../components/ui.tsx";
 import { useProject } from "../../lib/use-project.ts";
 import { ApprovalBadge } from "./ApprovalBadge.tsx";
@@ -45,6 +48,9 @@ export function ReviewQueue() {
 
   const steps = useOperation("step.list", { assetId }, { enabled: assetId !== "" });
   const stepIds = steps.data?.ok ? steps.data.data.steps.map((s) => s.stepId).filter((id) => id !== "concept") : [];
+  const selected = params.get("selected") ?? "";
+  const queueSearch = new URLSearchParams(params);
+  queueSearch.delete("selected");
   const list = useOperation("review.list", {
     filter, limit: PAGE, offset,
     ...(assetId ? { assetId } : {}),
@@ -86,7 +92,7 @@ export function ReviewQueue() {
           <p className="secondary" role="status">{total === 0 ? "Nothing matches this filter." : `Showing ${first}–${last} of ${total}`}</p>
           {items.length > 0 ? (
             <ul className="plain stack" aria-label="Review queue">
-              {items.map((item) => <QueueRow key={`${item.candidate.candidateId}-${item.kind}`} item={item} />)}
+              {items.map((item) => <QueueRow key={`${item.candidate.candidateId}-${item.kind}`} item={item} selected={item.candidate.candidateId === selected} queueSearch={queueSearch} projectId={project.data?.project.projectId} />)}
             </ul>
           ) : filter === "awaiting" ? <p className="secondary">No deliverable candidates are waiting for a decision. Concept candidates are chosen with Lock concept, not here.</p> : null}
           {total > PAGE ? (
@@ -101,23 +107,28 @@ export function ReviewQueue() {
   );
 }
 
-function QueueRow({ item }: { item: Item }) {
+function QueueRow({ item, selected, queueSearch, projectId }: { item: Item; selected: boolean; queueSearch: URLSearchParams; projectId: string | undefined }) {
   const { candidate, escalation, kind } = item;
   const k = KIND[kind];
+  const ref = useRef<HTMLLIElement>(null);
+  // Coming back from a candidate keeps its row in view.
+  useEffect(() => { if (selected) ref.current?.scrollIntoView({ block: "nearest" }); }, [selected]);
+  const out = candidate.outputs.find((o) => o.stage === "processed") ?? candidate.outputs.find((o) => o.role === "matted") ?? candidate.outputs[0];
+  const back = new URLSearchParams(queueSearch);
+  back.set("selected", candidate.candidateId);
+  const to = `/assets/${encodeURIComponent(candidate.assetId)}/candidates/${encodeURIComponent(candidate.candidateId)}?panel=decision&return=${encodeURIComponent(`/review?${back.toString()}`)}`;
   return (
-    <li className="panel">
-      <div className="row" style={{ justifyContent: "space-between" }}>
-        <strong>{candidate.label}</strong>
-        <Status tone={k.tone}>{k.label}</Status>
-      </div>
-      <p className="secondary">
-        {candidate.assetId} · {candidate.stepId} · {candidate.openRevisionCount} open {candidate.openRevisionCount === 1 ? "revision" : "revisions"}
-        {escalation ? ` · escalated by ${escalation.escalatedBy}: ${escalation.reason}` : ""}
-      </p>
-      <div className="row" style={{ justifyContent: "space-between" }}>
+    <li ref={ref} className={`queue-row${selected ? " selected" : ""}`} aria-current={selected ? "true" : undefined}>
+      <span className="thumb-box">{out && projectId ? <img src={outputUrl(projectId, out.fileId, 144)} alt="" loading="lazy" /> : null}</span>
+      <div className="queue-row-main">
+        <div className="row"><strong>{candidate.label}</strong><Status tone={k.tone}>{k.label}</Status></div>
+        <p className="secondary">
+          {candidate.assetId} · {candidate.stepId} · {candidate.openRevisionCount} open {candidate.openRevisionCount === 1 ? "revision" : "revisions"}
+          {escalation ? ` · escalated by ${escalation.escalatedBy}: ${escalation.reason}` : ""}
+        </p>
         <ApprovalBadge approval={candidate.approvals.find((a) => a.state !== "none") ?? candidate.approvals[0]} compact />
-        <Link to={`/assets/${encodeURIComponent(candidate.assetId)}/candidates/${encodeURIComponent(candidate.candidateId)}?panel=decision`}>{kind === "awaiting-review" || kind === "escalated" ? "Open and decide" : "Open"}</Link>
       </div>
+      <Link className="button" to={to}>{kind === "awaiting-review" || kind === "escalated" ? "Open and decide" : "Open"}</Link>
     </li>
   );
 }

@@ -1,0 +1,1011 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-01T19:58:46.540Z",
+  "title": "Design System: Brainforge",
+  "provenance": {
+    "mode": "scan",
+    "generator": "impeccable documenter (reference/document.md), extracted from shipped source",
+    "world": "Animation Checking Room",
+    "directionSeed": "e2b48247",
+    "surfaceBrief": ".impeccable/surfaces/src-app-tsx.md",
+    "designMd": {
+      "path": "DESIGN.md",
+      "sha256": "b946a85c3dc55712e33f5a924777a27afee492ed1038ba238fc2639da4deb908"
+    },
+    "sources": [
+      {
+        "path": "src/styles.css",
+        "sha256": "e1d1b9f69350ede362558c6c3f7be7b46669fb45595a54ec5ded79ceda09f49d"
+      },
+      {
+        "path": "src/features/assets/workbench.css",
+        "sha256": "a1c6838c2ec69ade11dc68992165d9dfb6c77d695fb3fa6063176880dcac23cd"
+      },
+      {
+        "path": "src/features/review/review.css",
+        "sha256": "ff9a7072ffe6e3da4028c8deb76434349eecacd2fdfc4866998986e4bb34861f"
+      },
+      {
+        "path": "src/features/production/releases.css",
+        "sha256": "0bd9cd1e09ad80216c170ad59f469dfc09e13115585f8a9f5cd72f1cf0287bcb"
+      },
+      {
+        "path": "src/features/jobs/activity.css",
+        "sha256": "3e6fe7c3d3f963782dbcf92fc18c29393d5decb493e6de5105bc49d3484e55bb"
+      },
+      {
+        "path": "src/features/settings/settings.css",
+        "sha256": "5f0e7fd974dffcb75837c1c1896e91352b7084ad6680247c64c8dd2df86cecaf"
+      },
+      {
+        "path": "src/features/projects/project-entry.css",
+        "sha256": "4281d83033ce9bc48302a3f52cbc32de767639496108b96780ef01339887d0b0"
+      },
+      {
+        "path": "src/components/Layout.tsx",
+        "sha256": "9b38d0108dfad4c91917e9b8ec941bb3819d056573351dd6f4a6e9b12ec37bc5"
+      },
+      {
+        "path": "src/components/ui.tsx",
+        "sha256": "e7314d19986badab37c56e598db60b5058986042871a16ab6fae9c25373e0d2a"
+      },
+      {
+        "path": "src/components/Icon.tsx",
+        "sha256": "f8d87a6c1652e6d9ed27d75de65ad49e6f0eb4decc0980728e8f063b5b9570c1"
+      },
+      {
+        "path": "src/features/review/CandidatePage.tsx",
+        "sha256": "fead0c03233556129b75d7e70bef48f2627c3962a8ddd413c51b9160098f335b"
+      },
+      {
+        "path": "src/features/assets/AssetNavigator.tsx",
+        "sha256": "a7e58324505de2feb009017e3c69ae6b7af1f6bce1bf012aafc3eb1c0bfebd77"
+      },
+      {
+        "path": ".impeccable/surfaces/src-app-tsx.md",
+        "sha256": "a15aa976f574a71b1af5c762d97973d1e71a57d97c062a4a8771a6441da16877"
+      },
+      {
+        "path": "PRODUCT.md",
+        "sha256": "cb7206387e13e3d471c0375bd07a5107f7782d925df27b6434e820b9dd86d8d4"
+      }
+    ],
+    "renderedEvidence": [
+      ".impeccable/review/fixes/review-1440.png",
+      ".impeccable/review/fixes/export-light.png",
+      ".impeccable/review/fixes/inspector-drawer.png",
+      ".impeccable/review/final/workbench-dark.png",
+      ".impeccable/review/final/animation-light.png"
+    ],
+    "normalization": "Colors keep the shipped CSS light-dark(light, dark) pairs as canonical; schemes.light/dark split them into hex and OKLCH for tools. Viewing tokens are single theme-independent values. Spacing is the 4px --u unit; control heights come from --control-h (34px, 44px on pointer: coarse).",
+    "excluded": "Fixture artwork in screenshots is synthetic test imagery, not a design asset."
+  },
+  "extensions": {
+    "colorMeta": {
+      "accent": {
+        "role": "primary",
+        "displayName": "Checking-Room Blue",
+        "canonical": "light-dark(#245e9a, #9ac4ed)",
+        "cssVar": "--accent",
+        "schemes": {
+          "light": {
+            "hex": "#245e9a",
+            "oklch": "oklch(47.5% 0.114 252.1)"
+          },
+          "dark": {
+            "hex": "#9ac4ed",
+            "oklch": "oklch(80.5% 0.074 248.1)"
+          }
+        },
+        "tonalRamp": [
+          "#000138",
+          "#002158",
+          "#004079",
+          "#265f9c",
+          "#4a83c2",
+          "#6ba5e7",
+          "#90ccff",
+          "#dcf1ff"
+        ],
+        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
+      },
+      "accent-text": {
+        "role": "primary",
+        "displayName": "Accent Ink",
+        "canonical": "light-dark(#ffffff, #12273a)",
+        "cssVar": "--accent-text",
+        "schemes": {
+          "light": {
+            "hex": "#ffffff",
+            "oklch": "oklch(100.0% 0.000 89.9)"
+          },
+          "dark": {
+            "hex": "#12273a",
+            "oklch": "oklch(26.5% 0.045 247.6)"
+          }
+        },
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#808080",
+          "#a1a1a1",
+          "#c7c7c7",
+          "#eeeeee"
+        ],
+        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
+      },
+      "accent-soft": {
+        "role": "primary",
+        "displayName": "Selection Wash",
+        "canonical": "light-dark(#e0edf9, #283e51)",
+        "cssVar": "--accent-soft",
+        "schemes": {
+          "light": {
+            "hex": "#e0edf9",
+            "oklch": "oklch(94.0% 0.021 245.9)"
+          },
+          "dark": {
+            "hex": "#283e51",
+            "oklch": "oklch(35.4% 0.043 245.5)"
+          }
+        },
+        "tonalRamp": [
+          "#040c14",
+          "#1c252e",
+          "#37414b",
+          "#545f69",
+          "#76828d",
+          "#97a3ae",
+          "#bcc9d5",
+          "#eaeff3"
+        ],
+        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
+      },
+      "focus": {
+        "role": "primary",
+        "displayName": "Focus Blue",
+        "canonical": "light-dark(#175b9e, #b8ddff)",
+        "cssVar": "--focus",
+        "schemes": {
+          "light": {
+            "hex": "#175b9e",
+            "oklch": "oklch(46.7% 0.127 252.4)"
+          },
+          "dark": {
+            "hex": "#b8ddff",
+            "oklch": "oklch(88.2% 0.061 246.3)"
+          }
+        },
+        "tonalRamp": [
+          "#00003e",
+          "#001f5e",
+          "#003f7f",
+          "#1c5fa2",
+          "#4283c9",
+          "#64a5ee",
+          "#89ccff",
+          "#daf1ff"
+        ],
+        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
+      },
+      "bg": {
+        "role": "neutral",
+        "displayName": "Workroom Ground",
+        "canonical": "light-dark(#f3f5f7, #191e23)",
+        "cssVar": "--bg",
+        "schemes": {
+          "light": {
+            "hex": "#f3f5f7",
+            "oklch": "oklch(96.9% 0.003 247.9)"
+          },
+          "dark": {
+            "hex": "#191e23",
+            "oklch": "oklch(23.2% 0.012 248.4)"
+          }
+        },
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232426",
+          "#3e4041",
+          "#5c5e5f",
+          "#7f8082",
+          "#a0a2a3",
+          "#c5c7c9",
+          "#eeeeef"
+        ],
+        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Pane Surface",
+        "canonical": "light-dark(#ffffff, #22282e)",
+        "cssVar": "--surface",
+        "schemes": {
+          "light": {
+            "hex": "#ffffff",
+            "oklch": "oklch(100.0% 0.000 89.9)"
+          },
+          "dark": {
+            "hex": "#22282e",
+            "oklch": "oklch(27.3% 0.014 248.3)"
+          }
+        },
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#808080",
+          "#a1a1a1",
+          "#c7c7c7",
+          "#eeeeee"
+        ],
+        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
+      },
+      "surface-2": {
+        "role": "neutral",
+        "displayName": "Raised Slate",
+        "canonical": "light-dark(#eaf0f4, #2b333b)",
+        "cssVar": "--surface-2",
+        "schemes": {
+          "light": {
+            "hex": "#eaf0f4",
+            "oklch": "oklch(95.2% 0.008 236.6)"
+          },
+          "dark": {
+            "hex": "#2b333b",
+            "oklch": "oklch(31.7% 0.018 248.4)"
+          }
+        },
+        "tonalRamp": [
+          "#080c0e",
+          "#202528",
+          "#3c4044",
+          "#595e62",
+          "#7c8185",
+          "#9da2a6",
+          "#c2c8cc",
+          "#edeff0"
+        ],
+        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
+      },
+      "surface-3": {
+        "role": "neutral",
+        "displayName": "Pressed Slate",
+        "canonical": "light-dark(#dfe7ed, #35404a)",
+        "cssVar": "--surface-3",
+        "schemes": {
+          "light": {
+            "hex": "#dfe7ed",
+            "oklch": "oklch(92.4% 0.012 239.9)"
+          },
+          "dark": {
+            "hex": "#35404a",
+            "oklch": "oklch(36.6% 0.023 245.9)"
+          }
+        },
+        "tonalRamp": [
+          "#070c10",
+          "#1f2529",
+          "#3a4145",
+          "#585f64",
+          "#7a8187",
+          "#9ba3a8",
+          "#c1c8ce",
+          "#eceff1"
+        ],
+        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
+      },
+      "stage": {
+        "role": "neutral",
+        "displayName": "Stage Slate",
+        "canonical": "light-dark(#e0e5e9, #12171b)",
+        "cssVar": "--stage",
+        "schemes": {
+          "light": {
+            "hex": "#e0e5e9",
+            "oklch": "oklch(91.9% 0.008 241.7)"
+          },
+          "dark": {
+            "hex": "#12171b",
+            "oklch": "oklch(20.1% 0.011 242.3)"
+          }
+        },
+        "tonalRamp": [
+          "#080c0e",
+          "#212527",
+          "#3c4043",
+          "#5a5e62",
+          "#7c8184",
+          "#9da2a6",
+          "#c3c8cc",
+          "#edeff0"
+        ],
+        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
+      },
+      "text": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "light-dark(#202b34, #edf1f4)",
+        "cssVar": "--text",
+        "schemes": {
+          "light": {
+            "hex": "#202b34",
+            "oklch": "oklch(28.3% 0.023 243.3)"
+          },
+          "dark": {
+            "hex": "#edf1f4",
+            "oklch": "oklch(95.6% 0.006 239.8)"
+          }
+        },
+        "tonalRamp": [
+          "#040c14",
+          "#1b252e",
+          "#36414b",
+          "#535f6a",
+          "#75828d",
+          "#96a3af",
+          "#bbc9d5",
+          "#eaeff3"
+        ],
+        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
+      },
+      "text-muted": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "canonical": "light-dark(#52616d, #a9b6c1)",
+        "cssVar": "--text-muted",
+        "schemes": {
+          "light": {
+            "hex": "#52616d",
+            "oklch": "oklch(48.4% 0.027 242.3)"
+          },
+          "dark": {
+            "hex": "#a9b6c1",
+            "oklch": "oklch(77.0% 0.021 243.5)"
+          }
+        },
+        "tonalRamp": [
+          "#030c15",
+          "#182630",
+          "#34424d",
+          "#51606c",
+          "#73838f",
+          "#94a4b1",
+          "#b9cad8",
+          "#e9eff4"
+        ],
+        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "light-dark(#cbd4dc, #3c4751)",
+        "cssVar": "--border",
+        "schemes": {
+          "light": {
+            "hex": "#cbd4dc",
+            "oklch": "oklch(86.5% 0.015 244.7)"
+          },
+          "dark": {
+            "hex": "#3c4751",
+            "oklch": "oklch(39.2% 0.022 245.8)"
+          }
+        },
+        "tonalRamp": [
+          "#060c11",
+          "#1e252b",
+          "#394147",
+          "#575f66",
+          "#798189",
+          "#9aa3aa",
+          "#c0c9d0",
+          "#eceff2"
+        ],
+        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
+      },
+      "border-control": {
+        "role": "neutral",
+        "displayName": "Control Edge",
+        "canonical": "light-dark(#7a8b99, #7c8d9b)",
+        "cssVar": "--border-control",
+        "schemes": {
+          "light": {
+            "hex": "#7a8b99",
+            "oklch": "oklch(62.8% 0.029 243.0)"
+          },
+          "dark": {
+            "hex": "#7c8d9b",
+            "oklch": "oklch(63.5% 0.029 243.0)"
+          }
+        },
+        "tonalRamp": [
+          "#020c16",
+          "#172631",
+          "#33424e",
+          "#50606d",
+          "#728390",
+          "#93a4b3",
+          "#b8cad9",
+          "#e9eff5"
+        ],
+        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
+      },
+      "ok": {
+        "role": "semantic",
+        "displayName": "Approved Green",
+        "canonical": "light-dark(#23633d, #8ed0a5)",
+        "cssVar": "--ok",
+        "schemes": {
+          "light": {
+            "hex": "#23633d",
+            "oklch": "oklch(44.8% 0.090 154.2)"
+          },
+          "dark": {
+            "hex": "#8ed0a5",
+            "oklch": "oklch(80.2% 0.091 155.2)"
+          }
+        },
+        "tonalRamp": [
+          "#001400",
+          "#002f0d",
+          "#044d29",
+          "#2d6c46",
+          "#529067",
+          "#73b288",
+          "#98d9ad",
+          "#dff5e5"
+        ],
+        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
+      },
+      "ok-soft": {
+        "role": "semantic",
+        "displayName": "Approved Green Wash",
+        "canonical": "light-dark(#e6f2e9, #283c32)",
+        "cssVar": "--ok-soft",
+        "schemes": {
+          "light": {
+            "hex": "#e6f2e9",
+            "oklch": "oklch(95.0% 0.017 153.6)"
+          },
+          "dark": {
+            "hex": "#283c32",
+            "oklch": "oklch(33.6% 0.031 162.4)"
+          }
+        },
+        "tonalRamp": [
+          "#060d08",
+          "#1e2720",
+          "#39433b",
+          "#566159",
+          "#79837b",
+          "#9aa59c",
+          "#bfcbc2",
+          "#ebf0ec"
+        ],
+        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
+      },
+      "warn": {
+        "role": "semantic",
+        "displayName": "Attention Amber",
+        "canonical": "light-dark(#87510b, #efc17c)",
+        "cssVar": "--warn",
+        "schemes": {
+          "light": {
+            "hex": "#87510b",
+            "oklch": "oklch(48.6% 0.105 65.1)"
+          },
+          "dark": {
+            "hex": "#efc17c",
+            "oklch": "oklch(83.7% 0.101 76.8)"
+          }
+        },
+        "tonalRamp": [
+          "#250000",
+          "#441200",
+          "#643000",
+          "#854f07",
+          "#ab7236",
+          "#ce9458",
+          "#f7b97d",
+          "#ffead6"
+        ],
+        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
+      },
+      "warn-soft": {
+        "role": "semantic",
+        "displayName": "Attention Amber Wash",
+        "canonical": "light-dark(#fcf1df, #40372a)",
+        "cssVar": "--warn-soft",
+        "schemes": {
+          "light": {
+            "hex": "#fcf1df",
+            "oklch": "oklch(96.2% 0.027 80.3)"
+          },
+          "dark": {
+            "hex": "#40372a",
+            "oklch": "oklch(34.2% 0.025 76.8)"
+          }
+        },
+        "tonalRamp": [
+          "#110a01",
+          "#2b2315",
+          "#473e30",
+          "#665c4d",
+          "#897f6f",
+          "#aaa08f",
+          "#d0c6b4",
+          "#f2eee8"
+        ],
+        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
+      },
+      "danger": {
+        "role": "semantic",
+        "displayName": "Rejected Red",
+        "canonical": "light-dark(#ab292b, #ffaba6)",
+        "cssVar": "--danger",
+        "schemes": {
+          "light": {
+            "hex": "#ab292b",
+            "oklch": "oklch(49.1% 0.166 25.1)"
+          },
+          "dark": {
+            "hex": "#ffaba6",
+            "oklch": "oklch(82.1% 0.100 23.2)"
+          }
+        },
+        "tonalRamp": [
+          "#360000",
+          "#5b0000",
+          "#800009",
+          "#a5292b",
+          "#ce514d",
+          "#f5746d",
+          "#ff9a91",
+          "#ffe1dc"
+        ],
+        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
+      },
+      "danger-soft": {
+        "role": "semantic",
+        "displayName": "Rejected Red Wash",
+        "canonical": "light-dark(#fceceb, #442c2d)",
+        "cssVar": "--danger-soft",
+        "schemes": {
+          "light": {
+            "hex": "#fceceb",
+            "oklch": "oklch(95.5% 0.017 21.8)"
+          },
+          "dark": {
+            "hex": "#442c2d",
+            "oklch": "oklch(32.2% 0.036 16.5)"
+          }
+        },
+        "tonalRamp": [
+          "#120808",
+          "#2c2120",
+          "#493c3c",
+          "#675a59",
+          "#8a7c7b",
+          "#ac9d9d",
+          "#d3c3c2",
+          "#f3eded"
+        ],
+        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
+      },
+      "checker-a": {
+        "role": "viewing",
+        "displayName": "Checker Dark Square",
+        "canonical": "#cbd0d4",
+        "cssVar": "--checker-a",
+        "oklch": "oklch(85.5% 0.008 241.7)",
+        "themeIndependent": true,
+        "tonalRamp": [
+          "#080c0e",
+          "#212528",
+          "#3c4044",
+          "#5a5e62",
+          "#7c8184",
+          "#9da2a6",
+          "#c3c8cc",
+          "#edeff0"
+        ],
+        "tonalRampSource": "synthesized in OKLCH"
+      },
+      "checker-b": {
+        "role": "viewing",
+        "displayName": "Checker Light Square",
+        "canonical": "#e8ebed",
+        "cssVar": "--checker-b",
+        "oklch": "oklch(93.8% 0.004 236.5)",
+        "themeIndependent": true,
+        "tonalRamp": [
+          "#0a0b0d",
+          "#222426",
+          "#3e4042",
+          "#5b5e60",
+          "#7e8182",
+          "#9fa2a4",
+          "#c5c8ca",
+          "#edeeef"
+        ],
+        "tonalRampSource": "synthesized in OKLCH"
+      },
+      "view-light": {
+        "role": "viewing",
+        "displayName": "Light Backdrop",
+        "canonical": "#f2f2f2",
+        "cssVar": "--view-light",
+        "oklch": "oklch(96.1% 0.000 89.9)",
+        "themeIndependent": true,
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#808080",
+          "#a1a1a1",
+          "#c7c7c7",
+          "#eeeeee"
+        ],
+        "tonalRampSource": "synthesized in OKLCH"
+      },
+      "view-dark": {
+        "role": "viewing",
+        "displayName": "Dark Backdrop",
+        "canonical": "#161616",
+        "cssVar": "--view-dark",
+        "oklch": "oklch(20.0% 0.000 89.9)",
+        "themeIndependent": true,
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#808080",
+          "#a1a1a1",
+          "#c7c7c7",
+          "#eeeeee"
+        ],
+        "tonalRampSource": "synthesized in OKLCH"
+      },
+      "guide-mark": {
+        "role": "viewing",
+        "displayName": "Guide Magenta",
+        "canonical": "#ff4081",
+        "cssVar": "--guide-mark",
+        "oklch": "oklch(67.2% 0.228 5.7)",
+        "themeIndependent": true,
+        "tonalRamp": [
+          "#340003",
+          "#580018",
+          "#7d0033",
+          "#a22750",
+          "#cb4f72",
+          "#f17193",
+          "#ff98b8",
+          "#ffe0e9"
+        ],
+        "tonalRampSource": "synthesized in OKLCH"
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Page headers on non-workspace routes; never inside the review room."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Review-room candidate identity, dialog titles, history sections."
+      },
+      "heading": {
+        "displayName": "Heading",
+        "purpose": "Pane and inspector section headings."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Running text and notes, capped at 64–80ch."
+      },
+      "body-compact": {
+        "displayName": "Body Compact",
+        "purpose": "Inputs, tables, inspector rail, facts, navigator."
+      },
+      "control": {
+        "displayName": "Control",
+        "purpose": "Buttons and navigation tabs; pressed/current states step to 650."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Form labels; status chips use 12px at 550."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Hashes, ids, paths, prompts, frame readouts; 13px/1.6 in textareas."
+      }
+    },
+    "shadows": [
+      {
+        "name": "popover",
+        "value": "0 12px 32px rgb(0 0 0 / 0.22)",
+        "purpose": "Project details panel under the topbar."
+      },
+      {
+        "name": "inline-popover",
+        "value": "0 4px 16px rgb(0 0 0 / 0.25)",
+        "purpose": "Processing-warnings list opened from the output bar."
+      },
+      {
+        "name": "drawer",
+        "value": "-8px 0 24px rgb(0 0 0 / 0.3)",
+        "purpose": "≤1100px inspector drawer; backdrop rgb(0 0 0 / 0.45)."
+      },
+      {
+        "name": "dialog-scrim",
+        "value": "rgb(0 0 0 / 0.5)",
+        "purpose": "Radix modal overlay; the dialog itself is bordered, not shadowed."
+      },
+      {
+        "name": "selection-ring",
+        "value": "0 0 0 2px var(--accent)",
+        "purpose": "Current candidate, note, lineage row, concept tile. Lists use inset 0 0 0 1px var(--accent). A ring, not elevation."
+      }
+    ],
+    "focus": [
+      {
+        "name": "focus-ring",
+        "value": "outline: 2px solid var(--focus); outline-offset: 3px",
+        "purpose": "Global :focus-visible; dense panes and summaries use offset 2px."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state-change",
+        "value": "150ms ease-out (background-color, border-color)",
+        "purpose": "Buttons only; state-only transitions."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "animation: none; transition: none; scroll-behavior: auto",
+        "purpose": "prefers-reduced-motion: reduce removes all motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "navigator-collapse",
+        "value": "max-width: 1279px",
+        "purpose": "Asset navigator collapses behind a toggle; task rail and workbench home stack."
+      },
+      {
+        "name": "inspector-drawer",
+        "value": "max-width: 1100px",
+        "purpose": "Review inspector becomes a native showModal drawer; split layouts stack; topbar tightens."
+      },
+      {
+        "name": "release-key",
+        "value": "max-width: 900px",
+        "purpose": "Release state key to two columns."
+      },
+      {
+        "name": "version-stack",
+        "value": "max-width: 700px",
+        "purpose": "Version records stack."
+      },
+      {
+        "name": "reflow",
+        "value": "max-width: 759px",
+        "purpose": "Topbar wraps, nav icons hide, main pads 20px 16px; release ledger reflows at 760px."
+      },
+      {
+        "name": "tight-nav",
+        "value": "max-width: 420px",
+        "purpose": "Navigation tabs tighten."
+      },
+      {
+        "name": "coarse-pointer",
+        "value": "pointer: coarse",
+        "purpose": "--control-h becomes 44px."
+      }
+    ],
+    "dimensions": [
+      {
+        "name": "control-h",
+        "value": "34px",
+        "purpose": "All buttons, inputs, chips, summaries; 44px on coarse pointers."
+      },
+      {
+        "name": "header-h",
+        "value": "94px",
+        "purpose": "52px topbar plus 42px navigation bar."
+      },
+      {
+        "name": "asset-navigator",
+        "value": "264px",
+        "purpose": "Sticky navigator column in the asset workspace."
+      },
+      {
+        "name": "task-rail",
+        "value": "300px",
+        "purpose": "Task rail beside the stage."
+      },
+      {
+        "name": "inspector",
+        "value": "clamp(340px, 28vw, 440px)",
+        "purpose": "Review inspector column above 1100px."
+      },
+      {
+        "name": "review-pane-h",
+        "value": "max(520px, calc(100dvh - var(--header-h) - 24px))",
+        "purpose": "Shared height of stage and inspector."
+      },
+      {
+        "name": "release-aside",
+        "value": "minmax(320px, 400px)",
+        "purpose": "Sticky releases inspector."
+      },
+      {
+        "name": "main-max",
+        "value": "1600px",
+        "purpose": "Ordinary route content width; workspace routes are full-bleed."
+      }
+    ],
+    "icons": {
+      "source": "src/components/Icon.tsx",
+      "viewBox": "0 0 24 24",
+      "strokeWidth": 1.6,
+      "linecap": "round",
+      "linejoin": "round",
+      "size": "18px; 14px inside status chips"
+    }
+  },
+  "components": [
+    {
+      "name": "Button",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "Default bordered action; quiet until pressed.",
+      "html": "<button class=\"ds-btn\">Reject</button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: var(--control-h); padding: 0 12px; border-radius: var(--radius); border: 1px solid var(--border-control); background: var(--surface); color: var(--text); font: 550 13px/1.5 var(--font); cursor: pointer; transition: background-color 150ms ease-out, border-color 150ms ease-out; } .ds-btn:hover { background: var(--surface-2); border-color: var(--text-muted); } .ds-btn:active { background: var(--surface-3); } .ds-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; } @media (prefers-reduced-motion: reduce) { .ds-btn { transition: none; } }"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "One per decision area: Approve, Start export, Open the review queue.",
+      "html": "<button class=\"ds-btn-primary\">Approve</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: var(--control-h); padding: 0 12px; border-radius: var(--radius); border: 1px solid var(--border-control); background: var(--surface); color: var(--text); font: 550 13px/1.5 var(--font); cursor: pointer; transition: background-color 150ms ease-out, border-color 150ms ease-out; background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 650; } .ds-btn-primary:hover { background: color-mix(in srgb, var(--accent) 88%, var(--text)); } .ds-btn-primary:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }"
+    },
+    {
+      "name": "Segmented Viewer Group",
+      "kind": "custom",
+      "refersTo": "segment",
+      "description": "Joined viewer options with a pressed segment; backdrop choice is independent of theme.",
+      "html": "<div class=\"ds-seg\" role=\"group\" aria-label=\"Background\"><button aria-pressed=\"true\">Checkerboard</button><button aria-pressed=\"false\">Light</button><button aria-pressed=\"false\">Dark</button></div>",
+      "css": ".ds-seg { display: inline-flex; } .ds-seg > button { min-height: 28px; padding: 0 8px; margin: 0 0 0 -1px; border: 1px solid var(--border-control); border-radius: 0; background: var(--surface); color: var(--text); font: 550 13px/1.5 var(--font); cursor: pointer; } .ds-seg > button:first-child { margin-left: 0; border-radius: var(--radius) 0 0 var(--radius); } .ds-seg > button:last-child { border-radius: 0 var(--radius) var(--radius) 0; } .ds-seg > button:hover { background: var(--surface-2); } .ds-seg > button[aria-pressed=\"true\"] { position: relative; background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 650; } .ds-seg > button:focus-visible { position: relative; z-index: 1; outline: 2px solid var(--focus); outline-offset: 3px; }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Labelled 34px field with accent caret and global focus outline.",
+      "html": "<label class=\"ds-field\"><span>Reason</span><input class=\"ds-input\" placeholder=\"One per line\"></label>",
+      "css": ".ds-field { display: grid; gap: 4px; font: 600 12px/1.5 var(--font); color: var(--text); } .ds-input { min-height: var(--control-h); padding: 6px 10px; border-radius: var(--radius); border: 1px solid var(--border-control); background: var(--surface); color: var(--text); font: 400 13px/1.5 var(--font); caret-color: var(--accent); } .ds-input::placeholder { color: var(--text-muted); opacity: 1; } .ds-input:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }"
+    },
+    {
+      "name": "Status Chips",
+      "kind": "chip",
+      "refersTo": "status-ok",
+      "description": "Icon plus words, never colour alone.",
+      "html": "<span class=\"ds-status ds-ok\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"m8 12 3 3 5-6\"/></svg><span>Approved</span></span> <span class=\"ds-status ds-warn\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M10.3 4a2 2 0 0 1 3.4 0L22 18a2 2 0 0 1-1.7 3H3.7A2 2 0 0 1 2 18L10.3 4Z\"/><path d=\"M12 9v4m0 4h.01\"/></svg><span>Not the current branch</span></span>",
+      "css": ".ds-status { display: inline-flex; align-items: center; gap: 5px; padding: 2px 6px; border-radius: 4px; font: 550 12px/1.5 var(--font); } .ds-status .ds-icon { width: 14px; height: 14px; } .ds-ok { color: var(--ok); background: var(--ok-soft); } .ds-warn { color: var(--warn); background: var(--warn-soft); }"
+    },
+    {
+      "name": "Primary Navigation",
+      "kind": "nav",
+      "refersTo": "nav-tab",
+      "description": "Four destinations; current tab gets accent text, wash, and a 2px bottom edge.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Primary\"><a href=\"#\">Workbench</a><a href=\"#\" aria-current=\"page\">Review</a><a href=\"#\">Releases</a><a href=\"#\">Activity</a></nav>",
+      "css": ".ds-nav { display: flex; gap: 4px; min-height: 42px; padding: 0 20px; background: var(--surface); border-bottom: 1px solid var(--border); } .ds-nav a { display: inline-flex; align-items: center; padding: 0 16px; color: var(--text-muted); text-decoration: none; font: 550 13px/1.5 var(--font); border-bottom: 2px solid transparent; } .ds-nav a:hover { color: var(--text); background: var(--surface-2); } .ds-nav a[aria-current=\"page\"] { color: var(--accent); border-bottom-color: var(--accent); background: var(--accent-soft); } .ds-nav a:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }"
+    },
+    {
+      "name": "Asset Navigator Task",
+      "kind": "nav",
+      "refersTo": "navigator-item-active",
+      "description": "Task rows in the 264px navigator; active row ringed with a 1px inset accent.",
+      "html": "<ul class=\"ds-tasks\"><li><a href=\"#\">idle-rest</a></li><li data-active><a href=\"#\">walk</a></li></ul>",
+      "css": ".ds-tasks { list-style: none; margin: 0; padding: 12px; width: 264px; background: var(--surface); font: 400 13px/1.5 var(--font); } .ds-tasks a { display: flex; align-items: center; min-height: 30px; padding: 0 8px; border-radius: 4px; color: var(--text); text-decoration: none; font-weight: 600; } .ds-tasks a:hover { background: var(--accent-soft); } .ds-tasks [data-active] > a { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); } .ds-tasks a:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }"
+    },
+    {
+      "name": "Stage Pane",
+      "kind": "custom",
+      "refersTo": "stage-pane",
+      "description": "Sunken stage well holding a checkerboard viewer; artwork colours untouched.",
+      "html": "<div class=\"ds-stage\"><div class=\"ds-checker\" role=\"img\" aria-label=\"Transparent viewing area\"></div></div>",
+      "css": ".ds-stage { padding: 6px; background: var(--stage); border: 1px solid var(--border); border-radius: var(--radius); } .ds-checker { height: 160px; border: 1px solid var(--border); border-radius: var(--radius); background-color: var(--checker-b); background-image: linear-gradient(45deg, var(--checker-a) 25%, transparent 25%, transparent 75%, var(--checker-a) 75%), linear-gradient(45deg, var(--checker-a) 25%, transparent 25%, transparent 75%, var(--checker-a) 75%); background-size: 24px 24px; background-position: 0 0, 12px 12px; }"
+    },
+    {
+      "name": "Next-Action Band",
+      "kind": "card",
+      "refersTo": "next-band",
+      "description": "Workbench band naming what remains, with one primary action.",
+      "html": "<div class=\"ds-next\"><p><strong>Next:</strong> 2 outputs are waiting for a decision.</p><button class=\"ds-next-btn\">Open the review queue</button></div>",
+      "css": ".ds-next { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 16px; border: 1px solid var(--accent); border-radius: var(--radius); background: var(--accent-soft); color: var(--text); font: 400 14px/1.5 var(--font); } .ds-next p { margin: 0; flex: 1; } .ds-next-btn { min-height: var(--control-h); padding: 0 12px; border: 1px solid var(--accent); border-radius: var(--radius); background: var(--accent); color: var(--accent-text); font: 650 13px/1.5 var(--font); cursor: pointer; } .ds-next-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Animation Checking Room",
+    "overview": "Brainforge is a production workbench for a solo indie 2D game developer judging generated art and animation on a macOS desktop. The system holds the artwork still while the surrounding tools change: a compact two-row header, a narrow asset navigator, a dominant viewing stage, and a contextual decision inspector. Moving between definition, production, review, and release changes the task around the asset; it never moves the asset off the stage.\n\nThe world is neutral graphite and slate with clear near-white text in dark, and an intentional cool-paper counterpart in light. Both are one token set written as CSS `light-dark()` pairs; the appearance control only flips `color-scheme`. A single restrained cool blue marks action, selection, and current location. Everything else is flat: fine 1px separators, squared-off soft 6px corners, panes rather than nested cards, and shadows only on transient layers. Density is compact and desktop-first (34px controls, 13px control text), and coarse pointers grow every control to 44px.\n\nThe artwork's own colour is never interpreted. Viewing backdrops (checkerboard, light, dark) are a per-viewer choice independent of the app theme, native-resolution views render pixelated, and measurement overlays use a single magenta that belongs to neither theme. Per-route composition lives in the surface brief (`.impeccable/surfaces/src-app-tsx.md`), not here.",
+    "keyCharacteristics": [
+      "Flat graphite/slate panes with 1px hairline separators; light counterpart from the same `light-dark()` tokens.",
+      "One restrained blue for action, selection, focus, and current location.",
+      "System sans in a compact ramp (12–24px); no display role; tabular numerals for frames, counts, and hashes.",
+      "Artwork-led pane grammar: navigator, stage, inspector, strip.",
+      "Theme-independent viewing backdrops and measurement guides.",
+      "Status always carries an icon and text, never colour alone."
+    ],
+    "rules": [
+      {
+        "name": "The Quiet Blue Rule",
+        "body": "`accent` means \"act here\" or \"this one is current\". It never decorates, never fills a pane, and never appears as a second accent hue.",
+        "section": "colors"
+      },
+      {
+        "name": "The Untouched Artwork Rule",
+        "body": "Viewing backdrops and guides never follow the app theme, and no filter, tint, or blend ever touches an output. Light, dark, or checker is the reviewer's choice per viewer.",
+        "section": "colors"
+      },
+      {
+        "name": "The Never-Colour-Alone Rule",
+        "body": "Every status is an icon plus words; tone colour only reinforces it.",
+        "section": "colors"
+      },
+      {
+        "name": "The No-Display Rule",
+        "body": "The system has no display role. The largest type is a 24px page headline, and in the review room identity tops out at 17px so the artwork owns the viewport.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Identity Rule",
+        "body": "Frame numbers, counts, version numbers, and ledger cells use `font-variant-numeric: tabular-nums` so live updates never shift columns.",
+        "section": "typography"
+      },
+      {
+        "name": "The Still Artwork Rule",
+        "body": "When space runs out, tools move (navigator collapses, inspector becomes a drawer); the stage never shrinks to make room for chrome.",
+        "section": "layout"
+      },
+      {
+        "name": "The One Scroller Rule",
+        "body": "The page never scrolls behind the workspace. `main` scrolls; panes scroll internally; sticky heads stay inside their scroller.",
+        "section": "layout"
+      },
+      {
+        "name": "The Flat-At-Rest Rule",
+        "body": "Resting surfaces carry no shadow. If it does not float and dismiss, it gets a hairline instead.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Separator-Not-Card Rule",
+        "body": "Sections are flat bands divided by a top hairline. A panel nested in a panel loses its border, radius, and fill and becomes a separator.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "Do take every colour from the `light-dark()` tokens; switching appearance changes only `color-scheme`.",
+      "Do keep the stage at full width when space runs out: collapse the navigator at ≤1279px and move the inspector into the native drawer at ≤1100px.",
+      "Do give every status an icon and words, using the five tone pairs.",
+      "Do separate sections with a 1px top hairline and keep them flat; reserve 6px-cornered bordered boxes for actual objects (candidates, notes, versions, stages).",
+      "Do keep controls at 34px (44px on coarse pointers) and build gaps from the 4px unit.",
+      "Do render outputs on the viewer-chosen backdrop (`checker-a`/`checker-b`, `view-light`, `view-dark`) and use `image-rendering: pixelated` for native-resolution views."
+    ],
+    "donts": [
+      "Don't tie viewing backdrops or guides to the app theme, or filter, tint, or blend an output.",
+      "Don't add a second accent hue or use `accent` as decoration; it marks action, selection, and current location only.",
+      "Don't put shadows on resting surfaces; only popovers, the drawer, and dialogs float.",
+      "Don't nest bordered cards; an inner panel becomes a separator.",
+      "Don't introduce radii other than 4px, 6px, and pills.",
+      "Don't let live updates move an action under the pointer; use tabular numerals and fixed-position controls."
+    ]
+  }
+}

@@ -51,4 +51,4 @@ If only the walk changed, the plan row for idle carries `reusesVersionId`: the e
 |`agent`|yes, recorded as agent|yes|
 |`agent_with_escalation`|yes; may leave the act to the human|yes|
 
-Promotion and activation policies are independent: an agent that may promote may still be refused activation. YAML `approval` is a request; a relaxation stays pending (`POLICY_PENDING`) until the human confirms via `policy.authorize` (human-only). Never try to self-authorize; tell the user to promote/activate in the Library or confirm the policy.
+Promotion and activation policies are independent: an agent that may promote may still be refused activation. YAML `approval` is a request; a relaxation stays pending (`POLICY_PENDING`) until the human confirms via `policy.authorize` (human-only). Never try to self-authorize; tell the user to promote/activate in Releases or confirm the policy.

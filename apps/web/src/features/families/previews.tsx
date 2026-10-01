@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Banner, Status } from "../../components/ui.tsx";
+import { Icon } from "../../components/Icon.tsx";
 
 export interface PreviewImage { src: string; width: number; height: number; alt: string }
 
@@ -134,8 +135,8 @@ export function BackgroundPreview({ image, seamlessAxes, parallax, relativeScale
           {[0, 1].map((i) => <img key={i} src={image.src} alt="" width={wrap === "x" ? dw : Math.min(dw, 240)} height={wrap === "x" ? dh : Math.round((Math.min(dw, 240) * image.height) / image.width)} className="seam-end" data-seam={i === 1 ? wrap : undefined} draggable={false} />)}
         </div>
       </div>
-      {wrap === "x" && seamlessAxes && !seamlessAxes.includes("x") ? <p className="field-warn"><span aria-hidden="true">▲ </span>This background does not declare x as seamless, so a visible join is expected.</p> : null}
-      {wrap === "y" && seamlessAxes && !seamlessAxes.includes("y") ? <p className="field-warn"><span aria-hidden="true">▲ </span>This background does not declare y as seamless, so a visible join is expected.</p> : null}
+      {wrap === "x" && seamlessAxes && !seamlessAxes.includes("x") ? <p className="field-warn"><Icon name="warn" />{" "}This background does not declare x as seamless, so a visible join is expected.</p> : null}
+      {wrap === "y" && seamlessAxes && !seamlessAxes.includes("y") ? <p className="field-warn"><Icon name="warn" />{" "}This background does not declare y as seamless, so a visible join is expected.</p> : null}
 
       <h3>Parallax hint</h3>
       {parallax === undefined ? <p className="secondary">No parallax is declared for this deliverable; the middle strip stays static.</p> : null}
@@ -289,9 +290,9 @@ export function StateCompare({ entries }: { entries: StateEntry[] }) {
             {shown?.src ? <img src={shown.src} alt={`${shown.label} state`} style={{ maxWidth: Math.min(maxW, 360), maxHeight: 360 }} /> : <span className="secondary">No output selected yet</span>}
           </div>
           <div className="row" style={{ marginTop: 8 }}>
-            <button type="button" onClick={() => move(-1)} aria-label="Previous state">←</button>
+            <button type="button" onClick={() => move(-1)}>Previous</button>
             <span role="status" aria-live="polite"><strong>{shown?.label}</strong> <span className="secondary">({Math.min(index, entries.length - 1) + 1} of {entries.length})</span></span>
-            <button type="button" onClick={() => move(1)} aria-label="Next state">→</button>
+            <button type="button" onClick={() => move(1)}>Next</button>
           </div>
         </div>
       )}

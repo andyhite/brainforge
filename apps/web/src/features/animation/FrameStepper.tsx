@@ -13,7 +13,7 @@ export function FrameStepper({ count, index, onIndex, onStep, covered, status }:
   return (
     <div className="frame-stepper">
       <div className="row">
-        <button type="button" onClick={() => onStep(-1)} aria-label="Previous frame">◀</button>
+        <button type="button" onClick={() => onStep(-1)} aria-label="Previous frame">Prev</button>
         <input
           type="range"
           min={0}
@@ -25,7 +25,7 @@ export function FrameStepper({ count, index, onIndex, onStep, covered, status }:
           aria-valuetext={`Frame ${index + 1} of ${count}`}
           style={{ flex: 1 }}
         />
-        <button type="button" onClick={() => onStep(1)} aria-label="Next frame">▶</button>
+        <button type="button" onClick={() => onStep(1)} aria-label="Next frame">Next</button>
       </div>
       {covered.some(Boolean) ? (
         <div className="frame-notes-track" aria-hidden="true" title="Frames with notes">

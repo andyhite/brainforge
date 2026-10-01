@@ -41,11 +41,11 @@ function Blocker({ blocker, onConfirmEmpty, onInspect }: { blocker: PlanBlocker;
 export function ExportPlanView({ plan, onConfirmEmpty, onInspect }: { plan: ExportPlan; onConfirmEmpty: () => void; onInspect: (exportId: string) => void }) {
   return (
     <div>
-      <p>
+      <p className="rel-note" style={{ color: "var(--text)" }}>
         Preset <strong>{plan.preset}</strong> · {plan.fileCount} {plan.fileCount === 1 ? "file" : "files"} will be owned by this export · stable path <code>{plan.publicRoot}</code>
       </p>
       <div className="table-wrap">
-        <table>
+        <table className="rel-pick">
           <caption className="sr-only">Versions selected for this export</caption>
           <thead>
             <tr>
@@ -97,7 +97,7 @@ export function ExportPlanView({ plan, onConfirmEmpty, onInspect }: { plan: Expo
         </ul>
       ) : null}
       {plan.blockers.length > 0 ? (
-        <ul className="plain-list" aria-label="Export blockers" style={{ marginTop: 16 }}>
+        <ul className="rel-blockers" aria-label="Export blockers">
           {plan.blockers.map((blocker) => <li key={`${blocker.code}-${blocker.message}`}><Blocker blocker={blocker} onConfirmEmpty={onConfirmEmpty} onInspect={onInspect} /></li>)}
         </ul>
       ) : null}

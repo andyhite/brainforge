@@ -1,3 +1,4 @@
+import "./activity.css";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { Job, JobState } from "@brainforge/contracts";
@@ -35,38 +36,37 @@ export function JobRow({ job }: { job: Job }) {
   const canNewAttempt = job.state === "unresolved" || job.state === "failed";
 
   return (
-    <li className="job-row">
-      <div className="row" style={{ justifyContent: "space-between" }}>
-        <div className="row">
-          <Status tone={JOB_TONE[job.state]}>{job.state}</Status>
-          <strong>{job.label}</strong>
-          <span className="secondary">attempt {job.attempt}</span>
-          {job.seed !== undefined ? <span className="secondary mono">seed {job.seed}</span> : null}
-          {job.state === "queued" && job.queuePosition !== undefined ? <span className="secondary">queue position {job.queuePosition}</span> : null}
-        </div>
-        <Link to={`/assets/${encodeURIComponent(job.assetId)}`}>{job.assetId}</Link>
+    <li className="job-row" data-state={job.state}>
+      <div className="job-head">
+        <Status tone={JOB_TONE[job.state]}>{job.state}</Status>
+        <strong className="job-label">{job.label}</strong>
+        <Link to={`/assets/${encodeURIComponent(job.assetId)}`} className="job-asset">{job.assetId}</Link>
       </div>
-      <div className="secondary">
-        Created {formatTime(job.createdAt)} · updated {formatTime(job.updatedAt)}
-        {job.promptId ? <> · prompt <span className="mono">{job.promptId}</span></> : null}
-      </div>
+      <dl className="job-facts">
+        <dt>Attempt</dt><dd>{job.attempt}</dd>
+        {job.seed !== undefined ? <><dt>Seed</dt><dd className="mono">{job.seed}</dd></> : null}
+        {job.state === "queued" && job.queuePosition !== undefined ? <><dt>Queue position</dt><dd>{job.queuePosition}</dd></> : null}
+        <dt>Created</dt><dd>{formatTime(job.createdAt)}</dd>
+        <dt>Updated</dt><dd>{formatTime(job.updatedAt)}</dd>
+        {job.promptId ? <><dt>Prompt</dt><dd className="mono">{job.promptId}</dd></> : null}
+      </dl>
       {job.state === "running" || job.state === "collecting" || job.state === "submitting" ? (
-        <progress aria-label={`${job.label} is ${job.state}`} style={{ width: "100%", marginTop: 4 }} />
+        <progress className="job-progress" aria-label={`${job.label} is ${job.state}`} />
       ) : null}
       {job.candidateId ? <div><Link to={`/assets/${encodeURIComponent(job.assetId)}/candidates/${encodeURIComponent(job.candidateId)}`}>Open candidate</Link></div> : null}
       {job.error ? (
-        <div role="alert" style={{ marginTop: 4 }}>
+        <div role="alert" className="job-problem bad">
           <strong>Failed at {job.error.stage}:</strong> {job.error.message}
-          {job.error.recovery.length > 0 ? <ul style={{ margin: "4px 0 0", paddingLeft: 20 }}>{job.error.recovery.map((line) => <li key={line}>{line}</li>)}</ul> : null}
+          {job.error.recovery.length > 0 ? <ul>{job.error.recovery.map((line) => <li key={line}>{line}</li>)}</ul> : null}
         </div>
       ) : null}
       {job.unresolved ? (
-        <div role="alert" style={{ marginTop: 4 }}>
+        <div role="alert" className="job-problem warn">
           <strong>Unresolved:</strong> {UNRESOLVED_TEXT[job.unresolved.reason]}
           {job.unresolved.matches.length > 0 ? <div className="secondary">Matches: <span className="mono">{job.unresolved.matches.join(", ")}</span></div> : null}
         </div>
       ) : null}
-      <div className="row" style={{ marginTop: 8 }}>
+      <div className="row job-actions">
         {job.state === "unresolved" ? <button type="button" onClick={() => void reconcile.mutateAsync({ input: { jobId: job.jobId } })} disabled={busy}>{reconcile.isPending ? "Checking…" : "Reconcile"}</button> : null}
         {collectable ? <button type="button" onClick={() => void retry.mutateAsync({ input: { jobId: job.jobId, mode: "collect" } })} disabled={busy}>{retry.isPending ? "Retrying…" : "Retry collect"}</button> : null}
         {canNewAttempt ? <button type="button" className="danger" onClick={() => setConfirmNew(true)} disabled={busy}>New attempt…</button> : null}

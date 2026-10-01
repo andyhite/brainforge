@@ -43,7 +43,7 @@ Open <http://127.0.0.1:3210>. The server only accepts requests whose `Host` is l
 
 ### Point it at ComfyUI
 
-Set the URL once in the UI (Settings → Connection). It is a machine setting, never stored in the project. For scripts and the feasibility CLI you can use `BF_COMFY_URL=http://127.0.0.1:8188`.
+Set the URL once in the UI (Settings → ComfyUI connection). It is a machine setting, never stored in the project. For scripts and the feasibility CLI you can use `BF_COMFY_URL=http://127.0.0.1:8188`.
 
 Loopback does not mean free or local compute. The ComfyUI server may be a remote GPU behind a tunnel. Workflows list their compute location and cost description, and generation only runs under a human-granted budget.
 
@@ -51,9 +51,21 @@ Loopback does not mean free or local compute. The ComfyUI server may be a remote
 
 In your game repo (the **game root**):
 
-1. In the UI, open Settings and enter the game directory, or let an agent call `project.init` (previews first, `confirm: true` to write).
+1. In the UI, choose **Open another directory…** in the project switcher, then open or preview creation in your game directory. An agent can also call `project.init` (previews first, `confirm: true` to write).
 2. Brainforge creates `brainforge/` (and `brainforge/.gdignore`). It never touches the rest of your game.
 3. Author `project.yaml`, a style, and your first asset (see below).
+
+### The web workbench
+
+|Destination|Use it for|
+|---|---|
+|**Workbench**|Project readiness, searchable assets, specifications, references, concepts, branches, and deliverable production.|
+|**Review**|The decision queue and artwork workspace: exact output selection, comparison, annotations, playback, and review.|
+|**Releases**|Production versions and export. Promotion, activation, and export remain separate explicit actions.|
+|**Activity**|Jobs, recovery actions, decision history, and preference review.|
+|**Settings**|Project lifecycle, ComfyUI connection, direction and policy, and agent setup.|
+
+The artwork workspace keeps asset/task navigation beside the image or animation and its decision inspector. Source and processed outputs share one selection with the decision controls; notes remain tied to exact output bytes. On narrow windows, **Show assets and steps** reveals navigation and **Decision & notes** opens a focus-managed inspector drawer. Application appearance follows the system or an explicit light/dark choice; checkerboard/light/dark artwork backgrounds are independent.
 
 ## Using it with an agent (CLI)
 

@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { Candidate, StepState } from "@brainforge/contracts";
 import { useMutationOperation, useOperation } from "../../api/hooks.ts";
-import { Banner, EmptyState, ErrorBanner, NetworkProblem, NextActions, Status, type Tone } from "../../components/ui.tsx";
+import { Banner, ErrorBanner, NetworkProblem, NextActions, Status, type Tone } from "../../components/ui.tsx";
+import { Icon } from "../../components/Icon.tsx";
 import { useProject } from "../../lib/use-project.ts";
 import { ActiveJobsStrip } from "../jobs/JobsPage.tsx";
 import { BudgetPanel } from "./BudgetPanel.tsx";
@@ -18,14 +19,14 @@ const STEP_TEXT: Record<StepState["state"], string> = {
 };
 const MAX_COMPARE = 4;
 
-function Thumb({ candidate, role, backdrop, projectId, selected, canSelect, onToggleSelect, onFavorite, favoriteBusy, assetId }: {
+function Thumb({ candidate, role, backdrop, projectId, selected, canSelect, onToggleSelect, onFavorite, favoriteBusy, assetId, context }: {
   candidate: Candidate; role: OutputRole; backdrop: Backdrop; projectId: string; selected: boolean; canSelect: boolean;
-  onToggleSelect: () => void; onFavorite: () => void; favoriteBusy: boolean; assetId: string;
+  onToggleSelect: () => void; onFavorite: () => void; favoriteBusy: boolean; assetId: string; context: string;
 }) {
   const output = pickOutput(candidate, role);
   return (
     <li className={`candidate-card${selected ? " selected" : ""}`}>
-      <Link to={`/assets/${encodeURIComponent(assetId)}/candidates/${encodeURIComponent(candidate.candidateId)}`} className="candidate-link" aria-label={`Open ${candidate.label}`}>
+      <Link to={`/assets/${encodeURIComponent(assetId)}/candidates/${encodeURIComponent(candidate.candidateId)}?${context}`} className="candidate-link" aria-label={`Open ${candidate.label}`}>
         <div className={`stage-bg ${backdrop} candidate-thumb`} style={output ? { aspectRatio: `${output.width} / ${output.height}` } : { aspectRatio: "1 / 1" }}>
           {output ? (
             <img src={outputUrl(projectId, output.fileId, 384)} width={output.width} height={output.height} loading="lazy" alt={`${candidate.label}, ${output.role} output`} />
@@ -35,7 +36,7 @@ function Thumb({ candidate, role, backdrop, projectId, selected, canSelect, onTo
       <div className="row" style={{ justifyContent: "space-between", gap: 8, marginTop: 8 }}>
         <strong>{candidate.label}</strong>
         <button type="button" aria-pressed={candidate.favorite} disabled={favoriteBusy} onClick={onFavorite} aria-label={`${candidate.favorite ? "Remove favorite from" : "Favorite"} ${candidate.label}`}>
-          {candidate.favorite ? "★ Favorite" : "☆ Favorite"}
+          <Icon name="star" className={candidate.favorite ? "is-on" : ""} /> {candidate.favorite ? "Favorite" : "Add favorite"}
         </button>
       </div>
       <div className="secondary">
@@ -52,7 +53,8 @@ function Thumb({ candidate, role, backdrop, projectId, selected, canSelect, onTo
   );
 }
 
-export function ConceptStep({ assetId }: { assetId: string }) {
+export function ConceptStep({ assetId, branchId }: { assetId: string; branchId?: string | undefined }) {
+  const context = new URLSearchParams({ step: "concept", ...(branchId ? { branch: branchId } : {}) }).toString();
   const project = useProject();
   const projectId = project.data?.project.projectId;
   const step = useOperation("step.inspect", { assetId, stepId: "concept" });
@@ -64,98 +66,101 @@ export function ConceptStep({ assetId }: { assetId: string }) {
   const [comparing, setComparing] = useState(false);
   const [dialog, setDialog] = useState<GenerateRequest | undefined>(undefined);
   const [grantOpen, setGrantOpen] = useState(false);
+  const [budgetOpen, setBudgetOpen] = useState(false);
 
   const candidates = list.data?.ok ? list.data.data.candidates : [];
   const chosen = selected.flatMap((id) => candidates.filter((candidate) => candidate.candidateId === id));
   const stepState = step.data?.ok ? step.data.data.step : undefined;
   const generateDisabled = stepState?.state === "blocked";
 
-  const openGrant = () => {
-    setGrantOpen(true);
-    requestAnimationFrame(() => document.getElementById("budgets")?.scrollIntoView({ block: "start" }));
-  };
+  const openGrant = () => { setBudgetOpen(true); setGrantOpen(true); };
 
   return (
-    <div className="stack">
-      <section className="panel" aria-labelledby="concept-title">
-        <div className="row" style={{ justifyContent: "space-between" }}>
-          <h2 id="concept-title" style={{ margin: 0 }}>Concept exploration</h2>
-          <div className="row">
-            {stepState ? <Status tone={STEP_TONE[stepState.state]}>{STEP_TEXT[stepState.state]}</Status> : null}
-            <button type="button" className="primary" disabled={generateDisabled || !stepState} onClick={() => setDialog({ mode: "fresh" })}>Generate concepts</button>
-          </div>
-        </div>
-        {step.error ? <NetworkProblem error={step.error} /> : null}
-        {!step.data && !step.error ? <p className="secondary" role="status">Loading step state…</p> : null}
-        {step.data && !step.data.ok ? <ErrorBanner error={step.data.error} /> : null}
-        {stepState ? (
-          <div style={{ marginTop: 12 }}>
-            <p className="secondary" style={{ marginBottom: 8 }}>
-              {stepState.counts.candidates} candidates · {stepState.counts.favorites} favorites · {stepState.counts.activeJobs} running · {stepState.counts.unresolvedJobs} unresolved · {stepState.counts.openRevisions} open revisions
-            </p>
-            {stepState.needsReassessment ? (
-              <Banner tone="warn" title="Needs reassessment">
-                <ul style={{ margin: 0, paddingLeft: 20 }}>{stepState.reassessmentReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
-              </Banner>
-            ) : null}
-            {stepState.blockers.filter((blocker) => blocker.code !== "REVISION_OPEN").map((blocker) => (
-              <Banner key={blocker.code} tone="warn" title={blocker.message}>
-                {blocker.recoveryActions.length > 0 ? <ul style={{ margin: 0, paddingLeft: 20 }}>{blocker.recoveryActions.map((action) => <li key={action.label}>{action.url ? <a href={action.url}>{action.label}</a> : action.label}</li>)}</ul> : null}
-              </Banner>
-            ))}
-            {stepState.counts.openRevisions > 0 || stepState.blockers.some((blocker) => blocker.code === "REVISION_OPEN") ? <OpenNotes assetId={assetId} stepId="concept" /> : null}
-            <NextActions actions={stepState.nextActions} />
-          </div>
-        ) : null}
-      </section>
+    <div className="task">
+      <div className="task-bar">
+        <h2 id="concept-title">Concept exploration</h2>
+        {stepState ? <Status tone={STEP_TONE[stepState.state]}>{STEP_TEXT[stepState.state]}</Status> : null}
+        <span className="task-spacer" />
+        <button type="button" className="primary" disabled={generateDisabled || !stepState} onClick={() => setDialog({ mode: "fresh" })}>Generate concepts</button>
+      </div>
 
-      <ActiveJobsStrip assetId={assetId} />
-
-      <section className="panel" aria-labelledby="candidates-title">
-        <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
-          <h2 id="candidates-title" style={{ margin: 0 }}>Candidates</h2>
-          <div className="row">
+      <div className="task-grid">
+        <section className="task-stage" aria-labelledby="candidates-title">
+          <div className="task-toolbar">
+            <h3 id="candidates-title" style={{ margin: 0 }}>Candidates</h3>
             <RolePicker value={role} onChange={setRole} />
             <BackdropPicker value={backdrop} onChange={setBackdrop} />
+            <span className="task-spacer" />
+            <button type="button" disabled={chosen.length < 2} onClick={() => setComparing(true)}>Compare selected ({chosen.length})</button>
+            <button type="button" disabled={chosen.length !== 1 || generateDisabled} onClick={() => setDialog({ mode: "variation", ...(chosen[0] ? { parentCandidateId: chosen[0].candidateId } : {}) })}>Generate variations of selected</button>
+            {chosen.length > 0 ? <button type="button" onClick={() => { setSelected([]); setComparing(false); }}>Clear selection</button> : null}
           </div>
-        </div>
-        {role === "matted" ? <p className="secondary">Showing the background-removed output; transparent areas show the chosen backdrop. Switch to Untouched for the raw decode.</p> : null}
-        <div className="row" style={{ marginBottom: 12 }}>
-          <button type="button" disabled={chosen.length < 2} onClick={() => setComparing(true)}>Compare selected ({chosen.length})</button>
-          {chosen.length > 0 ? <button type="button" onClick={() => { setSelected([]); setComparing(false); }}>Clear selection</button> : null}
-          <button type="button" disabled={chosen.length !== 1 || generateDisabled} onClick={() => setDialog({ mode: "variation", ...(chosen[0] ? { parentCandidateId: chosen[0].candidateId } : {}) })}>Generate variations of selected</button>
-          {chosen.length < 2 ? <span className="secondary">Select 2–{MAX_COMPARE} candidates to compare, or one to make variations.</span> : null}
-        </div>
-        {list.error ? <NetworkProblem error={list.error} /> : null}
-        {!list.data && !list.error ? <p className="secondary" role="status">Loading candidates…</p> : null}
-        {list.data && !list.data.ok ? <ErrorBanner error={list.data.error} /> : null}
-        {list.data?.ok && candidates.length === 0 ? (
-          <EmptyState title="No candidates yet">
-            <p>Generate a batch to explore concepts. You will review the exact plan and pick a budget before anything is submitted.</p>
-          </EmptyState>
-        ) : null}
-        {projectId && candidates.length > 0 ? (
-          <ul className="candidate-grid" aria-label="Concept candidates">
-            {candidates.map((candidate) => (
-              <Thumb
-                key={candidate.candidateId} candidate={candidate} role={role} backdrop={backdrop} projectId={projectId} assetId={assetId}
-                selected={selected.includes(candidate.candidateId)} canSelect={selected.length < MAX_COMPARE}
-                onToggleSelect={() => setSelected((previous) => (previous.includes(candidate.candidateId) ? previous.filter((id) => id !== candidate.candidateId) : [...previous, candidate.candidateId]))}
-                onFavorite={() => void favorite.mutateAsync({ input: { candidateId: candidate.candidateId, favorite: !candidate.favorite } })}
-                favoriteBusy={favorite.isPending}
-              />
-            ))}
-          </ul>
-        ) : null}
-        {favorite.data && !favorite.data.ok ? <ErrorBanner error={favorite.data.error} /> : null}
-        <p className="secondary" style={{ marginTop: 12 }}>Favorites are a shortlist only; they never approve a candidate.</p>
-      </section>
+          <p className="secondary" style={{ margin: 0 }}>
+            {chosen.length < 2 ? `Select 2–${MAX_COMPARE} candidates to compare, or one to make variations. ` : ""}
+            {role === "matted" ? "Showing the background-removed output; switch to Untouched for the raw decode. " : ""}
+            Favorites are a shortlist only; they never approve a candidate.
+          </p>
+          {list.error ? <NetworkProblem error={list.error} /> : null}
+          {!list.data && !list.error ? <p className="secondary" role="status">Loading candidates…</p> : null}
+          {list.data && !list.data.ok ? <ErrorBanner error={list.data.error} /> : null}
+          {list.data?.ok && candidates.length === 0 ? (
+            <div className="empty-task">
+              <strong>No concepts yet</strong>
+              <p>Generate a batch to explore concepts. You will review the exact plan and pick a budget before anything is submitted.</p>
+              <button type="button" className="primary" disabled={generateDisabled || !stepState} onClick={() => setDialog({ mode: "fresh" })}>Generate concepts</button>
+              {generateDisabled ? <span className="secondary">Blocked: see the reason beside this task.</span> : null}
+            </div>
+          ) : null}
+          {projectId && candidates.length > 0 ? (
+            <ul className="candidate-grid" aria-label="Concept candidates">
+              {candidates.map((candidate) => (
+                <Thumb
+                  key={candidate.candidateId} candidate={candidate} role={role} backdrop={backdrop} projectId={projectId} assetId={assetId} context={context}
+                  selected={selected.includes(candidate.candidateId)} canSelect={selected.length < MAX_COMPARE}
+                  onToggleSelect={() => setSelected((previous) => (previous.includes(candidate.candidateId) ? previous.filter((id) => id !== candidate.candidateId) : [...previous, candidate.candidateId]))}
+                  onFavorite={() => void favorite.mutateAsync({ input: { candidateId: candidate.candidateId, favorite: !candidate.favorite } })}
+                  favoriteBusy={favorite.isPending}
+                />
+              ))}
+            </ul>
+          ) : null}
+          {favorite.data && !favorite.data.ok ? <ErrorBanner error={favorite.data.error} /> : null}
+          {comparing && chosen.length >= 2 && projectId ? (
+            <CompareView candidates={chosen} role={role} backdrop={backdrop} onBackdrop={setBackdrop} projectId={projectId} onClose={() => setComparing(false)} />
+          ) : null}
+        </section>
 
-      {comparing && chosen.length >= 2 && projectId ? (
-        <CompareView candidates={chosen} role={role} backdrop={backdrop} onBackdrop={setBackdrop} projectId={projectId} onClose={() => setComparing(false)} />
-      ) : null}
+        <aside className="task-rail" aria-label="Concept status and blockers">
+          {step.error ? <NetworkProblem error={step.error} /> : null}
+          {!step.data && !step.error ? <p className="secondary" role="status">Loading step state…</p> : null}
+          {step.data && !step.data.ok ? <ErrorBanner error={step.data.error} /> : null}
+          {stepState ? (
+            <>
+              <p className="secondary">
+                {stepState.counts.candidates} candidates · {stepState.counts.favorites} favorites · {stepState.counts.activeJobs} running · {stepState.counts.unresolvedJobs} unresolved · {stepState.counts.openRevisions} open revisions
+              </p>
+              {stepState.needsReassessment ? (
+                <Banner tone="warn" title="Needs reassessment">
+                  <ul style={{ margin: 0, paddingLeft: 20 }}>{stepState.reassessmentReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
+                </Banner>
+              ) : null}
+              {stepState.blockers.filter((blocker) => blocker.code !== "REVISION_OPEN").map((blocker) => (
+                <Banner key={blocker.code} tone="warn" title={blocker.message}>
+                  {blocker.recoveryActions.length > 0 ? <ul style={{ margin: 0, paddingLeft: 20 }}>{blocker.recoveryActions.map((action) => <li key={action.label}>{action.url ? <a href={action.url}>{action.label}</a> : action.label}</li>)}</ul> : null}
+                </Banner>
+              ))}
+              {stepState.counts.openRevisions > 0 || stepState.blockers.some((blocker) => blocker.code === "REVISION_OPEN") ? <OpenNotes assetId={assetId} stepId="concept" /> : null}
+              <NextActions actions={stepState.nextActions} />
+            </>
+          ) : null}
+          <ActiveJobsStrip assetId={assetId} />
+        </aside>
+      </div>
 
-      <BudgetPanel assetId={assetId} grantOpen={grantOpen} onGrantOpen={setGrantOpen} />
+      <details className="task-budget" open={budgetOpen} onToggle={(event) => setBudgetOpen(event.currentTarget.open)}>
+        <summary>Compute and generation budget</summary>
+        <BudgetPanel assetId={assetId} grantOpen={grantOpen} onGrantOpen={setGrantOpen} />
+      </details>
 
       {dialog ? <GenerateDialog assetId={assetId} candidates={candidates} initial={dialog} onClose={() => setDialog(undefined)} onGrantBudget={openGrant} /> : null}
     </div>

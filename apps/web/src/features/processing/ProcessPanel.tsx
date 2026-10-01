@@ -259,7 +259,7 @@ export function ProcessPanel({ candidate, sources, projectId }: { candidate: Can
           {cannotRun ? <p className="secondary" role="status">Cannot run: {cannotRun}</p> : null}
           <div className="row end">
             <button type="button" className="primary" disabled={cannotRun !== undefined || startOp.isPending} onClick={() => void run()}>
-              {startOp.isPending ? "Processing…" : "Run processing → new unapproved result"}
+              {startOp.isPending ? "Processing…" : "Run processing (new unapproved result)"}
             </button>
           </div>
         </div>

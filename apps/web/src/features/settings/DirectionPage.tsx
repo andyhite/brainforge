@@ -1,10 +1,11 @@
+import "./settings.css";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { parseDocument, type Document } from "yaml";
 import { ConflictDialog, ExternalChangeBanner, SaveBar, SpecEditor } from "../../components/SpecEditor.tsx";
 import { EffectiveSettings } from "../../components/EffectiveSettings.tsx";
 import { PolicyPanel } from "../../components/PolicyPanel.tsx";
-import { Banner, ErrorBanner, PageHeader } from "../../components/ui.tsx";
+import { Banner, ErrorBanner } from "../../components/ui.tsx";
 import { readField, readString, readStringList, splitList, writeField, type FieldPath } from "../../lib/yaml-fields.ts";
 import { specRoute } from "../../lib/use-project.ts";
 import { useSpecFile, type SpecFile } from "../../lib/spec-file.ts";
@@ -111,10 +112,10 @@ function ListField({ id, label, path, draft, file, doc, hint }: FieldProps) {
 
 function Section({ title, hint, children }: { title: string; hint: string; children: ReactNode }) {
   return (
-    <fieldset className="panel">
+    <fieldset className="settings-section">
       <legend><strong>{title}</strong></legend>
       <p className="secondary">{hint}</p>
-      <div className="grid-2">{children}</div>
+      <div className="settings-fields">{children}</div>
     </fieldset>
   );
 }
@@ -128,7 +129,7 @@ function FieldsForm({ file }: { file: SpecFile }) {
   const common = { draft, file, doc };
   const autoRegenerate = readField(doc, ["automation", "autoRegenerate"]) === true;
   return (
-    <form className="stack" onSubmit={(event) => event.preventDefault()}>
+    <form className="settings-stack" onSubmit={(event) => event.preventDefault()}>
       <Section title="Direction" hint="What this project looks like. Styles listed here are applied to every asset.">
         <TextField {...common} id="dir-name" label="Project name" path={["name"]} />
         <ListField {...common} id="dir-styles" label="Style ids" path={["styleIds"]} hint="Comma or one per line." />
@@ -182,8 +183,9 @@ export function DirectionPage() {
   };
 
   return (
-    <div className="stack">
-      <PageHeader title="Direction">
+    <div className="settings-stack">
+      <div className="settings-head">
+        <h2>Direction, defaults &amp; policy</h2>
         {file === PROJECT_FILE ? (
           <div className="row" role="group" aria-label="Editor view">
             <button type="button" aria-pressed={view === "fields"} onClick={() => setView("fields")}>Fields</button>
@@ -192,7 +194,7 @@ export function DirectionPage() {
         ) : (
           <span className="secondary mono">{file}</span>
         )}
-      </PageHeader>
+      </div>
       <ConflictDialog file={spec} />
       {view === "fields" ? (
         <>

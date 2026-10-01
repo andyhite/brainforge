@@ -14,16 +14,17 @@ const CONSEQUENCE = "Confirmed preferences become requirements and make earlier 
 
 export function PreferencesPanel({ examples, styleIds }: { examples: HistoryExample[]; styleIds: string[] }) {
   const query = useOperation("preference.list", {});
-  const preferences = query.data?.ok ? query.data.data.preferences : [];
+  const preferences = query.data?.ok ? [...query.data.data.preferences].sort((a, b) => Number(b.status === "proposed") - Number(a.status === "proposed")) : [];
+  const waiting = preferences.filter((p) => p.status === "proposed").length;
   const byDecision = new Map(examples.map((e) => [e.decisionId, e]));
   return (
-    <section aria-labelledby="h-prefs" className="stack">
-      <h2 id="h-prefs">Preferences</h2>
-      <p className="secondary">Short statements of visual direction, each backed by decisions. A preference counts only after a human confirms it.</p>
+    <section aria-labelledby="h-prefs" className={`history-section${waiting > 0 ? " history-attention" : ""}`}>
+      <h2 id="h-prefs">Preferences{waiting > 0 ? ` — ${waiting} waiting for you` : ""}</h2>
+      <p className="secondary history-note">Short statements of visual direction, each backed by decisions. A preference counts only after a human confirms it.</p>
       {query.error ? <NetworkProblem error={query.error} /> : !query.data ? <p className="secondary" role="status">Loading preferences…</p> : !query.data.ok ? <ErrorBanner error={query.data.error} /> : preferences.length === 0 ? (
         <p className="secondary">No preferences proposed yet. Propose one below, or an agent can propose from the examples it retrieved.</p>
       ) : (
-        <ul className="plain stack" aria-label="Preferences">
+        <ul className="plain history-records" aria-label="Preferences">
           {preferences.map((p) => <PreferenceCard key={p.preferenceId} preference={p} byDecision={byDecision} />)}
         </ul>
       )}
@@ -53,8 +54,8 @@ function PreferenceCard({ preference, byDecision }: { preference: Preference; by
   };
 
   return (
-    <li className="panel stack">
-      <div className="row" style={{ justifyContent: "space-between" }}>
+    <li className="pref-item" data-status={preference.status}>
+      <div className="pref-head">
         <strong>{preference.text}</strong>
         <Status tone={s.tone}>{s.label}</Status>
       </div>
@@ -74,7 +75,7 @@ function PreferenceCard({ preference, byDecision }: { preference: Preference; by
         })}
       </div>
       {preference.status === "proposed" ? (
-        <div className="stack">
+        <div className="pref-form">
           <div className="field">
             <label htmlFor={`pref-text-${id}`}>Wording to confirm (editing it marks the preference as corrected)</label>
             <textarea id={`pref-text-${id}`} rows={2} value={text} maxLength={1000} onChange={(e) => setText(e.target.value)} />
@@ -111,7 +112,7 @@ function ProposeForm({ examples, styleIds }: { examples: HistoryExample[]; style
 
   return (
     <form
-      className="panel stack"
+      className="pref-form"
       aria-label="Propose a preference"
       onSubmit={async (e) => {
         e.preventDefault();
@@ -148,7 +149,7 @@ function ProposeForm({ examples, styleIds }: { examples: HistoryExample[]; style
         ) : null}
       </div>
       <fieldset>
-        <legend>Evidence (from the examples listed above)</legend>
+        <legend>Evidence (decisions listed under Decision examples)</legend>
         {examples.length === 0 ? <p className="secondary">No examples loaded for this asset and step, so there is nothing to cite yet.</p> : (
           <ul className="plain">
             {examples.map((e) => (
@@ -166,7 +167,7 @@ function ProposeForm({ examples, styleIds }: { examples: HistoryExample[]; style
       <div className="row">
         <button type="submit" className="primary" disabled={propose.isPending || missing !== undefined}>Propose</button>
         {missing ? <span className="secondary" role="status">Disabled: {missing}</span> : null}
-        {done ? <span role="status"><span aria-hidden="true">✓ </span>Proposed. It is listed above and waits for confirmation.</span> : null}
+        {done ? <span role="status"><Status tone="ok">Proposed. It is listed above and waits for confirmation.</Status></span> : null}
       </div>
     </form>
   );

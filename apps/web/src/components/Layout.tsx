@@ -1,21 +1,29 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { ProjectEventsProvider, useLiveState, type LiveState } from "../api/events.tsx";
 import { useMutationOperation, useOperation } from "../api/hooks.ts";
 import { useProjectRoot } from "../lib/project-context.tsx";
 import { useProject } from "../lib/use-project.ts";
-import { Banner, Status, type Tone } from "./ui.tsx";
+import { Icon, type IconName } from "./Icon.tsx";
+import { Status, type Tone } from "./ui.tsx";
 
-const NAV = [
-  { to: "/", label: "Overview", end: true },
-  { to: "/assets", label: "Assets", end: false },
-  { to: "/jobs", label: "Jobs", end: false },
-  { to: "/review", label: "Review", end: false },
-  { to: "/history", label: "History", end: false },
-  { to: "/library", label: "Library", end: false },
-  { to: "/export", label: "Export", end: false },
-  { to: "/settings", label: "Settings", end: false },
+const NAV: { to: string; label: string; icon: IconName }[] = [
+  { to: "/", label: "Workbench", icon: "workbench" },
+  { to: "/review", label: "Review", icon: "review" },
+  { to: "/library", label: "Releases", icon: "releases" },
+  { to: "/jobs", label: "Activity", icon: "activity" },
 ];
+
+type Theme = "system" | "light" | "dark";
+
+function savedTheme(): Theme {
+  try {
+    const value = localStorage.getItem("brainforge.appearance");
+    return value === "light" || value === "dark" ? value : "system";
+  } catch {
+    return "system";
+  }
+}
 
 const LIVE_LABEL: Record<LiveState, { tone: Tone; text: string } | undefined> = {
   idle: undefined,
@@ -42,11 +50,10 @@ function ProjectSwitcher() {
   const names = new Map<string, string>();
   if (recent.data?.ok) for (const item of recent.data.data.projects) if (item.name) names.set(item.root, item.name);
   return (
-    <div className="row" style={{ gap: 8 }}>
+    <div className="project-switcher">
       <label htmlFor="project-switcher" className="sr-only">Project</label>
       <select
         id="project-switcher"
-        style={{ width: "min(360px, 60vw)" }}
         value={root ?? ""}
         onChange={(event) => {
           if (event.target.value === "__open__") navigate("/projects/open");
@@ -63,11 +70,30 @@ function ProjectSwitcher() {
 
 export function Layout() {
   const project = useProject();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [theme, setTheme] = useState<Theme>(savedTheme);
   const location = useLocation();
-  useEffect(() => setMenuOpen(false), [location.pathname]);
   const summary = project.data?.project;
+  const path = location.pathname;
+  const workspace = /^\/assets\/[^/]+(?:\/candidates\/[^/]+)?$/.test(path) && path !== "/assets/new";
+  const section = path === "/review" || path.includes("/candidates/")
+    ? "/review"
+    : path === "/library" || path === "/export"
+      ? "/library"
+      : path === "/jobs" || path === "/history"
+        ? "/jobs"
+        : path.startsWith("/settings") || path === "/projects/open" ? "/settings" : "/";
+  const sections = section === "/library"
+    ? [{ to: "/library", label: "Production versions" }, { to: "/export", label: "Export" }]
+    : section === "/jobs"
+      ? [{ to: "/jobs", label: "Jobs" }, { to: "/history", label: "History & preferences" }]
+      : section === "/" && !workspace
+        ? [{ to: "/", label: "Project readiness" }, { to: "/assets", label: "All assets" }]
+        : [];
+
+  useLayoutEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem("brainforge.appearance", theme); } catch { /* The selected appearance still applies when storage is unavailable. */ }
+  }, [theme]);
   const reopen = useMutationOperation("project.open");
   const notOpen = project.envelope?.ok === false && project.envelope.error.code === "PROJECT_NOT_OPEN";
   const reopenedFor = useRef<string | undefined>(undefined);
@@ -80,52 +106,64 @@ export function Layout() {
 
   return (
     <ProjectEventsProvider projectId={summary?.projectId}>
-      <div className={`shell${inspectorOpen ? " with-inspector" : ""}`}>
+      <div className={`shell${workspace ? " workspace-shell" : ""}`}>
+        <a className="skip-link" href="#main">Skip to workspace</a>
         <header className="topbar">
-          <button type="button" className="menu-toggle" aria-expanded={menuOpen} aria-controls="primary-nav" onClick={() => setMenuOpen((open) => !open)}>
-            Menu
-          </button>
-          <span className="brand">Brainforge</span>
+          <Link className="brand" to="/" aria-label="Brainforge workbench">
+            <span className="brand-symbol"><Icon name="workbench" /></span>
+            Brainforge
+          </Link>
           <ProjectSwitcher />
-          {summary ? (
-            <Status tone={summary.state === "open" ? "ok" : "warn"}>
-              {summary.state === "open" ? "Open" : summary.state === "closing" ? "Closing" : "Closed"}
-            </Status>
-          ) : null}
+          {summary && summary.state !== "open" ? <Status tone="warn">{summary.state === "closing" ? "Closing" : "Closed"}</Status> : null}
+          {summary && !summary.writable ? <Status tone="warn">Read-only</Status> : null}
           <span className="spacer" />
           <LiveIndicator />
-          <button type="button" aria-expanded={inspectorOpen} aria-controls="inspector" onClick={() => setInspectorOpen((open) => !open)}>
-            {inspectorOpen ? "Hide inspector" : "Inspector"}
-          </button>
-        </header>
-        <nav id="primary-nav" className={`nav${menuOpen ? " open" : ""}`} aria-label="Primary">
-          {NAV.map((item) => (
-            <NavLink key={item.to} to={item.to} end={item.end}>
-              {item.label}
-            </NavLink>
-          ))}
-        </nav>
-        <main className="main" id="main" tabIndex={-1}>
-          <div className="main-inner">
-            <Outlet />
+          <div className="appearance-control">
+            <label htmlFor="appearance">Appearance</label>
+            <select id="appearance" value={theme} onChange={(event) => setTheme(event.target.value as Theme)}>
+              <option value="system">System</option>
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+            </select>
           </div>
-        </main>
-        {inspectorOpen ? (
-          <aside id="inspector" className="inspector" aria-label="Inspector">
-            <h2>Project</h2>
-            {summary ? (
-              <dl className="kv">
-                <dt>Directory</dt><dd className="mono">{summary.root}</dd>
-                <dt>Name</dt><dd>{summary.name}</dd>
-                <dt>ID</dt><dd className="mono">{summary.projectId}</dd>
-                <dt>Revision</dt><dd>{summary.revision}</dd>
-                <dt>State</dt><dd>{summary.state}</dd>
-                <dt>Writable</dt><dd>{summary.writable ? "yes" : "no — read-only"}</dd>
-              </dl>
-            ) : <p className="secondary">No project open.</p>}
-            <button type="button" onClick={() => setInspectorOpen(false)} style={{ marginTop: 16 }}>Close inspector</button>
-          </aside>
+          <details className="project-details">
+            <summary>Project details</summary>
+            <div className="project-details-body">
+              <h2>{summary?.name ?? "No project open"}</h2>
+              {summary ? (
+                <dl className="kv">
+                  <dt>Directory</dt><dd className="mono">{summary.root}</dd>
+                  <dt>ID</dt><dd className="mono">{summary.projectId}</dd>
+                  <dt>Revision</dt><dd>{summary.revision}</dd>
+                  <dt>State</dt><dd>{summary.state}</dd>
+                  <dt>Writable</dt><dd>{summary.writable ? "Yes" : "No — read-only"}</dd>
+                </dl>
+              ) : <p className="secondary">Open a game directory to begin.</p>}
+              <Link to="/settings">Project settings</Link>
+            </div>
+          </details>
+        </header>
+        <div className="navigation-bar">
+          <nav className="nav" aria-label="Primary">
+            {NAV.map((item) => (
+              <Link key={item.to} to={item.to} aria-current={section === item.to ? "page" : undefined}>
+                <Icon name={item.icon} />
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+          <Link className="settings-link" to="/settings" aria-current={section === "/settings" ? "page" : undefined}>
+            <Icon name="settings" /><span>Settings</span>
+          </Link>
+        </div>
+        {sections.length > 0 ? (
+          <nav className="section-nav" aria-label={`${NAV.find((item) => item.to === section)?.label ?? "Project"} views`}>
+            {sections.map((item) => <NavLink key={item.to} to={item.to} end={item.to === "/"}>{item.label}</NavLink>)}
+          </nav>
         ) : null}
+        <main className={`main${workspace ? " is-workspace" : ""}`} id="main" tabIndex={-1}>
+          <div className="main-inner"><Outlet /></div>
+        </main>
       </div>
     </ProjectEventsProvider>
   );

@@ -181,4 +181,21 @@ describe("review.list", () => {
     expect(await awaiting()).toEqual([]);
     expect(expectOk(await h.call("review.list", { filter: "all" }, { project: g.root })).total).toBe(2);
   });
+
+  test("a stale approval on an output nobody selected does not keep the settled candidate awaiting; a stale selected output does", async () => {
+    const { g, branchId } = await locked();
+    await seedCandidate(g, "cur", "cortex", "portrait", undefined, branchId);
+    await judge(g, "cur", "approve", human);
+    expectOk(await h.call("candidate.select", { branchId, deliverableId: "portrait", candidateId: "cur", outputId: "out_cur" }, { project: g.root }));
+    const db = g.h.registry.get(g.root)!.db;
+    db.query("INSERT INTO candidate_outputs (output_id, candidate_id, role, file_id, path, sha256, width, height, media_type) SELECT 'out_cur_old', candidate_id, 'matted', 'out_cur_old', path, sha256, width, height, media_type FROM candidate_outputs WHERE output_id = 'out_cur'").run();
+    db.query(
+      `INSERT INTO review_decisions (decision_id, candidate_id, output_id, output_hash, asset_id, step_id, branch_id, requirements_hash, decision, kind, reasons_json, actor_id, actor_type, created_at)
+       SELECT 'dec_old', candidate_id, 'out_cur_old', sha256, 'cortex', 'portrait', ?, 'outdated-hash', 'approve', 'decide', '[]', 'human', 'human', ? FROM candidate_outputs WHERE output_id = 'out_cur_old'`,
+    ).run(branchId, new Date().toISOString());
+    const awaiting = async () => expectOk(await h.call("review.list", { filter: "awaiting" }, { project: g.root })).items.map((i) => i.candidate.candidateId);
+    expect(await awaiting()).toEqual([]);
+    db.query("UPDATE review_decisions SET requirements_hash = 'outdated-hash' WHERE output_id = 'out_cur'").run();
+    expect(await awaiting()).toEqual(["cur"]);
+  });
 });

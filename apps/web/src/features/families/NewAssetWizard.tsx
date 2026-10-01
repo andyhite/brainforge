@@ -4,7 +4,7 @@ import { isSeq } from "yaml";
 import { KebabId, type AssetFamily, type FamilyProfile, type OperationError } from "@brainforge/contracts";
 import { callOperation } from "../../api/client.ts";
 import { useOperation } from "../../api/hooks.ts";
-import { Banner, EmptyState, ErrorBanner, NetworkProblem, PageHeader } from "../../components/ui.tsx";
+import { Banner, EmptyState, ErrorBanner, NetworkProblem, PageHeader, Status } from "../../components/ui.tsx";
 import { useSpecFile } from "../../lib/spec-file.ts";
 import { useProjectRoot } from "../../lib/project-context.tsx";
 import { isDefinitionMissing } from "../assets/missing.ts";
@@ -111,7 +111,7 @@ function EditStep({ template, memberOf, listInEnvironment }: { template: Templat
       afterSave={saved ? (
         <Banner tone="ok" title="Saved" actions={<Link className="button primary" to={`/assets/${encodeURIComponent(assetId)}`}>Open {assetId}</Link>}>
           <code>{template.path}</code> was created. Keep editing, or open the asset to explore concepts.
-          {environmentNote ? <div role="status" className={`secondary`} style={{ marginTop: 4 }}>{environmentNote.tone === "ok" ? "✓ " : "▲ "}{environmentNote.text}</div> : null}
+          {environmentNote ? <div role="status" className={`secondary`} style={{ marginTop: 4 }}><Status tone={environmentNote.tone === "ok" ? "ok" : "warn"}>{environmentNote.text}</Status></div> : null}
         </Banner>
       ) : null}
     />
@@ -172,7 +172,7 @@ export function NewAssetWizard() {
     return (
       <>
         <PageHeader title={`New ${family ?? "asset"}: ${name}`}>
-          <button type="button" onClick={() => setTemplate(undefined)}>← Change family or id</button>
+          <button type="button" onClick={() => setTemplate(undefined)}>Change family or id</button>
         </PageHeader>
         <EditStep key={template.path} template={template} memberOf={memberOf} listInEnvironment={listIn} />
       </>
@@ -182,7 +182,7 @@ export function NewAssetWizard() {
   return (
     <>
       <PageHeader title="New asset">
-        <Link to="/assets">← All assets</Link>
+        <Link to="/assets">All assets</Link>
       </PageHeader>
       {memberOf ? (
         <Banner tone="info" title={`Creating a member of ${memberOf}`} actions={<button type="button" onClick={() => setParams((p) => { const next = new URLSearchParams(p); next.delete("memberOf"); return next; })}>Make it standalone</button>}>

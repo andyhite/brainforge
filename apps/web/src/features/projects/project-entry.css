@@ -1,0 +1,20 @@
+/* Project entry: open vs create. Shared tokens only. */
+.entry-page { display: grid; gap: calc(var(--u) * 4); align-content: start; }
+.entry-page > * { margin: 0; }
+.entry-note { max-width: 80ch; }
+.entry-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(var(--u) * 8); align-items: start; }
+.entry-pane { min-width: 0; display: grid; gap: calc(var(--u) * 3); align-content: start; }
+.entry-pane > * { margin: 0; }
+.entry-pane + .entry-pane { border-left: 1px solid var(--border); padding-left: calc(var(--u) * 8); }
+.entry-pane input[type="text"] { width: 100%; }
+.entry-recent { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border); }
+.entry-recent li { display: flex; gap: calc(var(--u) * 4); justify-content: space-between; align-items: center; padding: calc(var(--u) * 3) 0; border-bottom: 1px solid var(--border); }
+.entry-recent-main { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.entry-preview { display: grid; gap: calc(var(--u) * 3); padding-top: calc(var(--u) * 4); border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+.entry-preview > * { margin: 0; }
+.entry-preview ul { margin: var(--u) 0 0; padding-left: calc(var(--u) * 5); }
+
+@media (max-width: 1100px) {
+  .entry-columns { grid-template-columns: minmax(0, 1fr); }
+  .entry-pane + .entry-pane { border-left: 0; padding-left: 0; border-top: 1px solid var(--border); padding-top: calc(var(--u) * 6); }
+}

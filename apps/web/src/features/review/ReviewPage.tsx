@@ -1,3 +1,4 @@
+import "./review.css";
 import { ReviewQueue } from "./ReviewQueue.tsx";
 import { Link } from "react-router-dom";
 import { fileUrl, useOperation } from "../../api/hooks.ts";
@@ -22,9 +23,9 @@ export function ReviewPage() {
   return (
     <>
       <PageHeader title="Review" />
-      <div className="stack">
-        <ReviewQueue />
-
+      <div className="review-queue-page">
+        <div className="review-queue-main"><ReviewQueue /></div>
+        <div className="review-side stack">
         <section aria-labelledby="q-revisions">
           <h2 id="q-revisions">Revision requests{pending ? ` (${pending.length})` : ""}</h2>
           {revisions.error ? <NetworkProblem error={revisions.error} /> : !revisions.data ? <p className="secondary" role="status">Loading revision requests…</p> : !revisions.data.ok ? <ErrorBanner error={revisions.data.error} /> : pending && pending.length === 0 ? (
@@ -33,8 +34,8 @@ export function ReviewPage() {
         </section>
 
         <section aria-labelledby="q-candidates">
-          <h2 id="q-candidates">Candidates awaiting review</h2>
-          <p className="secondary">Assets with concept candidates are listed here; assets with none are omitted.</p>
+          <h2 id="q-candidates">Concept candidates</h2>
+          <p className="secondary">Concepts are compared and locked, not approved. Assets with no concept candidates are omitted.</p>
           {project.loading ? <p className="secondary" role="status">Loading assets…</p> : assets.length === 0 ? <p className="secondary">This project has no assets yet.</p> : (
             <ul className="plain stack">
               {assets.map((a) => <li key={a.assetId}><AwaitingReview assetId={a.assetId} name={a.name ?? a.assetId} projectId={project.data?.project.projectId} /></li>)}
@@ -62,6 +63,7 @@ export function ReviewPage() {
             </ul>
           )}
         </section>
+        </div>
       </div>
     </>
   );

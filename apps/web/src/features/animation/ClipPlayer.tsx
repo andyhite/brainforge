@@ -76,13 +76,19 @@ function Player({ details, projectId, annotations = [], selectedId, onSelect, dr
   const [tool, setTool] = useState<Tool>("none");
   const wrapRef = useRef<HTMLDivElement>(null);
   const [wrapWidth, setWrapWidth] = useState(640);
+  const [wrapHeight, setWrapHeight] = useState(0);
   const drag = useRef<{ ox: number; oy: number } | undefined>(undefined);
   const atlasAvailable = details.some(hasAtlas);
 
   useLayoutEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
-    const measure = () => setWrapWidth(el.clientWidth);
+    // Content box of the stage: the real padding is excluded, nothing is guessed.
+    const measure = () => {
+      const s = getComputedStyle(el);
+      setWrapWidth(el.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight));
+      setWrapHeight(el.clientHeight - parseFloat(s.paddingTop) - parseFloat(s.paddingBottom));
+    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
@@ -163,7 +169,9 @@ function Player({ details, projectId, annotations = [], selectedId, onSelect, dr
 
   const maxW = Math.max(...details.map((d) => d.width));
   const maxH = Math.max(...details.map((d) => d.height));
-  const fitScale = Math.max(0.05, Math.min((wrapWidth - 72 - (details.length - 1) * 16) / details.length / maxW, 480 / maxH));
+  // Fit uses the measured content box; only the caption shown while comparing takes height from it.
+  const fitHeight = wrapHeight > 0 ? wrapHeight - (compare ? 24 : 0) : 480;
+  const fitScale = Math.max(0.05, Math.min((wrapWidth - (details.length - 1) * 16) / details.length / maxW, fitHeight / maxH));
   const scale = zoom === "fit" ? fitScale : 1;
 
   const notesHere = annotations.filter((n) => !n.frameRange || (frame.sourceFrame >= n.frameRange.start && frame.sourceFrame <= n.frameRange.end));
@@ -199,43 +207,37 @@ function Player({ details, projectId, annotations = [], selectedId, onSelect, dr
 
   return (
     <div className="clip-player" onKeyDown={onKeyDown} aria-label={compare ? "Clip comparison player" : "Clip player"} role="group">
-      {single ? null : (
-        <div className="viewer-tools" role="toolbar" aria-label="Playback">
-          <button type="button" className="primary" aria-pressed={playing} onClick={() => { if (finished) seek(0); setFinished(false); setPlaying((p) => !p); }}>{playing ? "Pause" : "Play"}</button>
-          <button type="button" onClick={() => { seek(0); setFinished(false); setPlaying(true); }}>Replay</button>
-          <button type="button" aria-pressed={loop} onClick={() => { setLoop((l) => !l); setFinished(false); }} title="Off plays the clip once and stops on its last frame">Loop</button>
-          <span className="status info" role="status" aria-live="polite">
-            <span aria-hidden="true">{loop ? "↻" : "①"}</span>
-            {loop ? "Loops" : finished ? "Played once — finished" : "Plays once"}
-            {primary.loop !== undefined && primary.loop !== loop ? <span className="secondary"> (authored: {primary.loop ? "loops" : "plays once"})</span> : null}
+      <div className="clip-bar">
+        <div className="viewer-tools" role="toolbar" aria-label="View">
+          <span role="group" aria-label="Zoom" className="seg">
+            <button type="button" aria-pressed={zoom === "fit"} onClick={() => setZoom("fit")}>Fit</button>
+            <button type="button" aria-pressed={zoom === "1:1"} onClick={() => setZoom("1:1")}>1:1</button>
           </span>
-          <span role="group" aria-label="Speed" className="row" style={{ gap: 4 }}>
-            {SPEEDS.map((s) => <button key={s} type="button" aria-pressed={speed === s} onClick={() => setSpeed(s)}>{s}×</button>)}
+          <span role="group" aria-label="Background" className="seg">
+            {BACKGROUNDS.map((o) => <button key={o.id} type="button" aria-pressed={background === o.id} onClick={() => setBackground(o.id)}>{o.label}</button>)}
           </span>
+          {primary.pivot && !single ? <span role="group" aria-label="Overlay" className="seg"><button type="button" aria-pressed={pivot} onClick={() => setPivot((p) => !p)}>Pivot & baseline</button></span> : null}
+          {atlasAvailable ? (
+            <span role="group" aria-label="Frame source" className="seg">
+              <button type="button" aria-pressed={mode === "frames"} onClick={() => setMode("frames")}>Frames</button>
+              <button type="button" aria-pressed={mode === "atlas"} onClick={() => setMode("atlas")} title="Draw from the packed atlas pages, as exported">Atlas</button>
+            </span>
+          ) : null}
         </div>
-      )}
-      <div className="viewer-tools" role="toolbar" aria-label="View">
-        <button type="button" aria-pressed={zoom === "fit"} onClick={() => setZoom("fit")}>Fit</button>
-        <button type="button" aria-pressed={zoom === "1:1"} onClick={() => setZoom("1:1")}>1:1</button>
-        <span aria-hidden="true" style={{ width: 8 }} />
-        {BACKGROUNDS.map((o) => <button key={o.id} type="button" aria-pressed={background === o.id} onClick={() => setBackground(o.id)}>{o.label}</button>)}
-        {primary.pivot && !single ? <button type="button" aria-pressed={pivot} onClick={() => setPivot((p) => !p)}>Pivot & baseline</button> : null}
-        {atlasAvailable ? (
-          <span role="group" aria-label="Frame source" className="row" style={{ gap: 4 }}>
-            <button type="button" aria-pressed={mode === "frames"} onClick={() => setMode("frames")}>Frames</button>
-            <button type="button" aria-pressed={mode === "atlas"} onClick={() => setMode("atlas")} title="Draw from the packed atlas pages, as exported">Atlas</button>
-          </span>
+        {draw && !compare ? (
+          <div className="viewer-tools" role="toolbar" aria-label="Frame annotation tools">
+            <span role="group" aria-label="Annotation tool" className="seg">
+              <button type="button" aria-pressed={tool === "none"} onClick={() => setTool("none")}>No tool</button>
+              <button type="button" aria-pressed={tool === "pin"} onClick={() => setTool("pin")}>Pin</button>
+              <button type="button" aria-pressed={tool === "rect"} onClick={() => setTool("rect")}>Rectangle</button>
+            </span>
+            <span role="group" aria-label="Add note" className="seg">
+              <button type="button" onClick={() => { setPlaying(false); onDraftChange({ kind: "whole" }); }}>{single ? "Note on whole image" : "Note on whole frame"}</button>
+              <button type="button" onClick={() => { setPlaying(false); onDraftChange({ kind: "pin", x: 0.5, y: 0.5 }); onDraftCommit?.(); }}>Pin at centre</button>
+            </span>
+          </div>
         ) : null}
       </div>
-      {draw && !compare ? (
-        <div className="viewer-tools" role="toolbar" aria-label="Frame annotation tools">
-          <button type="button" aria-pressed={tool === "none"} onClick={() => setTool("none")}>No tool</button>
-          <button type="button" aria-pressed={tool === "pin"} onClick={() => setTool("pin")}>Pin</button>
-          <button type="button" aria-pressed={tool === "rect"} onClick={() => setTool("rect")}>Rectangle</button>
-          <button type="button" onClick={() => { setPlaying(false); onDraftChange({ kind: "whole" }); }}>{single ? "Note on whole image" : "Note on whole frame"}</button>
-          <button type="button" onClick={() => { setPlaying(false); onDraftChange({ kind: "pin", x: 0.5, y: 0.5 }); onDraftCommit?.(); }} className="secondary">Pin at centre</button>
-        </div>
-      ) : null}
 
       <div ref={wrapRef} className="clip-stage-wrap">
         <div className="clip-stages" tabIndex={0} aria-label={`${compare ? "Clips" : "Clip"}. Left and right arrow keys step frames, space plays or pauses.`}>
@@ -275,12 +277,14 @@ function Player({ details, projectId, annotations = [], selectedId, onSelect, dr
                     </div>
                   ) : null}
                 </FrameCanvas>
-                <figcaption className="secondary">
-                  <strong>{d.stage === "processed" ? "Processed" : "Raw"}</strong>
-                  {single ? ` · ${d.width}×${d.height} px` : <>{fps ? ` · ${formatFps(fps)}` : ""} · {d.frames.length} frames · {formatMs(totals[i]!)}</>}
-                  {compare && !single ? <> · frame {idx + 1} (source {f.sourceFrame + 1})</> : null}
-                  {source === "atlas" ? " · from atlas" : ""}
-                </figcaption>
+                {compare ? (
+                  <figcaption className="secondary">
+                    <strong>{d.stage === "processed" ? "Processed" : "Raw"}</strong>
+                    {single ? ` · ${d.width}×${d.height} px` : <>{fps ? ` · ${formatFps(fps)}` : ""} · {d.frames.length} frames · {formatMs(totals[i]!)}</>}
+                    {!single ? <> · frame {idx + 1} (source {f.sourceFrame + 1})</> : null}
+                    {source === "atlas" ? " · from atlas" : ""}
+                  </figcaption>
+                ) : null}
               </figure>
             );
           })}
@@ -288,14 +292,28 @@ function Player({ details, projectId, annotations = [], selectedId, onSelect, dr
       </div>
 
       {single ? null : (
-        <FrameStepper
-          count={primary.frames.length}
-          index={index}
-          onIndex={(i) => { setPlaying(false); seek(startsList[0]![i]!); }}
-          onStep={step}
-          covered={covered}
-          status={`Frame ${index + 1} of ${primary.frames.length} · source frame ${frame.sourceFrame + 1} (zero-based ${frame.sourceFrame}) · ${formatMs(startsList[0]![index]!)} of ${formatMs(totals[0]!)} · shows for ${formatMs(frame.durationMs)}`}
-        />
+        <div className="clip-controls">
+          <div className="viewer-tools" role="toolbar" aria-label="Playback">
+            <button type="button" className="primary" aria-pressed={playing} onClick={() => { if (finished) seek(0); setFinished(false); setPlaying((p) => !p); }}>{playing ? "Pause" : "Play"}</button>
+            <button type="button" onClick={() => { seek(0); setFinished(false); setPlaying(true); }}>Replay</button>
+            <button type="button" aria-pressed={loop} onClick={() => { setLoop((l) => !l); setFinished(false); }} title="Off plays the clip once and stops on its last frame">Loop</button>
+            <span className="status info" role="status" aria-live="polite">
+              {loop ? "Loops" : finished ? "Played once — finished" : "Plays once"}
+              {primary.loop !== undefined && primary.loop !== loop ? <span className="secondary"> (authored: {primary.loop ? "loops" : "plays once"})</span> : null}
+            </span>
+            <span role="group" aria-label="Speed" className="row" style={{ gap: 4 }}>
+              {SPEEDS.map((s) => <button key={s} type="button" aria-pressed={speed === s} onClick={() => setSpeed(s)}>{s}×</button>)}
+            </span>
+          </div>
+          <FrameStepper
+            count={primary.frames.length}
+            index={index}
+            onIndex={(i) => { setPlaying(false); seek(startsList[0]![i]!); }}
+            onStep={step}
+            covered={covered}
+            status={`Frame ${index + 1} of ${primary.frames.length} · source frame ${frame.sourceFrame + 1} (zero-based ${frame.sourceFrame}) · ${formatMs(startsList[0]![index]!)} of ${formatMs(totals[0]!)} · shows for ${formatMs(frame.durationMs)}`}
+          />
+        </div>
       )}
     </div>
   );

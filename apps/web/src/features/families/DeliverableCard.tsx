@@ -168,8 +168,8 @@ export function DeliverableCard({ index, count }: { index: number; count: number
       <div className="row" style={{ justifyContent: "space-between" }}>
         <h4 style={{ margin: 0 }}>{title}{d.required === false ? " · optional" : ""}</h4>
         <span className="row" style={{ gap: 8 }}>
-          <button type="button" disabled={disabled || index === 0} aria-label={`Move ${d.id ?? "deliverable"} up`} onClick={() => patch((doc) => moveAt(doc, ["deliverables"], index, index - 1))}>↑</button>
-          <button type="button" disabled={disabled || index === count - 1} aria-label={`Move ${d.id ?? "deliverable"} down`} onClick={() => patch((doc) => moveAt(doc, ["deliverables"], index, index + 1))}>↓</button>
+          <button type="button" disabled={disabled || index === 0} aria-label={`Move ${d.id ?? "deliverable"} up`} onClick={() => patch((doc) => moveAt(doc, ["deliverables"], index, index - 1))}>Move up</button>
+          <button type="button" disabled={disabled || index === count - 1} aria-label={`Move ${d.id ?? "deliverable"} down`} onClick={() => patch((doc) => moveAt(doc, ["deliverables"], index, index + 1))}>Move down</button>
           <button type="button" disabled={disabled} onClick={() => patch((doc) => removeAt(doc, base))}>Remove {String(d.id ?? "deliverable")}</button>
         </span>
       </div>

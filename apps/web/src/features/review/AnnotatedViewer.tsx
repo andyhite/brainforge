@@ -168,9 +168,10 @@ export function AnnotatedViewer({ src, alt, width, height, annotations, selected
   const counter = `translate(-50%, -50%) scale(${1 / scale})`;
 
   return (
-    <div>
+    <div className="annot-viewer">
+      <div className="viewer-bar">
       <div className="viewer-tools" role="toolbar" aria-label="Viewer controls">
-        <button type="button" onClick={() => zoomAbout(1.25, 0, 0)} aria-label="Zoom in">＋</button>
+        <button type="button" onClick={() => zoomAbout(1.25, 0, 0)} aria-label="Zoom in">+</button>
         <button type="button" onClick={() => zoomAbout(0.8, 0, 0)} aria-label="Zoom out">－</button>
         <button type="button" aria-pressed={view.fit} onClick={() => setView({ fit: true, scale: 1, x: 0, y: 0 })}>Fit</button>
         <button type="button" aria-pressed={!view.fit && view.scale === 1} onClick={() => setView({ fit: false, scale: 1, x: 0, y: 0 })}>100%</button>
@@ -185,6 +186,7 @@ export function AnnotatedViewer({ src, alt, width, height, annotations, selected
         <button type="button" aria-pressed={tool === "pin"} onClick={() => setTool("pin")}>Pin</button>
         <button type="button" aria-pressed={tool === "rect"} onClick={() => setTool("rect")}>Rectangle</button>
         <button type="button" onClick={() => onDraftChange({ kind: "whole" })}>Note on whole image</button>
+      </div>
       </div>
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
       <div

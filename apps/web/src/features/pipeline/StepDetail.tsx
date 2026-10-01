@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { Candidate, StepState } from "@brainforge/contracts";
 import { useMutationOperation, useOperation } from "../../api/hooks.ts";
-import { Banner, EmptyState, ErrorBanner, NetworkProblem, Status } from "../../components/ui.tsx";
+import { Banner, ErrorBanner, NetworkProblem, Status } from "../../components/ui.tsx";
 import { useProject } from "../../lib/use-project.ts";
 import { ActiveJobsStrip } from "../jobs/JobsPage.tsx";
 import { BudgetPanel } from "../generation/BudgetPanel.tsx";
@@ -11,6 +11,7 @@ import { BackdropPicker, outputUrl, pickOutput, useBackdrop } from "../generatio
 import { OpenNotes } from "../review/OpenNotes.tsx";
 import { ContinueButton } from "../branches/ContinueDialog.tsx";
 import { ReassessmentReasons } from "../branches/shared.tsx";
+import { STATE_TEXT, STATE_TONE } from "./steps.ts";
 import { formatMs, outputLabel } from "../animation/timing.ts";
 
 const REGION_ORDER = ["front", "profile", "rear"];
@@ -48,7 +49,7 @@ function CandidateRow({ candidate, step, branchId, projectId, assetId }: { candi
   const processed = candidate.outputs.filter((o) => o.stage === "processed");
   const output = animation ? processed[processed.length - 1] ?? pickOutput(candidate, "matted") : pickOutput(candidate, "matted");
   const needsProcessing = animation && output?.stage !== "processed";
-  const candidateLink = `/assets/${encodeURIComponent(assetId)}/candidates/${encodeURIComponent(candidate.candidateId)}${animation && output ? `?output=${encodeURIComponent(output.outputId)}` : ""}`;
+  const candidateLink = `/assets/${encodeURIComponent(assetId)}/candidates/${encodeURIComponent(candidate.candidateId)}?${new URLSearchParams({ ...(animation && output ? { output: output.outputId } : {}), branch: branchId, step: step.stepId }).toString()}`;
   const approval = output ? candidate.approvals.find((item) => item.outputId === output.outputId) : undefined;
   const isSelected = step.selected?.candidateId === candidate.candidateId && (step.selected.outputId === undefined || step.selected.outputId === output?.outputId);
   return (
@@ -97,47 +98,60 @@ export function StepDetail({ assetId, step, branchId }: { assetId: string; step:
   const [backdrop, setBackdrop] = useBackdrop();
   const [dialog, setDialog] = useState(false);
   const [grantOpen, setGrantOpen] = useState(false);
+  const [budgetOpen, setBudgetOpen] = useState(false);
   const candidates = list.data?.ok ? list.data.data.candidates : [];
   const canGenerate = step.state === "ready" || step.state === "awaiting_review" || step.state === "complete";
 
   return (
-    <div className="stack">
-      <section className="panel" aria-labelledby="step-title">
-        <div className="row" style={{ justifyContent: "space-between" }}>
-          <h2 id="step-title" style={{ margin: 0 }}>{step.stepId} <span className="secondary">({step.kind}{step.required ? "" : ", optional"})</span></h2>
-          <button type="button" className="primary" disabled={!canGenerate} onClick={() => setDialog(true)}>{candidates.length === 0 ? "Generate" : "Generate more"}</button>
-        </div>
-        {step.blockers.filter((blocker) => blocker.code !== "REVISION_OPEN").map((blocker) => <Banner key={blocker.code + blocker.message} tone="warn" title={blocker.message} />)}
-        {step.counts.openRevisions > 0 || step.blockers.some((blocker) => blocker.code === "REVISION_OPEN") ? <OpenNotes assetId={assetId} stepId={step.stepId} /> : null}
-        {step.kind === "animation" && step.state === "ready" ? <p className="secondary">Ready by its dependencies. Generating makes raw frames; you then process them into an export clip, and only a reviewed processed clip completes this step.</p> : null}
-        {step.needsReassessment ? <Banner tone="warn" title="Needs reassessment"><ReassessmentReasons reasons={step.reassessmentReasons} /></Banner> : null}
-      </section>
+    <div className="task">
+      <div className="task-bar">
+        <h2 id="step-title">{step.stepId} <span className="secondary">({step.kind}{step.required ? "" : ", optional"})</span></h2>
+        <Status tone={STATE_TONE[step.state]}>{STATE_TEXT[step.state]}</Status>
+        <span className="task-spacer" />
+        <BackdropPicker value={backdrop} onChange={setBackdrop} />
+        <button type="button" className="primary" disabled={!canGenerate} onClick={() => setDialog(true)}>{candidates.length === 0 ? "Generate" : "Generate more"}</button>
+      </div>
 
-      <ActiveJobsStrip assetId={assetId} />
+      <div className="task-grid">
+        <section className="task-stage" aria-labelledby="step-candidates">
+          <h3 id="step-candidates" className="sr-only">Candidates</h3>
+          {list.error ? <NetworkProblem error={list.error} /> : null}
+          {!list.data && !list.error ? <p className="secondary" role="status">Loading candidates…</p> : null}
+          {list.data && !list.data.ok ? <ErrorBanner error={list.data.error} /> : null}
+          {list.data?.ok && candidates.length === 0 ? (
+            <div className="empty-task">
+              <strong>No candidates yet</strong>
+              <p>{step.state === "blocked" ? "This step is blocked; see the reason beside this task." : "Generate this step to get candidates. You will see the exact plan first."}</p>
+              <button type="button" className="primary" disabled={!canGenerate} onClick={() => setDialog(true)}>Generate</button>
+            </div>
+          ) : null}
+          {projectId && candidates.length > 0 ? (
+            <ul className="candidate-grid" aria-label={`Candidates for ${step.stepId}`}>
+              {candidates.map((candidate) => <CandidateRow key={candidate.candidateId} candidate={candidate} step={step} branchId={branchId} projectId={projectId} assetId={assetId} />)}
+            </ul>
+          ) : null}
+        </section>
 
-      <section className="panel" aria-labelledby="step-candidates">
-        <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
-          <h2 id="step-candidates" style={{ margin: 0 }}>Candidates</h2>
-          <BackdropPicker value={backdrop} onChange={setBackdrop} />
-        </div>
-        {list.error ? <NetworkProblem error={list.error} /> : null}
-        {!list.data && !list.error ? <p className="secondary" role="status">Loading candidates…</p> : null}
-        {list.data && !list.data.ok ? <ErrorBanner error={list.data.error} /> : null}
-        {list.data?.ok && candidates.length === 0 ? <EmptyState title="No candidates yet"><p>{step.state === "blocked" ? "This step is blocked; see the reason above." : "Generate this step to get candidates. You will see the exact plan first."}</p></EmptyState> : null}
-        {projectId && candidates.length > 0 ? (
-          <ul className="candidate-grid" aria-label={`Candidates for ${step.stepId}`}>
-            {candidates.map((candidate) => <CandidateRow key={candidate.candidateId} candidate={candidate} step={step} branchId={branchId} projectId={projectId} assetId={assetId} />)}
-          </ul>
-        ) : null}
-      </section>
+        <aside className="task-rail" aria-label="Step blockers and notes">
+          {step.dependsOn.length > 0 ? <p className="secondary">Runs after {step.dependsOn.join(", ")}.</p> : null}
+          {step.blockers.filter((blocker) => blocker.code !== "REVISION_OPEN").map((blocker) => <Banner key={blocker.code + blocker.message} tone="warn" title={blocker.message} />)}
+          {step.counts.openRevisions > 0 || step.blockers.some((blocker) => blocker.code === "REVISION_OPEN") ? <OpenNotes assetId={assetId} stepId={step.stepId} /> : null}
+          {step.kind === "animation" && step.state === "ready" ? <p className="secondary">Ready by its dependencies. Generating makes raw frames; you then process them into an export clip, and only a reviewed processed clip completes this step.</p> : null}
+          {step.needsReassessment ? <Banner tone="warn" title="Needs reassessment"><ReassessmentReasons reasons={step.reassessmentReasons} /></Banner> : null}
+          <ActiveJobsStrip assetId={assetId} />
+        </aside>
+      </div>
 
-      <BudgetPanel assetId={assetId} stepId={step.stepId} grantOpen={grantOpen} onGrantOpen={setGrantOpen} />
+      <details className="task-budget" open={budgetOpen} onToggle={(event) => setBudgetOpen(event.currentTarget.open)}>
+        <summary>Compute and generation budget</summary>
+        <BudgetPanel assetId={assetId} stepId={step.stepId} grantOpen={grantOpen} onGrantOpen={setGrantOpen} />
+      </details>
 
       {dialog ? (
         <GenerateDialog
           assetId={assetId} stepId={step.stepId} stepKind={step.kind} branchId={branchId} candidates={candidates} initial={{ mode: "fresh" }}
           onClose={() => setDialog(false)}
-          onGrantBudget={() => { setGrantOpen(true); requestAnimationFrame(() => document.getElementById("budgets")?.scrollIntoView({ block: "start" })); }}
+          onGrantBudget={() => { setBudgetOpen(true); setGrantOpen(true); }}
         />
       ) : null}
     </div>

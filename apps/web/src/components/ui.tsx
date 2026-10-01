@@ -5,15 +5,15 @@ import { Link } from "react-router-dom";
 import { runRecoveryOperation } from "../api/client.ts";
 import { useProjectRoot } from "../lib/project-context.tsx";
 import type { NextAction, OperationError, Problem, RecoveryAction } from "@brainforge/contracts";
+import { Icon } from "./Icon.tsx";
 export type Tone = "ok" | "warn" | "bad" | "info" | "idle";
 
-const ICONS: Record<Tone, string> = { ok: "✓", warn: "▲", bad: "✖", info: "●", idle: "○" };
 
 /** Status is always icon plus text, never colour alone. */
 export function Status({ tone, children }: { tone: Tone; children: ReactNode }) {
   return (
     <span className={`status ${tone}`}>
-      <span aria-hidden="true">{ICONS[tone]}</span>
+      <Icon name={tone} />
       <span>{children}</span>
     </span>
   );
@@ -22,7 +22,7 @@ export function Status({ tone, children }: { tone: Tone; children: ReactNode }) 
 export function Banner({ tone, title, children, actions }: { tone: Exclude<Tone, "idle">; title: string; children?: ReactNode; actions?: ReactNode }) {
   return (
     <div className={`banner ${tone}`} role={tone === "bad" ? "alert" : "status"}>
-      <span aria-hidden="true">{ICONS[tone]}</span>
+      <Icon name={tone} />
       <div className="body">
         <strong>{title}</strong>
         {children ? <div>{children}</div> : null}
@@ -122,18 +122,18 @@ export function ProblemList({ problems, blocked, onOpenFile }: { problems: Probl
 
 export function PageHeader({ title, children }: { title: string; children?: ReactNode }) {
   return (
-    <div className="row" style={{ justifyContent: "space-between", marginBottom: 16 }}>
-      <h1 style={{ margin: 0 }}>{title}</h1>
-      {children ? <div className="row">{children}</div> : null}
+    <div className="page-header">
+      <h1>{title}</h1>
+      {children ? <div className="page-header-actions">{children}</div> : null}
     </div>
   );
 }
 
 export function EmptyState({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="panel">
+    <div className="empty-state">
       <h2>{title}</h2>
-      <div className="secondary" style={{ fontSize: 15 }}>{children}</div>
+      <div className="empty-state-body">{children}</div>
     </div>
   );
 }

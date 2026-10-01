@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import type { Document } from "yaml";
 import type { FamilyProfile, Problem } from "@brainforge/contracts";
 import { fieldName, isPlaceholder, normalizeField, setAt, type Path } from "./yaml-patch.ts";
+import { Icon } from "../../components/Icon.tsx";
 
 export interface EditorContext {
   data: Record<string, unknown>;
@@ -49,7 +50,7 @@ export function FieldProblems({ id, problems }: { id: string; problems: Problem[
     <div id={id}>
       {shown.map((p, i) => (
         <p key={i} className={p.severity === "warning" ? "field-warn" : "field-error"}>
-          <span aria-hidden="true">{p.severity === "warning" ? "▲ " : "✖ "}</span>
+          <Icon name={p.severity === "warning" ? "warn" : "bad"} />{" "}
           <span className="sr-only">{p.severity === "warning" ? "Warning: " : "Error: "}</span>
           {p.message}
         </p>
@@ -104,7 +105,7 @@ export function TextField({ path, area, placeholder, ...base }: FieldBase & { ar
         return (
           <>
             {area ? <textarea rows={3} {...common} onChange={(e) => onChange(e.target.value)} /> : <input type="text" {...common} onChange={(e) => onChange(e.target.value)} />}
-            {placeholderText ? <p className="field-warn"><span aria-hidden="true">▲ </span>Placeholder — replace the “REPLACE:” text with a concrete description.</p> : null}
+            {placeholderText ? <p className="field-warn"><Icon name="warn" />{" "}Placeholder — replace the “REPLACE:” text with a concrete description.</p> : null}
           </>
         );
       }}
@@ -126,7 +127,7 @@ export function RequiredTextField(props: FieldBase & { area?: boolean }) {
         return (
           <>
             {props.area ? <textarea rows={3} {...common} onChange={(e) => onChange(e.target.value)} /> : <input type="text" {...common} onChange={(e) => onChange(e.target.value)} />}
-            {placeholderText ? <p className="field-warn"><span aria-hidden="true">▲ </span>Placeholder — replace the “REPLACE:” text with a concrete description.</p> : null}
+            {placeholderText ? <p className="field-warn"><Icon name="warn" />{" "}Placeholder — replace the “REPLACE:” text with a concrete description.</p> : null}
           </>
         );
       }}

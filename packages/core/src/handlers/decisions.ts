@@ -293,16 +293,20 @@ export const decisionHandlers: HandlerMap = {
       const candidate = toCandidate(db, row, hashFor);
       // Live-candidate rule: a candidate whose branch has selected a different candidate of the same step, and that
       // selection carries an applicable approval, is superseded. It leaves every queue except `all` (and `decided`).
-      const chosenId = row.branch_id === null ? undefined : db.query<{ candidate_id: string }, [string, string]>("SELECT candidate_id FROM branch_selections WHERE branch_id = ? AND deliverable_id = ?").get(row.branch_id, row.step_id)?.candidate_id;
+      // The branch's selected output is the authority: a candidate with a current approval on it is settled, and any
+      // other candidate of that step is a superseded attempt. Stale approvals on outputs nobody selected (an older frame rate) no longer count.
+      const selection = row.branch_id === null ? undefined : db.query<{ candidate_id: string; output_id: string | null }, [string, string]>("SELECT candidate_id, output_id FROM branch_selections WHERE branch_id = ? AND deliverable_id = ?").get(row.branch_id, row.step_id);
+      const selectedHolds = (c: Candidate): boolean => c.approvals.some((a) => (selection?.output_id == null || a.outputId === selection.output_id) && a.state === "approved" && a.applicable);
       let superseded = false;
-      if (chosenId !== undefined && chosenId !== row.candidate_id) {
-        const chosenRow = db.query<CandidateRow, [string]>("SELECT * FROM candidates WHERE candidate_id = ?").get(chosenId);
-        superseded = chosenRow !== null && toCandidate(db, chosenRow, hashFor).approvals.some((a) => a.state === "approved" && a.applicable);
+      if (selection != null && selection.candidate_id !== row.candidate_id) {
+        const chosenRow = db.query<CandidateRow, [string]>("SELECT * FROM candidates WHERE candidate_id = ?").get(selection.candidate_id);
+        superseded = chosenRow !== null && selectedHolds(toCandidate(db, chosenRow, hashFor));
       }
       const escalation = escalationsFor(db, row.candidate_id).find((e) => e.status === "pending");
       // A candidate is judged through the outputs reviewers decide on (the matted still, processed frames); the
       // untouched decode and crops stay at "none" forever, so only a stale decision, or none at all, means undecided.
-      const decidedApplicably = candidate.approvals.some((a) => a.state !== "none" && a.applicable) && !candidate.approvals.some((a) => a.state !== "none" && !a.applicable);
+      const selectedSettled = selection?.candidate_id === row.candidate_id && selectedHolds(candidate);
+      const decidedApplicably = selectedSettled || (candidate.approvals.some((a) => a.state !== "none" && a.applicable) && !candidate.approvals.some((a) => a.state !== "none" && !a.applicable));
       const undecided = !superseded && !decidedApplicably;
       const flags: Record<ReviewKind, boolean> = {
         escalated: escalation !== undefined, "needs-revision": needsRevision.has(row.candidate_id), overridden: overridden.has(row.candidate_id),

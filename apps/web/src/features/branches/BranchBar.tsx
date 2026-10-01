@@ -61,7 +61,7 @@ export function BranchBar({ assetId, branches, viewing, onView }: { assetId: str
                     <InputModeBadge mode={branch.inputMode} />
                     <div className="secondary">
                       {parent ? <>From <button type="button" className="link" onClick={() => onView(branch.parentBranchId ?? "")}>{parent}</button></> : "Concept lock"}
-                      {branch.sourceCandidateId ? <> · <Link to={`/assets/${encodeURIComponent(assetId)}/candidates/${encodeURIComponent(branch.sourceCandidateId)}`}>source candidate</Link></> : null}
+                      {branch.sourceCandidateId ? <> · <Link to={`/assets/${encodeURIComponent(assetId)}/candidates/${encodeURIComponent(branch.sourceCandidateId)}?branch=${encodeURIComponent(branch.branchId)}&step=concept`}>source candidate</Link></> : null}
                     </div>
                     <div className="secondary">By {branch.lockedBy} ({branch.lockedByType}) · {formatTime(branch.lockedAt)}</div>
                     <StepSummary assetId={assetId} branchId={branch.branchId} />

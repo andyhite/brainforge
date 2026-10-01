@@ -1,3 +1,4 @@
+import "./settings.css";
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { OperationData, OperationError } from "@brainforge/contracts";
@@ -73,16 +74,16 @@ export function ProjectSettingsPage() {
   };
 
   return (
-    <div className="stack">
-      <section className="panel" aria-labelledby="dir-title">
+    <div className="settings-stack">
+      <section className="settings-section" aria-labelledby="dir-title">
         <h2 id="dir-title">Game directory</h2>
-        <p className="mono" style={{ fontSize: 17, wordBreak: "break-all", marginBottom: 12 }} data-testid="game-directory">{summary.root}</p>
+        <p className="mono settings-root" data-testid="game-directory">{summary.root}</p>
         <div className="row">
           {summary.state === "open" ? <Status tone="ok">Open</Status> : summary.state === "closing" ? <Status tone="warn">Closing</Status> : <Status tone="idle">Closed</Status>}
           {summary.writable ? <Status tone="ok">Writable</Status> : <Status tone="warn">Read-only</Status>}
           {summary.specValid ? <Status tone="ok">project.yaml valid</Status> : <Status tone="bad">project.yaml invalid</Status>}
         </div>
-        <dl className="kv" style={{ marginTop: 16 }}>
+        <dl className="kv">
           <dt>Name</dt><dd>{summary.name}</dd>
           <dt>Project ID</dt><dd className="mono">{summary.projectId}</dd>
           <dt>Schema</dt><dd>{summary.specValid ? <span>brainforge.project.v2 — valid</span> : <span>needs fixing — see problems</span>}</dd>
@@ -91,7 +92,7 @@ export function ProjectSettingsPage() {
         {summary.problems.length > 0 ? <ProblemList problems={summary.problems} blocked={BLOCKED_TEXT} onOpenFile={specRoute} /> : null}
       </section>
 
-      <section className="panel" aria-labelledby="snap-title">
+      <section className="settings-section" aria-labelledby="snap-title">
         <h2 id="snap-title">Snapshot</h2>
         <p className="secondary">A consistent, portable copy of <code>brainforge/</code> including its hidden state and the configured exports. Copying an open project by hand is not a supported backup.</p>
         <form onSubmit={(event) => void takeSnapshot(event)}>
@@ -101,11 +102,11 @@ export function ProjectSettingsPage() {
           </div>
           <button type="submit" className="primary" disabled={snapshot.isPending || destination.trim() === ""}>{snapshot.isPending ? "Copying…" : "Create snapshot"}</button>
         </form>
-        {snapshotError ? <div style={{ marginTop: 16 }}><ErrorBanner error={snapshotError} /></div> : null}
+        {snapshotError ? <ErrorBanner error={snapshotError} /> : null}
         {snapshotResult ? (
-          <div style={{ marginTop: 16 }} role="status">
+          <div role="status" className="settings-result">
             <Status tone="ok">Snapshot created</Status>
-            <dl className="kv" style={{ marginTop: 8 }}>
+            <dl className="kv">
               <dt>Location</dt><dd className="mono">{snapshotResult.destination}</dd>
               <dt>Files</dt><dd>{snapshotResult.fileCount}</dd>
               <dt>Size</dt><dd>{formatBytes(snapshotResult.bytes)}</dd>
@@ -115,7 +116,7 @@ export function ProjectSettingsPage() {
         ) : null}
       </section>
 
-      <section className="panel" aria-labelledby="close-title">
+      <section className="settings-section" aria-labelledby="close-title">
         <h2 id="close-title">Close project</h2>
         <p className="secondary">Closing finishes publication, checkpoints the database and releases the project lease. Tracked background work is never cancelled.</p>
         {closing ? <Banner tone="warn" title="Closing — background work continues, not yet safe to move">{closeResult?.message ?? "The directory is still in use until tracked work finishes."}</Banner> : null}

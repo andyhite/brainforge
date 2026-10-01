@@ -1,0 +1,109 @@
+/* Review: Animation Checking Room. Scoped to .review-room / .review-queue-page; uses semantic tokens only. */
+
+.review-room { --review-pane-h: max(520px, calc(100dvh - var(--header-h, 56px) - 24px)); }
+.review-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: var(--review-pane-h); gap: calc(var(--u) * 1.5); }
+
+/* Context + identity: two compact rows, never a page title. */
+.review-context { flex: none; display: grid; gap: var(--u); }
+.review-crumbs { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: calc(var(--u) * 2); font-size: 13px; color: var(--text-muted); }
+.review-crumbs ol { gap: calc(var(--u) * 1.5); }
+.review-crumbs li + li::before { content: "/"; margin-right: calc(var(--u) * 1.5); color: var(--border-control); }
+.review-crumbs strong { color: var(--text); }
+.review-identity { gap: var(--u) calc(var(--u) * 3); align-items: baseline; }
+.review-title { margin: 0; font-size: 17px; line-height: 1.25; }
+.review-output-name { font-weight: 650; font-size: 14px; font-variant-numeric: tabular-nums; }
+.review-identity-actions { margin-left: auto; gap: calc(var(--u) * 2); }
+.review-identity-actions .icon { width: 14px; height: 14px; vertical-align: -2px; }
+.review-identity-actions button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+
+/* Stage + inspector share the first screen. */
+.review-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) clamp(340px, 28vw, 440px); gap: calc(var(--u) * 3); }
+.review-stage { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: calc(var(--u) * 1.5); }
+.review-stage-view { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--stage, var(--surface-2)); border: 1px solid var(--border); border-radius: var(--radius); padding: calc(var(--u) * 1.5); }
+.review-stage-view > * { flex: 1; min-height: 0; }
+.review-strip { flex: none; }
+
+/* One compact output/compare bar owned by the stage. */
+.outputs-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(var(--u) * 3); }
+.outputs-field { display: flex; align-items: center; gap: calc(var(--u) * 1.5); font-size: 13px; color: var(--text-muted); }
+.outputs-field select { max-width: 260px; }
+.outputs-warnings { position: relative; }
+.outputs-warnings > summary { cursor: pointer; }
+
+/* Concept exploration: horizontal strip of sibling candidates under the stage. */
+.concept-strip { flex: none; }
+.concept-strip ol { flex-wrap: nowrap; overflow-x: auto; gap: var(--u); padding: 2px; }
+.concept-strip p { margin: var(--u) 0 0; font-size: 12px; }
+.concept-strip-item { display: grid; gap: 2px; justify-items: center; width: 72px; padding: 3px; border: 1px solid var(--border); border-radius: var(--radius); text-decoration: none; font-size: 11px; color: var(--text-muted); }
+.concept-strip-item.current { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); color: var(--text); }
+.concept-strip-thumb { width: 64px; height: 64px; display: grid; place-items: center; overflow: hidden; border-radius: var(--radius); }
+.concept-strip-thumb img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.concept-strip-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.outputs-warnings > ul { position: absolute; bottom: calc(100% + var(--u)); left: 0; z-index: 2; width: max-content; max-width: min(520px, 80vw); margin: 0; padding: calc(var(--u) * 2) calc(var(--u) * 3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 4px 16px rgb(0 0 0 / 0.25); }
+
+.review-inspector { min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; flex-direction: column; gap: calc(var(--u) * 2); padding: 0 2px 0 0; margin: 0; border: 0; background: transparent; color: inherit; position: static; inset: auto; width: auto; max-width: none; height: auto; max-height: none; }
+.review-inspector[open] { display: flex; }
+.review-drawer-head { display: none; }
+.review-inspector .decision-panel { margin: 0; padding: calc(var(--u) * 2) calc(var(--u) * 3); }
+.review-inspector .decision-heading { margin: 0 0 var(--u); font-size: 15px; }
+.decision-compact { display: grid; gap: calc(var(--u) * 1.5); }
+.decision-compact > * { margin: 0; }
+.decision-target { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--u) calc(var(--u) * 2); font-size: 13px; }
+.decision-actions { gap: calc(var(--u) * 2); }
+.decision-reason { display: grid; gap: var(--u); }
+.decision-reason textarea { width: 100%; resize: vertical; }
+.decision-disclosure > summary { cursor: pointer; font-weight: 600; min-height: 28px; display: flex; align-items: center; }
+.decision-disclosure > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.review-decision { flex: none; }
+.review-decision:focus { outline: 2px solid var(--focus); outline-offset: 2px; }
+.review-inspector .proc-layout, .review-inspector .grid-2 { grid-template-columns: minmax(0, 1fr); }
+.review-inspector .panel { min-width: 0; overflow-wrap: anywhere; }
+.review-inspector pre.prompt { max-height: 200px; }
+.decision-history-disclosure > summary { cursor: pointer; font-weight: 600; margin: calc(var(--u) * 2) 0; }
+
+.review-section { flex: none; border-top: 1px solid var(--border); }
+.review-section > summary { display: flex; align-items: center; justify-content: flex-start; gap: calc(var(--u) * 2); min-height: var(--control-h, 36px); cursor: pointer; font-weight: 650; }
+.review-section > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.review-section-meta { margin-left: auto; font-weight: 400; font-size: 13px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.review-section-body { padding: 0 0 calc(var(--u) * 3); min-width: 0; overflow-x: auto; }
+
+/* Existing viewers fill the stage instead of using fixed heights. */
+.review-room .annot-viewer { display: flex; flex-direction: column; min-height: 0; gap: calc(var(--u) * 2); }
+.review-room .viewer-bar { display: flex; flex-wrap: wrap; gap: 0 calc(var(--u) * 4); }
+.review-room .viewer-tools { margin-bottom: 0; gap: var(--u) calc(var(--u) * 2); align-items: center; }
+/* Segmented groups: one outline per group, shared dividers, pressed segment filled. */
+.seg { display: inline-flex; }
+.seg > button { min-height: 28px; padding: 0 8px; font-size: 13px; border-radius: 0; margin: 0 0 0 -1px; }
+.seg > button:first-child { margin-left: 0; border-top-left-radius: var(--radius); border-bottom-left-radius: var(--radius); }
+.seg > button:last-child { border-top-right-radius: var(--radius); border-bottom-right-radius: var(--radius); }
+.seg > button[aria-pressed="true"] { position: relative; }
+.seg > button:focus-visible { position: relative; z-index: 1; }
+.review-room .annot-viewer .annot-stage { flex: 1; height: auto; min-height: 200px; max-height: none; }
+.review-room .clip-player { display: flex; flex-direction: column; min-height: 0; gap: var(--u); }
+.review-room .clip-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(var(--u) * 3); flex: none; }
+.review-room .clip-controls { flex: none; }
+.review-stage-view > .stack { display: flex; flex-direction: column; }
+.review-stage-view > .stack > .clip-player { flex: 1; margin-top: 0; }
+.review-room .clip-stages { min-height: 100%; align-items: center; }
+.review-room .clip-stage-wrap { flex: 1; min-height: 200px; padding: var(--u); }
+.review-room .clip-fig { gap: 2px; }
+
+/* Narrow desktop and 200% zoom: the inspector becomes a modal drawer opened by "Decision & notes" (native dialog: focus trap, Escape, focus return). */
+@media (max-width: 1100px) {
+  .review-main { height: auto; }
+  .review-grid { display: block; }
+  .review-stage { height: clamp(380px, 70dvh, 640px); }
+  .review-inspector:modal { position: fixed; inset: 0 0 0 auto; width: min(440px, 100vw); height: 100dvh; max-height: none; padding: calc(var(--u) * 3); background: var(--surface); border-left: 1px solid var(--border); box-shadow: -8px 0 24px rgb(0 0 0 / 0.3); scroll-padding-top: 64px; }
+  .review-inspector::backdrop { background: rgb(0 0 0 / 0.45); }
+  .review-inspector:modal .review-drawer-head { display: flex; align-items: center; justify-content: space-between; position: sticky; top: calc(var(--u) * -3); z-index: 1; margin: calc(var(--u) * -3) calc(var(--u) * -3) 0; padding: calc(var(--u) * 2) calc(var(--u) * 3); background: var(--surface); border-bottom: 1px solid var(--border); }
+}
+
+/* Review queue page */
+.review-queue-page { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); gap: calc(var(--u) * 6); align-items: start; }
+.review-queue-main, .review-side { min-width: 0; }
+@media (max-width: 1100px) { .review-queue-page { grid-template-columns: minmax(0, 1fr); } }
+.queue-row { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; gap: calc(var(--u) * 3); align-items: center; padding: calc(var(--u) * 2) calc(var(--u) * 3); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.queue-row.selected { border-color: var(--accent); background: var(--accent-soft); }
+.queue-row p { margin: 2px 0; }
+.queue-row .thumb-box img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.queue-row-main { min-width: 0; overflow-wrap: anywhere; }

@@ -16,8 +16,8 @@ export function VersionDetail({ versionId }: { versionId: string }) {
   if (!query.data.ok) return <ErrorBanner error={query.data.error} />;
   const { version, manifest, differences, activations } = query.data.data;
   return (
-    <section className="panel" aria-labelledby={`vd-${versionId}`} style={{ marginTop: 16 }}>
-      <h3 id={`vd-${versionId}`} style={{ marginTop: 0 }}>Version {version.versionNumber} details</h3>
+    <section className="rel-detail" aria-labelledby={`vd-${versionId}`}>
+      <h3 id={`vd-${versionId}`}>Version {version.versionNumber} details</h3>
       <div className="row" style={{ gap: 8 }}><VersionStateBadge state={version.state} /><MatchBadge matches={version.matchesCurrent} /></div>
       <dl className="kv">
         <dt>Version id</dt><dd className="mono">{manifest.versionId}</dd>
@@ -94,12 +94,12 @@ export function VersionDetail({ versionId }: { versionId: string }) {
       <h4>Files ({manifest.files.length})</h4>
       {manifest.files.length === 0 ? <Banner tone="warn" title="No files listed" /> : (
         <div className="table-wrap">
-          <table>
+          <table className="rel-files">
             <caption className="sr-only">Files in this version with SHA-256 hashes</caption>
             <thead><tr><th scope="col">Path</th><th scope="col">Type</th><th scope="col">Size</th><th scope="col">SHA-256</th></tr></thead>
             <tbody>
               {manifest.files.map((file) => (
-                <tr key={file.path}><th scope="row" className="mono">{file.path}</th><td>{file.mediaType}</td><td>{file.size.toLocaleString()} B</td><td className="mono" style={{ overflowWrap: "anywhere" }}>{file.sha256}</td></tr>
+                <tr key={file.path}><th scope="row" className="mono">{file.path}</th><td>{file.mediaType}</td><td className="rel-num">{file.size.toLocaleString()} B</td><td className="mono rel-hash">{file.sha256}</td></tr>
               ))}
             </tbody>
           </table>

@@ -2,6 +2,7 @@ import { useEffect, useState, type RefObject } from "react";
 import type { Annotation, CandidateOutput, FrameRange, Geometry, OperationError } from "@brainforge/contracts";
 import { useMutationOperation } from "../../api/hooks.ts";
 import { ErrorBanner, formatTime } from "../../components/ui.tsx";
+import { Icon } from "../../components/Icon.tsx";
 const describe = (g: Geometry): string => (g.kind === "whole" ? "Whole image" : g.kind === "pin" ? "Pin" : "Rectangle");
 /** UI frame numbers are one-based; stored ranges are zero-based source frames. */
 export const rangeLabel = (r: FrameRange): string => (r.start === r.end ? `source frame ${r.start + 1}` : `source frames ${r.start + 1}–${r.end + 1}`);
@@ -159,11 +160,11 @@ function NoteItem({ annotation: a, index, selected, onSelect }: { annotation: An
       <div className="row">
         <button type="button" className="note-number" onClick={() => onSelect(a.annotationId)} aria-label={`Select note ${index}, ${describe(a.geometry)}`}>{index}</button>
         <span className="secondary">{describe(a.geometry)}{a.frameRange ? ` · ${rangeLabel(a.frameRange)}` : ""} · {a.createdBy} · {formatTime(a.updatedAt)} · v{a.version}</span>
-        {a.requiresRevision ? <span className="status warn"><span aria-hidden="true">▲</span><span>Requires revision</span></span> : null}
+        {a.requiresRevision ? <span className="status warn"><Icon name="warn" /><span>Requires revision</span></span> : null}
       </div>
       {conflict ? (
         <div className="banner warn" role="alert">
-          <span aria-hidden="true">▲</span>
+          <Icon name="warn" />
           <div className="body">
             <strong>This note changed since you opened it</strong>
             <div>Current text: <q>{a.text}</q> (v{a.version}{a.requiresRevision ? ", requires revision" : ""})</div>
