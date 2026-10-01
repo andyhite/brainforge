@@ -49,9 +49,12 @@ Inputs are JSON objects; unknown keys are rejected. Every tool also accepts opti
 |Workflows|`workflow_list`, `workflow_inspect {workflowId, version?}`, `workflow_preflight {workflowId, version?}` (read-only)|
 |Generation|`budget_list`, `step_inspect`, `generation_plan` (no submit), `generation_start {planId, planHash, budgetId}`, `job_list/inspect/reconcile/retry/cancel`, `candidate_list/inspect/favorite`|
 |Review|`annotation_create/update/delete/list`, `revision_list {status}`, `revision_inspect` (images), `revision_create`, `revision_respond`; `revision_resolve/waive` only if the user says so|
-|Branches/review|`concept_lock`, `branch_list`, `step_list`, `candidate_select`, `review_list/material/decide/escalate/history`; `review_override` is human only. See [branches-review](references/branches-review.md)|
+|Branches/review|`concept_lock`, `branch_list`, `step_list`, `candidate_select`, `review_list/material/decide/escalate/history`; `review_override` human only. [branches-review](references/branches-review.md)|
 |Motion|`output_inspect` (frames with source indices), `processing_plan` → `processing_start`, `candidate_export_cleanup` / `candidate_import_cleanup`. See [motion-processing](references/motion-processing.md)|
-|Human only|`budget_grant`, `budget_revoke`, `policy_authorize {requestedPolicyHash}`, `connection_set {comfyUrl}`, `review_override`|
+|History|`history_examples {assetId, stepId?}` (accepted/rejected examples as images), `history_judgments`, `preference_propose/list`. [history-preferences](references/history-preferences.md)|
+|Production|`promotion_plan {assetId, branchId?}` (all blockers for the whole bundle), `promotion_start {planId, planHash, requestId}` (promote; does NOT activate), `version_list {assetId}`, `version_inspect {versionId}`, `version_activate {versionId, expectedRevision, acknowledgeObsolete?}`. [production-versions](references/production-versions.md)|
+|Export|`export_plan {assetIds?, versions?, confirmEmpty?}` (stores a plan; lists blockers/leaving/conflicts), `export_start {planId, planHash, requestId}`, `export_list`, `export_inspect {exportId}`. [export](references/export.md)|
+|Human only|`budget_grant`, `budget_revoke`, `policy_authorize`, `connection_set`, `review_override`, `preference_confirm`, `preference_reject`|
 
 `spec_write` accepts only `brainforge/project.yaml`, `brainforge/styles/<style-id>.yaml`, `brainforge/assets/<asset-id>/asset.yaml`. Any other path → `INVALID_INPUT`.
 
@@ -69,6 +72,8 @@ Inputs are JSON objects; unknown keys are rejected. Every tool also accepts opti
 10. Before you start a generation: `generation_plan`, read `plan.prompt` and `promptSources` in full, check every sentence against "Writing prompt-bearing YAML", fix the YAML via `spec_write`, re-plan. Only then ask the user / `generation_start`.
 11. Concept chosen: ask the user to lock it (`concept_lock` obeys policy; if refused name the candidate/output for the UI). Then `step_list` shows ready deliverables; plan/start with `branchId` + `stepId`. Review: `review_list` → `review_material` → judge → `review_decide` (with its `requirementsHash`) or `review_escalate`. Details: [branches-review](references/branches-review.md).
 12. Motion: an animation step needs its start/end guide poses approved. After generation only SOURCE frames exist: `processing_plan` → read it (sources, frame count, duration, warnings) → `processing_start` → NEW unapproved processed output → `candidate_select` it → review/decide that id. Compare 12 vs 16 fps outputs; one scale anchor per branch. Details: [motion-processing](references/motion-processing.md).
+13. Promote: all required deliverables approved → `promotion_plan` → show blockers/plan to the user → `promotion_start` with a fresh `requestId` (same one on retry). Activate separately: `version_list` → `version_activate` with its `active.revision`; obsolete versions need `acknowledgeObsolete` and a human. Refused → tell the user; never self-authorize. Details: [production-versions](references/production-versions.md).
+14. Export: assets need an ACTIVE version. `export_plan` → show blockers/leaving/conflicts to the user → `export_start` with a fresh `requestId` (same on retry). Public path is `<destination>/current/assets/...`, never with an export id. Unowned files are never overwritten (`EXPORT_CONFLICT`); export never promotes or activates. godot4 needs `export.godotProjectRoot` containing `project.godot`. Details: [export](references/export.md).
 
 ## Writing prompt-bearing YAML
 
@@ -105,7 +110,7 @@ The YAML text IS the image prompt. The model (Krea, cfg 1) obeys what you descri
 - Dropping deliverables from an asset because the format was unknown.
 - Writing YAML as design-doc prose (abstract features, status, doc references, lore, other characters' names) or with negations ("without X" draws X): all of it ends up in the prompt; move to `notes`.
 - Turnaround/front-profile-rear language in `description`/`identity`/`perspective`: the model draws several figures.
-- Starting a generation without reading `plan.prompt` and `promptSources` first.
+- Starting a generation without reading `plan.prompt` and `promptSources` first. Proposing a preference without decision-id evidence, or describing a rejected example as "avoid X".
 - Calling `review_decide` without `review_material` first, or with a stale `requirementsHash`; asserting human approval for your own decision; treating escalation or `candidate_select` as approval.
 - Locking a concept the user did not choose; expecting deliverable generation without a branch or approved dependency.
 - Approving source frames as an animation; annotating processed frame indices (use source indices); per-clip scaling; expecting a changed recipe to edit an old output.

@@ -44,6 +44,12 @@ export function pendingEscalation(db: Database, candidateId: string, outputId: s
   return escalationsFor(db, candidateId).find((e) => e.status === "pending" && e.outputIds.includes(outputId));
 }
 
+/** Names the preferences a human confirmed after a decision, so a stale reason says what changed the requirements. */
+function confirmedSince(db: Database, decidedAt: string): string {
+  const rows = db.query<{ preference_id: string; text: string }, [string]>("SELECT preference_id, text FROM preferences WHERE status = 'confirmed' AND decided_at >= ? ORDER BY decided_at").all(decidedAt);
+  return rows.length === 0 ? "" : ` (confirmed preference ${rows.map((r) => `${r.preference_id}: "${r.text}"`).join("; ")})`;
+}
+
 /**
  * What is currently true of one output. The standing decision is the latest row; it only applies while both the
  * requirements it was made against and the output bytes still match. A pending escalation is never approval.
@@ -59,7 +65,7 @@ export function standingApproval(db: Database, outputId: string, currentRequirem
   const staleReason = row.output_hash !== currentOutputHash
     ? "The output bytes changed since the decision."
     : row.requirements_hash !== currentRequirementsHash
-      ? "The requirements this output was judged against have changed since the decision."
+      ? `The requirements this output was judged against have changed since the decision${confirmedSince(db, row.created_at)}.`
       : undefined;
   return {
     outputId, state: row.decision === "approve" ? "approved" : "rejected", decisionId: row.decision_id,

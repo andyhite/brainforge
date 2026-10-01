@@ -1,19 +1,31 @@
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { Database } from "bun:sqlite";
-import { GenerationPlan, type Decision, type OperationContext, type OutputApproval, type Visual } from "@brainforge/contracts";
+import { GenerationPlan, type Candidate, type Decision, type Escalation, type OperationContext, type OutputApproval, type Visual } from "@brainforge/contracts";
 import { resolveIn, sha256 } from "@brainforge/storage";
-import { discoverAuthored } from "../authored.ts";
+import { discoverAuthored, type AuthoredSet } from "../authored.ts";
 import { onDiskManifestHash } from "../outputs/frames.ts";
 import type { OpenProject } from "../project-runtime.ts";
 import { policyView } from "../policy.ts";
 import { canActorReview, decisionsFor, escalationsFor, pendingEscalation, standingApproval, toDecision, toEscalation, type DecisionRow, type EscalationRow } from "../review/authority.ts";
 import { candidateRow, outputRows, outputVisuals, requirementsResolver, toCandidate, type CandidateRow, type OutputRow, type RequirementsResolver } from "../review/records.ts";
+import { computeEffective } from "../effective.ts";
+import { confirmedPreferences, type ConfirmedPreference } from "../preferences/store.ts";
+import { unaddressedRequiredNotes } from "../review/step.ts";
 import { stepRequirementsHash } from "../review/requirements.ts";
 import { OperationFailure, type HandlerMap } from "../runtime.ts";
 import { requireOpen } from "./common.ts";
 
+type ReviewKind = "awaiting-review" | "escalated" | "needs-revision" | "overridden" | "decided";
+
 const newId = (prefix: string): string => `${prefix}_${randomBytes(6).toString("hex")}`;
+/** Confirmed preferences that are part of this asset's effective settings (project ones, and those of styles in effect). */
+function preferencesInForce(open: OpenProject, set: AuthoredSet, assetId: string): ConfirmedPreference[] {
+  const confirmed = confirmedPreferences(open.db);
+  const { effective } = computeEffective(set, { assetId, preferences: confirmed });
+  return confirmed.filter((p) => `preference.${p.preferenceId}` in effective);
+}
+
 
 /** Deliverable candidates only: the concept is explored, then chosen with concept.lock. */
 function assertReviewable(cand: CandidateRow): void {
@@ -167,6 +179,7 @@ export const decisionHandlers: HandlerMap = {
         references, reviewPolicy: view.effective.productionReview,
         you: { canDecide: ability.canDecide, canEscalate: ability.canEscalate, canOverride: ability.canOverride, ...(ability.why ? { why: ability.why } : {}) },
         ...(escalation ? { escalation } : {}), decisions: decisionsFor(open.db, cand.candidate_id), visuals,
+        preferences: preferencesInForce(open, set, cand.asset_id),
       },
     };
   },
@@ -230,28 +243,46 @@ export const decisionHandlers: HandlerMap = {
 
   "review.list": async ({ input, project }) => {
     const open = requireOpen(project);
-    const rows = open.db.query<CandidateRow, (string)[]>(
-      `SELECT * FROM candidates WHERE step_id != 'concept' ${input.assetId === undefined ? "" : "AND asset_id = ?"} ORDER BY created_at DESC, rowid DESC`,
-    ).all(...(input.assetId === undefined ? [] : [input.assetId]));
+    const { db } = open;
+    const where = ["step_id != 'concept'"];
+    const args: string[] = [];
+    if (input.assetId !== undefined) { where.push("asset_id = ?"); args.push(input.assetId); }
+    if (input.stepId !== undefined) { where.push("step_id = ?"); args.push(input.stepId); }
+    const rows = db.query<CandidateRow, string[]>(`SELECT * FROM candidates WHERE ${where.join(" AND ")} ORDER BY created_at DESC, rowid DESC`).all(...args);
+
+    // Candidates that a human override replaced an agent decision on, and those with required feedback nobody has resolved.
+    const overridden = new Set(db.query<{ candidate_id: string }, []>(
+      `SELECT DISTINCT o.candidate_id FROM review_decisions o JOIN review_decisions s ON s.decision_id = o.supersedes_decision_id
+        WHERE o.kind = 'override' AND o.actor_type = 'human' AND s.actor_type = 'agent'`,
+    ).all().map((r) => r.candidate_id));
+    const needsRevision = new Set<string>();
+    for (const assetId of new Set(rows.map((r) => r.asset_id))) {
+      for (const note of unaddressedRequiredNotes(db, assetId)) needsRevision.add(note.candidateId);
+    }
+
     const resolvers = new Map<string, RequirementsResolver>();
-    const items = [];
+    const matched: { candidate: Candidate; kind: ReviewKind; escalation?: Escalation }[] = [];
     for (const row of rows) {
-      if (items.length >= input.limit) break;
-      if (outputRows(open.db, row.candidate_id).length === 0) continue;
+      if (outputRows(db, row.candidate_id).length === 0) continue;
       let hashFor = resolvers.get(row.asset_id);
       if (!hashFor) {
         hashFor = await requirementsResolver(open, row.asset_id);
         resolvers.set(row.asset_id, hashFor);
       }
-      const candidate = toCandidate(open.db, row, hashFor);
-      const escalation = escalationsFor(open.db, row.candidate_id).find((e) => e.status === "pending");
+      const candidate = toCandidate(db, row, hashFor);
+      const escalation = escalationsFor(db, row.candidate_id).find((e) => e.status === "pending");
       const undecided = candidate.approvals.some((a) => a.state === "none" || !a.applicable);
-      const kind = escalation ? "escalated" as const : undecided ? "awaiting-review" as const : "decided" as const;
-      if (input.filter === "escalated" && kind !== "escalated") continue;
-      if (input.filter === "awaiting" && kind === "decided") continue;
-      items.push({ candidate, kind, ...(escalation ? { escalation } : {}) });
+      const flags: Record<ReviewKind, boolean> = {
+        escalated: escalation !== undefined, "needs-revision": needsRevision.has(row.candidate_id), overridden: overridden.has(row.candidate_id),
+        "awaiting-review": undecided, decided: !undecided && escalation === undefined,
+      };
+      const wanted: ReviewKind | undefined = input.filter === "escalated" || input.filter === "needs-revision" || input.filter === "overridden" || input.filter === "decided" ? input.filter : undefined;
+      if (input.filter === "awaiting" ? !flags["awaiting-review"] && !flags.escalated : wanted !== undefined && !flags[wanted]) continue;
+      // A listing for one filter reports that filter's kind; the broad listings report the most urgent reason.
+      const kind = wanted ?? (["escalated", "needs-revision", "awaiting-review", "overridden", "decided"] as const).find((k) => flags[k]) ?? "decided";
+      matched.push({ candidate, kind, ...(escalation ? { escalation } : {}) });
     }
-    return { data: { items } };
+    return { data: { items: matched.slice(input.offset, input.offset + input.limit), total: matched.length } };
   },
 
   "review.history": async ({ input, project }) => {

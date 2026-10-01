@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Annotation, CandidateOutput, OperationError } from "@brainforge/contracts";
 import { useMutationOperation } from "../../api/hooks.ts";
 import { ErrorBanner } from "../../components/ui.tsx";
+import { rangeLabel } from "./AnnotationPanel.tsx";
 
 /** Bundles chosen notes into a revision request. Nothing runs: an external agent must read it. */
 export function NewRevisionForm({ candidateId, annotations, outputs }: { candidateId: string; annotations: Annotation[]; outputs: CandidateOutput[] }) {
@@ -51,7 +52,7 @@ export function NewRevisionForm({ candidateId, annotations, outputs }: { candida
                 <li key={a.annotationId}>
                   <label className="check">
                     <input type="checkbox" checked={selection.has(a.annotationId)} onChange={() => toggle(a.annotationId)} />
-                    <span>{a.text} <span className="secondary">({a.geometry.kind}, {role}{a.requiresRevision ? ", requires revision" : ""})</span></span>
+                    <span>{a.text} <span className="secondary">({a.geometry.kind}{a.frameRange ? `, ${rangeLabel(a.frameRange)}` : ""}, {role}{a.requiresRevision ? ", requires revision" : ""})</span></span>
                   </label>
                 </li>
               );

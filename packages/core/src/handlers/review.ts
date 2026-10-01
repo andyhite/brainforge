@@ -1,10 +1,8 @@
 import { randomBytes } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import { GenerationPlan, type Annotation, type FrameRange, type Geometry, type Visual } from "@brainforge/contracts";
-import { renderAnnotated } from "@brainforge/media";
-import { paths, resolveIn, sha256, writeFileAtomic } from "@brainforge/storage";
 import { discoverAuthored } from "../authored.ts";
+import { renderRevisionFiles, type WrittenRender } from "../review/annotated.ts";
 import { policyView } from "../policy.ts";
 import {
   annotationRow, annotationsFor, candidateRow, encodeGeometry, outputRows, outputVisuals, requirementsResolver, revisionRow, revisionsForCandidate, toAnnotation,
@@ -174,19 +172,12 @@ export const reviewHandlers: HandlerMap = {
     const outputIds = [...new Set(notes.map((n) => n.outputId))];
     const outputs = outputRows(open.db, cand.candidate_id);
     const revisionRequestId = newId("rev");
-    const written: { fileId: string; outputId: string; path: string; sha: string; width: number; height: number }[] = [];
-    for (const [index, outputId] of outputIds.entries()) {
+    const written: WrittenRender[] = [];
+    for (const outputId of outputIds) {
       const out = outputs.find((o) => o.output_id === outputId);
       if (!out) throw new OperationFailure("NOT_FOUND", `Output ${outputId} is no longer recorded for candidate ${cand.candidate_id}`);
-      const abs = await resolveIn(open.root, out.path).catch(() => undefined);
-      const bytes = abs ? await readFile(abs).catch(() => undefined) : undefined;
-      if (!bytes || sha256(bytes) !== out.sha256) {
-        throw new OperationFailure("OUTPUT_MISSING", `Original ${outputId} is missing or no longer matches its recorded hash, so an annotated render cannot be made`, { outputId, path: out.path });
-      }
-      const png = await renderAnnotated(bytes, notes.flatMap((n, i) => (n.outputId === outputId ? [{ number: i + 1, geometry: n.geometry }] : [])));
-      const rel = `${paths.reviewDir(cand.asset_id, revisionRequestId)}/annotated-${index + 1}.png`;
-      await writeFileAtomic(await resolveIn(open.root, rel), png);
-      written.push({ fileId: newId("rf"), outputId, path: rel, sha: sha256(png), width: out.width, height: out.height });
+      const forOutput = notes.flatMap((note, i) => (note.outputId === outputId ? [{ number: i + 1, note }] : []));
+      written.push(...(await renderRevisionFiles(open, cand.asset_id, revisionRequestId, out, forOutput, written.length + 1)));
     }
     const now = new Date().toISOString();
     const { revision } = open.transact(() => {
@@ -295,6 +286,9 @@ function writeHistory(open: ProjectHandle, annotationId: string, actorId: string
 }
 
 function revisionVisuals(open: ProjectHandle, revisionRequestId: string): Visual[] {
-  return open.db.query<{ file_id: string; width: number; height: number; output_id: string }, [string]>("SELECT file_id, width, height, output_id FROM review_files WHERE revision_request_id = ? ORDER BY path").all(revisionRequestId)
-    .map((f) => ({ fileId: f.file_id, role: "annotated", label: `Annotated render of ${f.output_id}`, mediaType: "image/png", width: f.width, height: f.height }));
+  return open.db.query<{ file_id: string; width: number; height: number; output_id: string; path: string }, [string]>("SELECT file_id, width, height, output_id, path FROM review_files WHERE revision_request_id = ? ORDER BY rowid").all(revisionRequestId)
+    .map((f) => {
+      const frame = /-frame-(\d+)\.png$/.exec(f.path)?.[1];
+      return { fileId: f.file_id, role: "annotated", label: `Annotated render of ${f.output_id}${frame === undefined ? "" : `, frame ${Number(frame)}`}`, mediaType: "image/png", width: f.width, height: f.height };
+    });
 }

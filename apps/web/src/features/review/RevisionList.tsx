@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import type { OperationError, RevisionRequest } from "@brainforge/contracts";
 import { fileUrl, useMutationOperation, useOperation } from "../../api/hooks.ts";
 import { ErrorBanner, formatTime, NetworkProblem, Status, type Tone } from "../../components/ui.tsx";
+import { rangeLabel } from "./AnnotationPanel.tsx";
 
 const STATUS: Record<RevisionRequest["status"], { tone: Tone; label: string }> = {
   open: { tone: "warn", label: "Open — waiting for an external agent" },
@@ -36,7 +37,6 @@ function RevisionCard({ revision, projectId, showCandidateLink }: { revision: Re
   const [reason, setReason] = useState("");
   const [waiving, setWaiving] = useState(false);
   const [refusal, setRefusal] = useState<OperationError | undefined>();
-  const [bundleOpen, setBundleOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const closed = revision.status === "resolved" || revision.status === "waived";
   const busy = resolve.isPending || waive.isPending;
@@ -91,10 +91,10 @@ function RevisionCard({ revision, projectId, showCandidateLink }: { revision: Re
         )}
       </section>
 
-      <details onToggle={(event) => setBundleOpen(event.currentTarget.open)}>
-        <summary>Bundle the agent receives (images, notes, specs)</summary>
-        {bundleOpen ? <Bundle revisionRequestId={revision.revisionRequestId} projectId={projectId} /> : null}
-      </details>
+      <section aria-label="Images and notes the agent receives">
+        <h3>Images and notes the agent receives</h3>
+        <Bundle revisionRequestId={revision.revisionRequestId} projectId={projectId} />
+      </section>
 
       {refusal ? <ErrorBanner error={refusal} /> : null}
       {!closed ? (
@@ -143,8 +143,12 @@ function Bundle({ revisionRequestId, projectId }: { revisionRequestId: string; p
         ))}
       </ul>
       {visuals.length === 0 ? <p className="secondary">No images in this bundle.</p> : null}
-      <ol className="secondary">
-        {annotations.map((a) => <li key={a.annotationId}>{a.text} <span className="mono">({a.geometry.kind})</span></li>)}
+      <ol className="secondary" aria-label="Notes in this request">
+        {annotations.map((a) => (
+          <li key={a.annotationId}>
+            {a.frameRange ? <strong>{rangeLabel(a.frameRange)}: </strong> : null}{a.text} <span className="mono">({a.geometry.kind})</span>
+          </li>
+        ))}
       </ol>
     </div>
   );

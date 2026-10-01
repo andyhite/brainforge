@@ -1,4 +1,5 @@
 import type { Deliverable, EffectiveLeaf } from "@brainforge/contracts";
+import type { ConfirmedPreference } from "./preferences/store.ts";
 import type { AuthoredAsset, AuthoredProject, AuthoredSet, AuthoredStyle } from "./authored.ts";
 
 type Layer = EffectiveLeaf["source"]["layer"];
@@ -78,7 +79,7 @@ function styleConflicts(styles: readonly AuthoredStyle[]): EffectiveConflict[] {
   return [{ field: "palette", values: withPalette.map((s) => ({ file: s.path, value: s.spec?.palette })) }];
 }
 
-export interface EffectiveOptions { assetId?: string; deliverableId?: string }
+export interface EffectiveOptions { assetId?: string; deliverableId?: string; preferences?: readonly ConfirmedPreference[] }
 export class EffectiveLookupError extends Error {
   constructor(readonly what: "asset" | "deliverable", message: string) {
     super(message);
@@ -124,6 +125,13 @@ export function computeEffective(set: AuthoredSet, options: EffectiveOptions = {
   const assetStyles = (asset?.spec?.styleIds ?? []).flatMap((id) => set.styles.filter((s) => s.fileId === id && !projectStyles.includes(s)));
   for (const s of projectStyles) styleLeaves(map, s, "project-defaults");
   for (const s of assetStyles) styleLeaves(map, s, "asset");
+
+  // Confirmed preferences are explicit requirements. A style preference applies where that style is in effect.
+  const inEffect = new Set([...projectStyles, ...assetStyles].map((s) => s.fileId));
+  for (const p of options.preferences ?? []) {
+    if (p.scope === "style" && (p.styleId === undefined || !inEffect.has(p.styleId))) continue;
+    map.set(`preference.${p.preferenceId}`, p.text, `preference:${p.preferenceId}`, p.scope === "style" ? `style:${p.styleId}` : "project", "project-defaults");
+  }
 
   return { effective: map.leaves, conflicts: styleConflicts([...projectStyles, ...assetStyles]) };
 }

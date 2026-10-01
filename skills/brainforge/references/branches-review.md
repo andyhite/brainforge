@@ -25,7 +25,7 @@ Bare operation names below. Host forms: oh-my-pi writes JSON to `xd://mcp__brain
 
 ## Review loop
 
-1. `review_list {assetId?, filter:"awaiting"|"escalated"|"all"}`.
+1. `review_list {assetId?, stepId?, filter, limit?, offset?}`; `filter` is `awaiting`, `escalated`, `needs-revision` (unresolved required notes), `overridden` (human reversed a decision), `decided`, or `all`. Items are `{candidate, kind, escalation?}` with `kind` one of `awaiting-review|escalated|needs-revision|overridden|decided`; `total` counts all matches.
 2. `review_material {candidateId, outputIds?}`: returns the prompt, deliverable description, references, `requirementsHash`, `reviewPolicy`, `you` (`canDecide`, `canEscalate`, `canOverride`, `why`), decision history, and `visuals` (arrive as image blocks, sheet crops included). Do not decide on images the note says were not attached.
 3. Judge each output against the deliverable description, effective requirements and the exact prompt.
 4. Sure: `review_decide {candidateId, outputIds, requirementsHash, decision:"approve"|"reject", reasons}`. `requirementsHash` MUST be the one just returned; rejecting needs at least one concrete reason (what is wrong, where).
@@ -57,3 +57,12 @@ A decision is applicable only if its `requirementsHash` equals the current one A
 - Claiming a human approved what you decided.
 - Locking a concept the user did not pick; retrying a refused lock.
 - Generating a deliverable with no branch, or before its dependency is approved.
+
+## Frame-range revision loop (animation)
+
+1. The reviewer marks a source-frame range (`annotation_create {candidateId, outputId, frameRange:{start,end}, text, requiresRevision:true}`; zero-based SOURCE indices, inclusive). The request waits with no agent connected.
+2. `revision_list {status:"open"}` -> `revision_inspect`: notes with ranges, originals, and annotated frames of the range (image blocks), plus authored YAML in force. Also run `history_examples` for accepted/rejected precedent ([history-preferences](history-preferences.md)).
+3. Fix the cause: edit motion/identity YAML (`spec_validate` -> `spec_write`), or pass `iterationInstructions` to `generation_plan` (they affect one run only, never become requirements). `generation_start` under a budget.
+4. `revision_respond {revisionRequestId, text, followUpJobIds}`. This links your attempt but does NOT resolve anything.
+5. Required notes keep blocking their branch/step lineage after new candidates exist, until an authorized reviewer calls `revision_resolve` or `revision_waive` (reason required). New output needs its own review; the old approval is not inherited.
+6. Unsure whether the fix is good: `review_escalate`; the human decides or overrides (`review_override`, recorded with identity and reasons).

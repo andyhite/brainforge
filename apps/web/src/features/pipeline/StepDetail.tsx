@@ -8,6 +8,7 @@ import { ActiveJobsStrip } from "../jobs/JobsPage.tsx";
 import { BudgetPanel } from "../generation/BudgetPanel.tsx";
 import { GenerateDialog } from "../generation/GenerateDialog.tsx";
 import { BackdropPicker, outputUrl, pickOutput, useBackdrop } from "../generation/media.tsx";
+import { OpenNotes } from "../review/OpenNotes.tsx";
 import { formatMs, outputLabel } from "../animation/timing.ts";
 
 const REGION_ORDER = ["front", "profile", "rear"];
@@ -103,7 +104,8 @@ export function StepDetail({ assetId, step, branchId }: { assetId: string; step:
           <h2 id="step-title" style={{ margin: 0 }}>{step.stepId} <span className="secondary">({step.kind}{step.required ? "" : ", optional"})</span></h2>
           <button type="button" className="primary" disabled={!canGenerate} onClick={() => setDialog(true)}>{candidates.length === 0 ? "Generate" : "Generate more"}</button>
         </div>
-        {step.blockers.map((blocker) => <Banner key={blocker.code + blocker.message} tone="warn" title={blocker.message} />)}
+        {step.blockers.filter((blocker) => blocker.code !== "REVISION_OPEN").map((blocker) => <Banner key={blocker.code + blocker.message} tone="warn" title={blocker.message} />)}
+        {step.counts.openRevisions > 0 || step.blockers.some((blocker) => blocker.code === "REVISION_OPEN") ? <OpenNotes assetId={assetId} stepId={step.stepId} /> : null}
         {step.kind === "animation" && step.state === "ready" ? <p className="secondary">Ready by its dependencies. Generating makes raw frames; you then process them into an export clip, and only a reviewed processed clip completes this step.</p> : null}
         {step.needsReassessment ? <Banner tone="warn" title="Needs reassessment"><ul style={{ margin: 0, paddingLeft: 20 }}>{step.reassessmentReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></Banner> : null}
       </section>

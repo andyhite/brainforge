@@ -5,6 +5,7 @@ import { decodeImage } from "@brainforge/media";
 import { paths, resolveIn, sha256, writeFileAtomic } from "@brainforge/storage";
 import { classifyAuthoredPath, discoverAuthored, observeAuthored, readAuthoredFile, specInfo, writeAuthored } from "../authored.ts";
 import { EffectiveLookupError, computeEffective } from "../effective.ts";
+import { confirmedPreferences } from "../preferences/store.ts";
 import { authorizePolicy, policyView } from "../policy.ts";
 import { OperationFailure, type HandlerMap } from "../runtime.ts";
 import { requireOpen } from "./common.ts";
@@ -59,7 +60,7 @@ export const specHandlers: HandlerMap = {
     const set = await discoverAuthored(open.root);
     observeAuthored(open, set.all());
     try {
-      const { effective, conflicts } = computeEffective(set, input);
+      const { effective, conflicts } = computeEffective(set, { ...input, preferences: confirmedPreferences(open.db) });
       return { data: { effective, conflicts, policy: await policyView(open) } };
     } catch (e) {
       if (e instanceof EffectiveLookupError) {

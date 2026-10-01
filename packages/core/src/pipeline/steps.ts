@@ -48,6 +48,18 @@ function whyNotApproved(dep: string, s: Standing | undefined): string {
   return `${dep}'s selected output has not been approved`;
 }
 
+/** Required notes plus open revision requests on any candidate of this step in this branch that nobody has resolved or waived. */
+export function openFeedbackCount(db: Database, assetId: string, stepId: string, branchId: string): number {
+  const onStep = (candidateId: string): boolean => {
+    const c = db.query<{ step_id: string; branch_id: string | null }, [string]>("SELECT step_id, branch_id FROM candidates WHERE candidate_id = ?").get(candidateId);
+    return c?.step_id === stepId && c.branch_id === branchId;
+  };
+  const notes = unaddressedRequiredNotes(db, assetId).filter((n) => onStep(n.candidateId)).length;
+  return notes + scalar(db, "SELECT COUNT(*) AS n FROM revision_requests q JOIN candidates c ON c.candidate_id = q.candidate_id WHERE q.asset_id = ? AND q.step_id = ? AND c.branch_id = ? AND q.status IN ('open','responded')", assetId, stepId, branchId);
+}
+
+const hasOpenFeedback = (db: Database, assetId: string, stepId: string, branchId: string): boolean => openFeedbackCount(db, assetId, stepId, branchId) > 0;
+
 async function deliverableStep(ctx: StepContext, set: AuthoredSet, assetId: string, pipeline: PipelinePlan, node: PipelineNode, branch: BranchRow | undefined, memo: Map<string, Promise<Standing | undefined>>): Promise<StepState> {
   const { db } = ctx;
   const stepId = node.id;
@@ -81,10 +93,11 @@ async function deliverableStep(ctx: StepContext, set: AuthoredSet, assetId: stri
     const s = await standing(dep);
     // An animation is delivered only as processed frames: approved raw source frames do not satisfy its dependents.
     const rawMotion = pipeline.byId.get(dep)?.kind === "animation" && s !== undefined && s.stage !== "processed";
-    if (branch && isApproved(s) && !rawMotion) continue;
+    const feedbackOpen = branchId !== undefined && hasOpenFeedback(db, assetId, dep, branchId);
+    if (branch && isApproved(s) && !rawMotion && !feedbackOpen) continue;
     blockers.push({
       code: "DEPENDENCY_NOT_APPROVED",
-      message: `Waiting for ${dep}: ${!branch ? `${dep} needs a branch first` : rawMotion ? `${dep}'s selected output is raw source frames; it needs a processed, approved output` : whyNotApproved(dep, s)}`,
+      message: `Waiting for ${dep}: ${!branch ? `${dep} needs a branch first` : rawMotion ? `${dep}'s selected output is raw source frames; it needs a processed, approved output` : feedbackOpen && isApproved(s) ? `${dep} has unresolved required feedback` : whyNotApproved(dep, s)}`,
       recoveryActions: [{ label: `Inspect ${dep}`, operation: "step.inspect", input: { assetId, stepId: dep, ...(branchId ? { branchId } : {}) } }],
     });
   }
@@ -136,6 +149,19 @@ async function deliverableStep(ctx: StepContext, set: AuthoredSet, assetId: stri
       code: "SUBMISSION_UNRESOLVED",
       message: `${counts.unresolvedJobs} job(s) have an ambiguous ComfyUI submission; they are not assumed to have run or not run`,
       recoveryActions: [{ label: "Inspect unresolved jobs", operation: "job.list", input: { assetId, state: "unresolved" } }],
+    });
+  }
+  // Required feedback stays with the step and branch until an authorized reviewer resolves or waives it, however many newer candidates exist.
+  if (unaddressed.length > 0 || counts.openRevisions > 0) {
+    const openRevisions = db.query<{ revision_request_id: string }, string[]>(
+      "SELECT q.revision_request_id FROM revision_requests q JOIN candidates c ON c.candidate_id = q.candidate_id WHERE q.asset_id = ? AND q.step_id = ? AND c.branch_id = ? AND q.status IN ('open','responded') ORDER BY q.created_at",
+    ).all(assetId, stepId, branchId ?? "");
+    blockers.push({
+      code: "REVISION_OPEN",
+      message: `${stepId} has unresolved required feedback (${[...new Set(unaddressed.map((n) => n.candidateId))].join(", ") || openRevisions.map((r) => r.revision_request_id).join(", ")}); it stays open on every candidate of this step until revision.resolve or revision.waive`,
+      recoveryActions: openRevisions.length > 0
+        ? openRevisions.map((r) => ({ label: `Inspect ${r.revision_request_id}`, operation: "revision.inspect", input: { revisionRequestId: r.revision_request_id } }))
+        : [{ label: "Bundle the required notes into a revision request", operation: "revision.create", input: { candidateId: unaddressed[0]?.candidateId, annotationIds: unaddressed.map((n) => n.annotationId) } }],
     });
   }
 

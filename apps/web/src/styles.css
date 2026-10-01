@@ -321,3 +321,23 @@ fieldset { border: 0; padding: 0; margin: 0; }
 .clip-fig figcaption { width: 0; min-width: 100%; text-align: center; }
 .proc-form, .proc-side { min-width: 0; overflow-wrap: anywhere; }
 .field.compact input[type="number"] { width: 9em; }
+
+/* M5: queue filter chips, history */
+.chip { display: inline-flex; align-items: center; gap: calc(var(--u) * 1.5); min-height: var(--control-h); padding: 0 calc(var(--u) * 3); border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2); color: var(--text); font-size: 13px; font-weight: 600; }
+button.chip { cursor: pointer; }
+button.chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+span.chip { min-height: 0; padding: 2px calc(var(--u) * 2); font-weight: 400; }
+code.chip { min-height: 0; padding: 2px calc(var(--u) * 2); font-weight: 400; }
+button.chip[aria-pressed="true"]::before { content: "✓"; }
+
+/* M6/M7: versions and promotion */
+.thumb-box { display: inline-flex; align-items: center; justify-content: center; width: 72px; height: 72px; border: 1px solid var(--border); border-radius: var(--radius); background: repeating-conic-gradient(var(--checker-a) 0% 25%, var(--checker-b) 0% 50%) 0 0 / 12px 12px; overflow: hidden; flex: none; }
+.thumb-box img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.thumb-strip { list-style: none; margin: calc(var(--u) * 2) 0; padding: 0; display: flex; flex-wrap: wrap; gap: calc(var(--u) * 3); }
+.thumb-strip li { max-width: 96px; overflow-wrap: anywhere; }
+.version-list { display: grid; gap: calc(var(--u) * 3); }
+.version-card { border: 1px solid var(--border); border-radius: var(--radius); padding: calc(var(--u) * 4); background: var(--surface-2); }
+.version-card[aria-current="true"] { border-color: var(--accent); border-width: 2px; }
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--u) calc(var(--u) * 4); margin: calc(var(--u) * 3) 0; }
+.kv dt { color: var(--text-muted); font-size: 13px; }
+.kv dd { margin: 0; overflow-wrap: anywhere; }

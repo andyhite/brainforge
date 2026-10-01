@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import type { PublicationFaults } from "./outputs/frames.ts";
 import type {
   ErrorCode, NextAction, OperationContext, OperationData, OperationName, ParsedOperationInput, RecoveryAction,
 } from "@brainforge/contracts";
@@ -72,6 +73,16 @@ export interface OperationRuntime {
   publicUrl: string;
   /** ComfyUI transport for the current machine setting; absent means "build one from `machine.comfyUrl()`". Tests inject a fake here. */
   comfy?: () => ComfyTransport | undefined;
+  /**
+   * Test-only crash points, set by tests that construct the runtime themselves. Release server construction never
+   * sets this, and no environment, HTTP, UI or agent input can.
+   */
+  faults?: {
+    promotion?: "fail-before-publish" | "fail-after-rename-before-commit";
+    export?: "fail-during-staging" | "fail-before-switch" | "fail-after-switch";
+    /** Crash points inside the processed-output publication (`processing.start`). */
+    processing?: PublicationFaults;
+  };
 }
 
 export interface HandlerArgs<K extends OperationName> {

@@ -1,0 +1,10 @@
+{
+  "name": "@brainforge/export",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc -p .", "test": "bun test tests", "godot-verify": "bun scripts/godot-verify.ts" },
+  "dependencies": { "@brainforge/contracts": "workspace:*", "@brainforge/media": "workspace:*" },
+  "devDependencies": { "sharp": "^0.34.0" }
+}

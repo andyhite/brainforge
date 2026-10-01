@@ -8,7 +8,8 @@ import { ConceptStep } from "../generation/ConceptStep.tsx";
 import { BranchSwitcher } from "../pipeline/BranchSwitcher.tsx";
 import { PipelineView } from "../pipeline/PipelineView.tsx";
 import { StepDetail } from "../pipeline/StepDetail.tsx";
-
+import { ProductionState } from "../production/ProductionState.tsx";
+import { VersionsSection } from "../production/VersionsSection.tsx";
 export function AssetPage() {
   const { assetId = "" } = useParams();
   const [params, setParams] = useSearchParams();
@@ -51,6 +52,7 @@ export function AssetPage() {
         <span className="mono">{summary.assetId}</span>
         {summary.required ? <Status tone="info">Required</Status> : <Status tone="idle">Optional</Status>}
         {summary.valid ? <Status tone="ok">Valid</Status> : missing ? <Status tone="warn">Definition missing</Status> : <Status tone="bad">Invalid — {summary.problems.length} {summary.problems.length === 1 ? "problem" : "problems"}</Status>}
+        <ProductionState assetId={assetId} />
       </PageHeader>
       <p><Link to="/assets">← All assets</Link></p>
       <nav aria-label="Asset steps">
@@ -63,14 +65,19 @@ export function AssetPage() {
             <Link to={`${base}?step=references`} aria-current={step === "references" ? "step" : undefined}>References</Link>{" "}
             {referenceCount > 0 ? <Status tone="ok">{referenceCount} imported</Status> : <Status tone="idle">None yet</Status>}
           </li>
+          <li>
+            <Link to={`${base}?step=versions${branchId ? `&branch=${encodeURIComponent(branchId)}` : ""}`} aria-current={step === "versions" ? "step" : undefined}>Versions</Link>{" "}
+            <ProductionState assetId={assetId} />
+          </li>
         </ol>
       </nav>
       <section aria-labelledby="pipeline-title" className="panel">
         <h2 id="pipeline-title" style={{ marginTop: 0 }}>Pipeline</h2>
         <BranchSwitcher branches={branchList} value={branchId} onChange={(next) => setParams((previous) => { const copy = new URLSearchParams(previous); copy.set("branch", next); return copy; })} />
         <PipelineView assetId={assetId} branchId={branchId} activeStep={step} base={base} />
+        <p style={{ marginBottom: 0 }}><Link className="button" to={`${base}?step=versions${branchId ? `&branch=${encodeURIComponent(branchId)}` : ""}`}>Promote…</Link></p>
       </section>
-      {step === "concept" ? <ConceptStep assetId={assetId} /> : step === "references" ? <ReferencesStep assetId={assetId} inspect={inspect} /> : step === "definition" ? <DefinitionStep inspect={inspect} autoCreate={params.get("create") === "1"} /> : activeStep && branchId ? <StepDetail key={`${branchId}-${step}`} assetId={assetId} step={activeStep} branchId={branchId} /> : <Banner tone="info" title={branchId ? `No step named ${step}` : "Lock a concept first"}>{branchId ? "Pick a step from the pipeline above." : "Production steps need a locked concept branch."}</Banner>}
+      {step === "versions" ? <VersionsSection assetId={assetId} branchId={branchId} base={base} /> : step === "concept" ? <ConceptStep assetId={assetId} /> : step === "references" ? <ReferencesStep assetId={assetId} inspect={inspect} /> : step === "definition" ? <DefinitionStep inspect={inspect} autoCreate={params.get("create") === "1"} /> : activeStep && branchId ? <StepDetail key={`${branchId}-${step}`} assetId={assetId} step={activeStep} branchId={branchId} /> : <Banner tone="info" title={branchId ? `No step named ${step}` : "Lock a concept first"}>{branchId ? "Pick a step from the pipeline above." : "Production steps need a locked concept branch."}</Banner>}
     </>
   );
 }

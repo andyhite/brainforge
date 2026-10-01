@@ -76,6 +76,13 @@ export async function inspectConceptStep(db: Database, root: string, assetId: st
   }
 
   const unaddressed = unaddressedRequiredNotes(db, assetId);
+  if (unaddressed.length > 0 || counts.openRevisions > 0) {
+    blockers.push({
+      code: "REVISION_OPEN",
+      message: `Required feedback on ${[...new Set(unaddressed.map((n) => n.candidateId))].join(", ") || "an open revision request"} is unresolved; it stays open until revision.resolve or revision.waive, whatever is generated since`,
+      recoveryActions: [{ label: "See revision requests", operation: "revision.list", input: { assetId } }],
+    });
+  }
   const next: NextAction[] = [];
   let state: StepState["state"];
   if (counts.activeJobs > 0) {

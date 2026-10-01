@@ -20,6 +20,11 @@ export interface SchedulerOptions {
   pollIntervalMs?: number;
   /** How often the loop looks for new or recoverable jobs when nothing wakes it (default 1000). */
   tickIntervalMs?: number;
+  /**
+   * Test-only: awaited after a job's remote result has been received and decoded and before the candidate is
+   * published. Only test-constructed registries set it; the release server never does.
+   */
+  beforeCandidatePublication?: (jobId: string) => Promise<void>;
 }
 
 const schedulers = new WeakMap<object, GenerationScheduler>();
@@ -360,6 +365,7 @@ export class GenerationScheduler {
     }
 
     try {
+      await this.options.beforeCandidatePublication?.(row.job_id);
       await this.publish(row, plan, items);
     } catch (e) {
       return this.fail(row, "publish", `Saving the candidate failed: ${describe(e)}`, retry);
@@ -402,6 +408,7 @@ export class GenerationScheduler {
     }
     const submission = SUBMISSION.parse(JSON.parse(row.submission_json));
     try {
+      await this.options.beforeCandidatePublication?.(row.job_id);
       await publishFrameSequence(this.project, {
         assetId: row.asset_id, candidateId, outputs: sequences, actorId: "system:scheduler", purpose: "generation",
         candidate: {

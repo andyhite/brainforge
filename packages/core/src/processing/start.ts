@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { OutputDetail, ParsedOperationInput } from "@brainforge/contracts";
 import { MediaError, processClip } from "@brainforge/media";
 import { assertId } from "@brainforge/storage";
-import { publishFrameSequence, readFrameSequence } from "../outputs/frames.ts";
+import { publishFrameSequence, readFrameSequence, type PublicationFaults } from "../outputs/frames.ts";
 import type { OpenProject } from "../project-runtime.ts";
 import { OperationFailure } from "../runtime.ts";
 import { loadReferenceImage } from "./anchor.ts";
@@ -21,15 +21,15 @@ const outputOfPlan = (open: OpenProject, planId: string): string | undefined =>
  * two-phase frame publication. The source and every earlier processed output are never touched. A plan that
  * already produced an output (including one finished by startup recovery after a crash) returns that output.
  */
-export function startProcessing(open: OpenProject, actorId: string, input: ParsedOperationInput<"processing.start">): Promise<OutputDetail> {
+export function startProcessing(open: OpenProject, actorId: string, input: ParsedOperationInput<"processing.start">, faults: PublicationFaults = {}): Promise<OutputDetail> {
   const running = inFlight.get(input.planId);
   if (running) return running;
-  const run = execute(open, actorId, input).finally(() => inFlight.delete(input.planId));
+  const run = execute(open, actorId, input, faults).finally(() => inFlight.delete(input.planId));
   inFlight.set(input.planId, run);
   return run;
 }
 
-async function execute(open: OpenProject, actorId: string, input: ParsedOperationInput<"processing.start">): Promise<OutputDetail> {
+async function execute(open: OpenProject, actorId: string, input: ParsedOperationInput<"processing.start">, faults: PublicationFaults): Promise<OutputDetail> {
   const { plan, startedOutputId } = storedProcessingPlan(open, input.planId);
   if (plan.planHash !== input.planHash) {
     throw new OperationFailure("REVISION_CONFLICT", "planHash does not match the plan that was inspected under this planId", { expected: plan.planHash, got: input.planHash }, [{ label: "Plan processing again", operation: "processing.plan", input: { candidateId: plan.candidateId, outputId: plan.sourceOutputId } }]);
@@ -80,7 +80,7 @@ async function execute(open: OpenProject, actorId: string, input: ParsedOperatio
       parentOutputId: source.output_id, recipe: plan.recipe, recipeHash: plan.recipeHash, files: packaged.files,
       meta: { planId: plan.planId, planHash: plan.planHash, warnings: plan.warnings, sources: plan.sources, scale: clip.scale, foregroundBounds: plan.foregroundBounds ?? null, pivotPx: plan.pivotPx, atlasPages: packaged.files.filter((f) => f.kind === "atlas-page").length },
     }],
-  });
+  }, faults);
   open.transact(() => {
     open.db.query("UPDATE processing_plans SET started_output_id = ? WHERE plan_id = ?").run(outputId, plan.planId);
   }, [{ type: "candidate.changed", data: { candidateId: plan.candidateId, outputId, processed: true }, actorId }]);

@@ -36,7 +36,7 @@ export function NetworkProblem({ error }: { error: { message: string } }) {
   return <Banner tone="bad" title="Cannot reach the server">{error.message} Start the server: bun run server</Banner>;
 }
 
-function ActionLinks({ actions }: { actions: Array<RecoveryAction | NextAction> }) {
+export function ActionLinks({ actions }: { actions: Array<RecoveryAction | NextAction> }) {
   const queryClient = useQueryClient();
   const { root } = useProjectRoot();
   const [busy, setBusy] = useState<string | undefined>(undefined);

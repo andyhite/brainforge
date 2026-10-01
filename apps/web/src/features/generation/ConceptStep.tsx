@@ -6,6 +6,7 @@ import { Banner, EmptyState, ErrorBanner, NetworkProblem, NextActions, Status, t
 import { useProject } from "../../lib/use-project.ts";
 import { ActiveJobsStrip } from "../jobs/JobsPage.tsx";
 import { BudgetPanel } from "./BudgetPanel.tsx";
+import { OpenNotes } from "../review/OpenNotes.tsx";
 import { CompareView } from "./CompareView.tsx";
 import { GenerateDialog, type GenerateRequest } from "./GenerateDialog.tsx";
 import { LockConceptButton } from "../pipeline/LockConceptButton.tsx";
@@ -97,11 +98,12 @@ export function ConceptStep({ assetId }: { assetId: string }) {
                 <ul style={{ margin: 0, paddingLeft: 20 }}>{stepState.reassessmentReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
               </Banner>
             ) : null}
-            {stepState.blockers.map((blocker) => (
+            {stepState.blockers.filter((blocker) => blocker.code !== "REVISION_OPEN").map((blocker) => (
               <Banner key={blocker.code} tone="warn" title={blocker.message}>
                 {blocker.recoveryActions.length > 0 ? <ul style={{ margin: 0, paddingLeft: 20 }}>{blocker.recoveryActions.map((action) => <li key={action.label}>{action.url ? <a href={action.url}>{action.label}</a> : action.label}</li>)}</ul> : null}
               </Banner>
             ))}
+            {stepState.counts.openRevisions > 0 || stepState.blockers.some((blocker) => blocker.code === "REVISION_OPEN") ? <OpenNotes assetId={assetId} stepId="concept" /> : null}
             <NextActions actions={stepState.nextActions} />
           </div>
         ) : null}

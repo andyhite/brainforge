@@ -8,6 +8,8 @@ import { OverviewPage } from "./features/projects/OverviewPage.tsx";
 import { CandidatePage } from "./features/review/CandidatePage.tsx";
 import { LibraryPage } from "./features/review/Placeholders.tsx";
 import { ReviewPage } from "./features/review/ReviewPage.tsx";
+import { ExportPage } from "./features/export/ExportPage.tsx";
+import { HistoryPage } from "./features/history/HistoryPage.tsx";
 import { AgentSetupPage } from "./features/settings/AgentSetupPage.tsx";
 import { ConnectionPage } from "./features/settings/ConnectionPage.tsx";
 import { DirectionPage } from "./features/settings/DirectionPage.tsx";
@@ -25,7 +27,9 @@ export function App() {
         <Route path="assets/:assetId/candidates/:candidateId" element={<CandidatePage />} />
         <Route path="jobs" element={<JobsPage />} />
         <Route path="review" element={<ReviewPage />} />
+        <Route path="history" element={<HistoryPage />} />
         <Route path="library" element={<LibraryPage />} />
+        <Route path="export" element={<ExportPage />} />
         <Route path="settings" element={<SettingsLayout />}>
           <Route index element={<ProjectSettingsPage />} />
           <Route path="connection" element={<ConnectionPage />} />

@@ -6,3 +6,6 @@ export * from "./operations.ts";
 export * from "./envelope.ts";
 export * from "./generation.ts";
 export * from "./motion.ts";
+export * from "./history.ts";
+export * from "./production.ts";
+export * from "./export.ts";

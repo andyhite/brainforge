@@ -19,9 +19,9 @@ Path: `<game root>/brainforge/project.yaml`. Exactly one per project. Schema `br
 |`familyDefaults`|no|map `family -> Defaults`; keys limited to asset families|
 |`layers`|no|`[{id: kebab, description?: string}]`|
 |`requirements.assets`|no|kebab asset ids that are required for completeness; default `[]`|
-|`approval`|no|requested policy; each of `conceptLock`, `productionReview`, `promotion`, `activation` is `human`\|`agent`\|`agent_with_escalation`. Defaults: human, agent_with_escalation, human, human|
+|`approval`|no|requested policy; each of `conceptLock`, `productionReview`, `promotion`, `activation` is `human`\|`agent`\|`agent_with_escalation`. Defaults: human, agent_with_escalation, human, human. `promotion` governs `promotion_start` (publishing an immutable version), `activation` governs `version_activate` (making it current); they are independent. See [production-versions](production-versions.md)|
 |`automation`|no|`maxAttemptsPerStep` int>0 (3), `maxConcurrentGenerations` int>0 (1), `maxBatchCandidates` int>0 (4), `autoRegenerate` bool (false)|
-|`export`|yes|`preset` `generic`\|`godot4`; `destination` non-empty relative path; `godotProjectRoot` relative path, default `.`|
+|`export`|yes|`preset` `generic`\|`godot4`; `destination` non-empty relative path (not inside `brainforge/`); `godotProjectRoot` relative path, default `.`. For `godot4` that folder must contain `project.godot` and the destination must be inside it; `res://` is derived from it. Layout, conflicts, recovery: [export](export.md)|
 
 Families: `character creature item equipment prop environment background tile ui icon effect`.
 

@@ -20,9 +20,9 @@ export const processingHandlers: HandlerMap = {
     return { data: { plan }, nextActions, warnings: plan.warnings.map((w) => `${w.code}: ${w.message}`) };
   },
 
-  "processing.start": async ({ input, project, context }) => {
+  "processing.start": async ({ input, project, context, runtime }) => {
     const open = requireOpen(project);
-    const output = await startProcessing(open, context.actorId, input);
+    const output = await startProcessing(open, context.actorId, input, runtime.faults?.processing);
     const cand = open.db.query<{ asset_id: string; step_id: string; branch_id: string | null }, [string]>("SELECT asset_id, step_id, branch_id FROM candidates WHERE candidate_id = ?").get(output.candidateId);
     const nextActions: NextAction[] = [];
     if (cand?.branch_id) {

@@ -8,6 +8,7 @@
   "dependencies": {
     "@brainforge/contracts": "workspace:*",
     "@brainforge/storage": "workspace:*",
+    "@brainforge/export": "workspace:*",
     "@brainforge/comfy": "workspace:*",
     "@brainforge/media": "workspace:*",
     "yaml": "^2.8.0",

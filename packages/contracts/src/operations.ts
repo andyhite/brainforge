@@ -2,6 +2,9 @@ import { z } from "zod";
 import { ApprovalPolicy, AssetFamily, AuthoredKind } from "./authored.ts";
 import { NextAction, RecoveryAction } from "./envelope.ts";
 import { Annotation, Branch, Budget, Candidate, Decision, Escalation, FrameRange, GenerationPlan, Geometry, Job, JobState, OutputApproval, RevisionRequest, RevisionStatus, StepId, StepState, Visual } from "./generation.ts";
+import { HistoryExample, JudgmentSummary, Preference, PreferenceScope, PreferenceStatus } from "./history.ts";
+import { ActivationEvent, ActiveSelection, AssetVersion, ProductionManifest, PromotionPlan } from "./production.ts";
+import { ExportManifest, ExportPlan, ExportRecord } from "./export.ts";
 import { CleanupSidecar, OutputDetail, ProcessingPlan, RecipeRequest } from "./motion.ts";
 
 export { NextAction, RecoveryAction };
@@ -406,6 +409,8 @@ export const OPERATIONS = {
       you: z.object({ canDecide: z.boolean(), canEscalate: z.boolean(), canOverride: z.boolean(), why: z.string().optional() }),
       escalation: Escalation.optional(),
       decisions: z.array(Decision),
+      /** Confirmed preferences in force for this asset: explicit requirements the output is judged against (part of requirementsHash). */
+      preferences: z.array(z.object({ preferenceId: z.string(), scope: PreferenceScope, styleId: z.string().optional(), text: z.string() })),
       visuals: z.array(Visual),
     }),
     mutating: false, humanOnly: false, needsProject: true,
@@ -430,16 +435,61 @@ export const OPERATIONS = {
     summary: "Human only. Replace the standing decision on outputs (including an agent's) with a new one; the earlier decision stays in history and is marked overridden. A reason is required.",
   },
   "review.list": {
-    input: z.object({ assetId: z.string().optional(), filter: z.enum(["awaiting", "escalated", "all"]).default("awaiting"), limit: z.number().int().min(1).max(200).default(50) }).strict(),
-    data: z.object({ items: z.array(z.object({ candidate: Candidate, kind: z.enum(["awaiting-review", "escalated", "decided"]), escalation: Escalation.optional() })) }),
+    input: z.object({
+      assetId: z.string().optional(), stepId: StepId.optional(),
+      filter: z.enum(["awaiting", "escalated", "needs-revision", "overridden", "decided", "all"]).default("awaiting"),
+      limit: z.number().int().min(1).max(200).default(50), offset: z.number().int().min(0).default(0),
+    }).strict(),
+    data: z.object({ items: z.array(z.object({ candidate: Candidate, kind: z.enum(["awaiting-review", "escalated", "needs-revision", "overridden", "decided"]), escalation: Escalation.optional() })), total: z.number().int() }),
     mutating: false, humanOnly: false, needsProject: true,
-    summary: "Candidates waiting for a review decision (awaiting), those an agent escalated to a human (escalated), or all, newest first. Concept-step candidates are exploration and are not queued.",
+    summary: "Review queue, newest first, paged with offset. Filters: awaiting a decision, escalated to a human, with an open required revision, overridden by a human, decided, or all. Concept-step candidates are exploration and are not queued.",
   },
   "review.history": {
     input: z.object({ candidateId: z.string() }).strict(),
     data: z.object({ decisions: z.array(Decision), escalations: z.array(Escalation) }),
     mutating: false, humanOnly: false, needsProject: true,
     summary: "Every decision, override and escalation on a candidate, oldest first, with actor identity and reasons.",
+  },
+  // ---- M5: retrieval of past judgments, preferences
+  "history.examples": {
+    input: z.object({
+      assetId: z.string(), stepId: StepId.optional(),
+      /** Page size. At most half are accepted and half rejected when both exist; the rest fill from whichever side has more. */
+      limit: z.number().int().min(1).max(50).default(8), offset: z.number().int().min(0).default(0),
+    }).strict(),
+    data: z.object({ examples: z.array(HistoryExample), total: z.number().int(), accepted: z.number().int(), rejected: z.number().int(), scope: z.object({ assetId: z.string(), styleIds: z.array(z.string()), family: z.string() }) }),
+    mutating: false, humanOnly: false, needsProject: true,
+    summary: "Deterministic project-local retrieval of past accepted and rejected outputs: the same asset first, then the same style and family, then the same family; within a tier a matching step, human overrides, then newest. No embeddings and no invented negatives.",
+  },
+  "history.judgments": {
+    input: z.object({ assetId: z.string().optional(), styleId: z.string().optional() }).strict(),
+    data: z.object({ summary: JudgmentSummary }),
+    mutating: false, humanOnly: false, needsProject: true,
+    summary: "Counts and cases comparing agent decisions with the human overrides that followed them. Descriptive only.",
+  },
+  "preference.propose": {
+    input: z.object({ text: z.string().min(1).max(1000), scope: PreferenceScope, styleId: z.string().optional(), evidenceIds: z.array(z.string()).min(1).max(50) }).strict(),
+    data: z.object({ preference: Preference }),
+    mutating: true, humanOnly: false, needsProject: true,
+    summary: "Propose a visual preference backed by decision ids. It changes nothing until a human confirms it.",
+  },
+  "preference.list": {
+    input: z.object({ status: PreferenceStatus.optional(), styleId: z.string().optional() }).strict(),
+    data: z.object({ preferences: z.array(Preference) }),
+    mutating: false, humanOnly: false, needsProject: true,
+    summary: "Preference proposals and confirmed preferences with their evidence.",
+  },
+  "preference.confirm": {
+    input: z.object({ preferenceId: z.string(), text: z.string().min(1).max(1000).optional(), note: z.string().max(2000).optional() }).strict(),
+    data: z.object({ preference: Preference }),
+    mutating: true, humanOnly: true, needsProject: true,
+    summary: "A human confirms a proposal, optionally correcting its wording. A confirmed preference becomes an explicit requirement in effective settings from then on; old runs and decisions are unchanged.",
+  },
+  "preference.reject": {
+    input: z.object({ preferenceId: z.string(), reason: z.string().min(1).max(2000) }).strict(),
+    data: z.object({ preference: Preference }),
+    mutating: true, humanOnly: true, needsProject: true,
+    summary: "A human rejects a preference proposal. It never applies.",
   },
 
   // ---- M4: motion outputs, processing, cleanup
@@ -477,6 +527,70 @@ export const OPERATIONS = {
     data: z.object({ candidate: Candidate, output: OutputDetail }),
     mutating: true, humanOnly: false, needsProject: true,
     summary: "Import corrected PNGs as a NEW unapproved child candidate with parent ids, file hashes, notes and effort recorded. Source-stage imports keep the source dimensions and count and are processed afterwards through processing.plan; processed-stage imports keep the processed canvas, count and durations and are never cropped, scaled or resampled again. Dimension, count, index or hash mismatches are refused with the specific conflict; originals stay intact and approval is never inherited.",
+  },
+
+  // ---- M6/M7: promotion, versions, activation
+  "promotion.plan": {
+    input: z.object({ assetId: z.string(), branchId: z.string().optional() }).strict(),
+    data: z.object({ plan: PromotionPlan }),
+    mutating: true, humanOnly: false, needsProject: true,
+    summary: "Plan a coherent immutable version: every required deliverable with its selected processed output, applicable approval, unresolved feedback and dependency pins. A missing, unapproved, stale or changed deliverable blocks the whole bundle. Read-only toward the version store; returns planId and planHash for promotion.start.",
+  },
+  "promotion.start": {
+    input: z.object({ planId: z.string(), planHash: z.string(), requestId: z.string().min(8).max(120), note: z.string().max(2000).optional() }).strict(),
+    data: z.object({ version: AssetVersion, created: z.boolean() }),
+    mutating: true, humanOnly: false, needsProject: true,
+    summary: "Publish the planned version atomically. The plan is revalidated first; a stale plan is refused. Repeating a request with the same requestId returns the same version (created=false). Promotion does NOT activate. Needs the effective promotion capability.",
+  },
+  "version.list": {
+    input: z.object({ assetId: z.string() }).strict(),
+    data: z.object({ versions: z.array(AssetVersion), active: ActiveSelection }),
+    mutating: false, humanOnly: false, needsProject: true,
+    summary: "Immutable versions of an asset, newest first, with which one is active and whether each still matches current requirements.",
+  },
+  "version.inspect": {
+    input: z.object({ versionId: z.string() }).strict(),
+    data: z.object({ version: AssetVersion, manifest: ProductionManifest, differences: z.array(z.object({ field: z.string(), version: z.unknown(), current: z.unknown() })), activations: z.array(ActivationEvent), problems: z.array(z.string()) }),
+    mutating: false, humanOnly: false, needsProject: true,
+    summary: "A version's manifest, how it differs from current requirements, and its activation history.",
+  },
+  "version.activate": {
+    input: z.object({ versionId: z.string(), expectedRevision: z.number().int(), acknowledgeObsolete: z.boolean().default(false), reason: z.string().max(2000).optional() }).strict(),
+    data: z.object({ active: ActiveSelection, event: ActivationEvent }),
+    mutating: true, humanOnly: false, needsProject: true,
+    summary: "Make a promoted version the asset's active one (also how an earlier version is restored). Revision-checked; activating a version that no longer matches current requirements needs acknowledgeObsolete. Needs the effective activation capability; the actor is recorded.",
+  },
+
+  // ---- M8: export
+  "export.plan": {
+    input: z.object({
+      /** Explicit asset subset; default every asset with an active version. An empty selection needs confirmEmpty. */
+      assetIds: z.array(z.string()).optional(),
+      /** Pin a specific promoted version instead of the active one. Shown in the plan, never silent. */
+      versions: z.record(z.string(), z.string()).optional(),
+      confirmEmpty: z.boolean().default(false),
+    }).strict(),
+    data: z.object({ plan: ExportPlan }),
+    mutating: true, humanOnly: false, needsProject: true,
+    summary: "Plan an export of immutable versions to the game-relative destination in project.yaml (export.preset generic|godot4): selected versions, assets that will leave current, files, conflicts and blockers. Never selects raw or unapproved candidates; an asset without an active version is a blocker, not skipped.",
+  },
+  "export.start": {
+    input: z.object({ planId: z.string(), planHash: z.string(), requestId: z.string().min(8).max(120) }).strict(),
+    data: z.object({ export: ExportRecord, created: z.boolean() }),
+    mutating: true, humanOnly: false, needsProject: true,
+    summary: "Publish the planned export atomically to <destination>/current (a managed relative symlink to an immutable .releases/<export-id> snapshot). Same requestId returns the same export. Failure before the pointer switch leaves the previous export intact; export never changes promotion or activation.",
+  },
+  "export.list": {
+    input: z.object({ limit: z.number().int().min(1).max(100).default(20) }).strict(),
+    data: z.object({ exports: z.array(ExportRecord), destination: z.string().optional(), publicRoot: z.string().optional() }),
+    mutating: false, humanOnly: false, needsProject: true,
+    summary: "Export history, newest first, and which one the stable current path resolves to.",
+  },
+  "export.inspect": {
+    input: z.object({ exportId: z.string() }).strict(),
+    data: z.object({ export: ExportRecord, manifest: ExportManifest.optional(), conflicts: z.array(z.object({ path: z.string(), reason: z.string() })) }),
+    mutating: false, humanOnly: false, needsProject: true,
+    summary: "One export: its manifest, and any externally modified owned files found on disk.",
   },
 } as const satisfies Record<string, OperationDef>;
 

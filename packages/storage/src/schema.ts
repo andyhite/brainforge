@@ -467,6 +467,132 @@ CREATE TABLE publication_intents (
 CREATE INDEX publication_intents_state ON publication_intents (state);
 `,
   },
+  {
+    version: 7,
+    sql: `
+-- Preference proposals. Only a human moves one out of 'proposed'. A confirmed row is an explicit requirement
+-- loaded into effective settings; it never rewrites YAML, policy, or earlier runs and decisions.
+CREATE TABLE preferences (
+  preference_id TEXT PRIMARY KEY,
+  scope TEXT NOT NULL CHECK (scope IN ('project','style')),
+  style_id TEXT,
+  proposed_text TEXT NOT NULL,
+  text TEXT NOT NULL,
+  evidence_ids_json TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('proposed','confirmed','rejected')),
+  proposed_by TEXT NOT NULL,
+  proposed_by_type TEXT NOT NULL CHECK (proposed_by_type IN ('human','agent')),
+  proposed_at TEXT NOT NULL,
+  decided_by TEXT,
+  decided_at TEXT,
+  note TEXT
+);
+CREATE INDEX preferences_status ON preferences (status, style_id);
+`,
+  },
+  {
+    version: 8,
+    sql: `
+-- Immutable asset versions. The manifest and files live under brainforge/assets/<asset>/versions/<version_id>/ and
+-- are never edited; these rows index them. request_id makes a lost promotion response retryable to the same version.
+CREATE TABLE asset_versions (
+  version_id TEXT PRIMARY KEY,
+  asset_id TEXT NOT NULL,
+  version_number INTEGER NOT NULL,
+  branch_id TEXT NOT NULL,
+  requirements_hash TEXT NOT NULL,
+  manifest_sha256 TEXT NOT NULL,
+  directory TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_by_type TEXT NOT NULL CHECK (created_by_type IN ('human','agent','system')),
+  created_at TEXT NOT NULL,
+  note TEXT,
+  request_id TEXT NOT NULL UNIQUE,
+  UNIQUE (asset_id, version_number)
+);
+CREATE INDEX asset_versions_asset ON asset_versions (asset_id, version_number);
+
+CREATE TABLE version_deliverables (
+  version_id TEXT NOT NULL REFERENCES asset_versions (version_id),
+  deliverable_id TEXT NOT NULL,
+  candidate_id TEXT NOT NULL,
+  output_id TEXT NOT NULL,
+  output_hash TEXT NOT NULL,
+  decision_id TEXT NOT NULL,
+  reused_from_version_id TEXT,
+  PRIMARY KEY (version_id, deliverable_id)
+);
+CREATE INDEX version_deliverables_output ON version_deliverables (output_id);
+
+-- One row per asset. revision is bumped on every change so activation is compare-and-set.
+CREATE TABLE active_versions (
+  asset_id TEXT PRIMARY KEY,
+  version_id TEXT REFERENCES asset_versions (version_id),
+  revision INTEGER NOT NULL,
+  activated_by TEXT,
+  activated_by_type TEXT CHECK (activated_by_type IN ('human','agent','system')),
+  activated_at TEXT,
+  acknowledged_obsolete INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE activation_events (
+  event_id TEXT PRIMARY KEY,
+  asset_id TEXT NOT NULL,
+  from_version_id TEXT,
+  to_version_id TEXT NOT NULL REFERENCES asset_versions (version_id),
+  kind TEXT NOT NULL CHECK (kind IN ('activate','restore')),
+  actor_id TEXT NOT NULL,
+  actor_type TEXT NOT NULL CHECK (actor_type IN ('human','agent','system')),
+  acknowledged_obsolete INTEGER NOT NULL DEFAULT 0,
+  reason TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX activation_events_asset ON activation_events (asset_id, created_at);
+
+CREATE TABLE promotion_plans (
+  plan_id TEXT PRIMARY KEY,
+  asset_id TEXT NOT NULL,
+  branch_id TEXT NOT NULL,
+  plan_hash TEXT NOT NULL,
+  plan_json TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+`,
+  },
+  {
+    version: 9,
+    sql: `
+-- Exports to the game-relative destination. The prepared intent lives in publication_intents; these rows are the
+-- receipts. request_id makes a lost response retryable. Released snapshots live in <destination>/.releases/<export_id>.
+CREATE TABLE exports (
+  export_id TEXT PRIMARY KEY,
+  preset TEXT NOT NULL CHECK (preset IN ('generic','godot4')),
+  destination TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('prepared','committed','failed')),
+  selection_json TEXT NOT NULL,
+  manifest_sha256 TEXT,
+  release_path TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  committed_at TEXT,
+  warnings_json TEXT NOT NULL DEFAULT '[]',
+  error TEXT,
+  request_id TEXT NOT NULL UNIQUE,
+  replaces_export_id TEXT,
+  retired_at TEXT
+);
+CREATE INDEX exports_destination ON exports (destination, created_at);
+
+CREATE TABLE export_plans (
+  plan_id TEXT PRIMARY KEY,
+  plan_hash TEXT NOT NULL,
+  plan_json TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+`,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

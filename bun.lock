@@ -93,10 +93,22 @@
       "dependencies": {
         "@brainforge/comfy": "workspace:*",
         "@brainforge/contracts": "workspace:*",
+        "@brainforge/export": "workspace:*",
         "@brainforge/media": "workspace:*",
         "@brainforge/storage": "workspace:*",
         "yaml": "^2.8.0",
         "zod": "^4.0.0",
+      },
+    },
+    "packages/export": {
+      "name": "@brainforge/export",
+      "version": "0.0.0",
+      "dependencies": {
+        "@brainforge/contracts": "workspace:*",
+        "@brainforge/media": "workspace:*",
+      },
+      "devDependencies": {
+        "sharp": "^0.34.0",
       },
     },
     "packages/media": {
@@ -161,6 +173,8 @@
     "@brainforge/contracts": ["@brainforge/contracts@workspace:packages/contracts"],
 
     "@brainforge/core": ["@brainforge/core@workspace:packages/core"],
+
+    "@brainforge/export": ["@brainforge/export@workspace:packages/export"],
 
     "@brainforge/mcp": ["@brainforge/mcp@workspace:apps/mcp"],
 

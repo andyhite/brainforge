@@ -3,6 +3,7 @@ import { useOperation } from "../../api/hooks.ts";
 import { EmptyState, ErrorBanner, NetworkProblem, PageHeader, Status } from "../../components/ui.tsx";
 import { useProjectRoot } from "../../lib/project-context.tsx";
 import { CreateAssetForm } from "./CreateAssetForm.tsx";
+import { ProductionState } from "../production/ProductionState.tsx";
 import { isDefinitionMissing } from "./missing.ts";
 
 export function AssetsPage() {
@@ -57,6 +58,7 @@ export function AssetsPage() {
               <th scope="col">Validity</th>
               <th scope="col">Requirement</th>
               <th scope="col">Deliverables</th>
+              <th scope="col">Production</th>
             </tr>
           </thead>
           <tbody>
@@ -74,6 +76,7 @@ export function AssetsPage() {
                 </td>
                 <td>{asset.required ? <Status tone="info">Required</Status> : <Status tone="idle">Optional</Status>}</td>
                 <td>{asset.deliverableCount}</td>
+                <td><ProductionState assetId={asset.assetId} /></td>
               </tr>
             ))}
           </tbody>

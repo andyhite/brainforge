@@ -4,6 +4,7 @@ import { graphHash, preflight, type ComfyTransport } from "@brainforge/comfy";
 import { paths, resolveIn, writeJsonAtomic } from "@brainforge/storage";
 import { discoverAuthored } from "../authored.ts";
 import { computeEffective } from "../effective.ts";
+import { confirmedPreferences } from "../preferences/store.ts";
 import type { OpenProject } from "../project-runtime.ts";
 import { OperationFailure } from "../runtime.ts";
 import { loadDescriptor } from "./descriptors.ts";
@@ -101,7 +102,7 @@ export async function startGeneration(env: StartEnvironment, input: ParsedOperat
 
   // --- durable record of what the run consumed, written before the rows that point at it
   const runId = newId("run");
-  const effective = computeEffective(set, { assetId: plan.assetId });
+  const effective = computeEffective(set, { assetId: plan.assetId, preferences: confirmedPreferences(project.db) });
   const inputsRel = paths.runInputs(plan.assetId, runId);
   const inputsAbs = await resolveIn(project.root, inputsRel);
   const pinnedTexts = Object.fromEntries(set.all().filter((f) => f.path in plan.inputs.specHashes).map((f) => [f.path, f.text]));

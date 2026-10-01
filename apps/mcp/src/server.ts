@@ -44,6 +44,7 @@ function buildTool(name: OperationName): Tool {
   return {
     name: toolName(name),
     description: describeOperation(name),
+    annotations: { readOnlyHint: !def.mutating, destructiveHint: false },
     inputSchema: { ...shape, type: "object", properties: { ...shape.properties, ...EXTRA_PROPERTIES } },
   };
 }
@@ -86,6 +87,18 @@ export const MAX_VISUALS_PER_RESULT = 6;
 export const MAX_VISUAL_BYTES_TOTAL = 8 * 1024 * 1024;
 
 const VisualsData = z.object({ visuals: z.array(Visual).min(1) });
+const ExampleVisualsData = z.object({ examples: z.array(z.object({ decisionId: z.string(), outcome: z.string(), visuals: z.array(Visual) })).min(1) });
+
+interface LabelledVisual { visual: z.infer<typeof Visual>; context: string }
+
+/** Visuals of `data.visuals`, or of every `data.examples[].visuals` (labelled with the example's outcome and decision id). */
+function collectVisuals(data: unknown): LabelledVisual[] {
+  const direct = VisualsData.safeParse(data);
+  if (direct.success) return direct.data.visuals.map((visual) => ({ visual, context: "" }));
+  const examples = ExampleVisualsData.safeParse(data);
+  if (!examples.success) return [];
+  return examples.data.examples.flatMap((example) => example.visuals.map((visual) => ({ visual, context: `${example.outcome} example (decision ${example.decisionId}) ` })));
+}
 const IMAGE_TYPES = /^image\/(png|jpeg|webp|gif)$/;
 
 export type VisualFetcher = (fileId: string) => Promise<FetchedFile | { error: string }>;
@@ -96,15 +109,14 @@ export type VisualFetcher = (fileId: string) => Promise<FetchedFile | { error: s
  */
 export async function attachVisuals(envelope: OperationResult, result: CallToolResult, fetchVisual: VisualFetcher): Promise<CallToolResult> {
   if (!envelope.ok) return result;
-  const parsed = VisualsData.safeParse(envelope.data);
-  if (!parsed.success) return result;
-  const { visuals } = parsed.data;
+  const visuals = collectVisuals(envelope.data);
+  if (visuals.length === 0) return result;
   const notes: string[] = [];
   const images: CallToolResult["content"] = [];
   let totalBytes = 0;
   let budgetExhausted = false;
-  for (const [index, visual] of visuals.entries()) {
-    const label = `visual ${index + 1}/${visuals.length} fileId=${visual.fileId} role=${visual.role} "${visual.label}"`;
+  for (const [index, { visual, context }] of visuals.entries()) {
+    const label = `${context}visual ${index + 1}/${visuals.length} fileId=${visual.fileId} role=${visual.role} "${visual.label}"`;
     if (images.length >= MAX_VISUALS_PER_RESULT) {
       notes.push(`NOT ATTACHED (limit of ${MAX_VISUALS_PER_RESULT} images per result): ${label}. Original: fileId ${visual.fileId}.`);
       continue;
@@ -156,6 +168,7 @@ export function buildInstructions(options: McpOptions): string {
     "6. Human-only actions (policy confirmation, ComfyUI connection) must be done by the user in the Brainforge web UI.",
     "7. Concept generation: budgets are granted ONLY by the human in the web UI (budget_list shows them; you cannot grant one). generation_plan -> inspect/show the plan (counts, blockers, budget) -> generation_start with its planHash. Then poll job_inspect until terminal; unresolved jobs are never resubmitted automatically and job_cancel only works on queued jobs.",
     "8. Review: candidate_inspect / revision_inspect return the actual images as image content blocks (model-sized derivatives; the text lists each original fileId and anything not attached). revision_list status=open finds work waiting for you. After acting (editing specs, starting a variation) call revision_respond. NEVER revision_resolve or revision_waive unless the user told you to and policy allows.",
+    "8b. Revision loop (stills and animation): poll revision_list {status:open} -> revision_inspect (originals plus annotated visuals; a frame-range note yields annotated frames, ranges use SOURCE frame indices) -> change authored direction in YAML (spec_write) or pass iterationInstructions to generation_plan -> generation_start (a follow-up) -> revision_respond {followUpJobIds}. Required notes keep blocking until a reviewer resolves them. Before proposing direction changes call history_examples {assetId,stepId?}: accepted/rejected past outputs arrive as image blocks (tiers: same asset, same style+family, same family; no invented negatives). history_judgments is descriptive counts of agent decisions vs later human overrides, not learned taste. review_list filters: awaiting, escalated, needs-revision, overridden, decided, all. preference_propose {text,scope,styleId?,evidenceIds} needs decision ids from history_examples; only the human confirms or rejects (preference_confirm/preference_reject are human-only: you are refused, ask the user). When unsure about a review, review_escalate rather than guess.",
     "9. Human-only actions (policy confirmation, ComfyUI connection, granting budgets) must be done by the user in the Brainforge web UI; ask them.",
     "10. Concepts become production through concept_lock {assetId,candidateId,outputId}, which obeys the effective approval.conceptLock policy (usually the user locks in the web UI). If refused (HUMAN_AUTHORIZATION_REQUIRED / POLICY_PENDING), tell the user exactly which candidate and output to lock; do not retry. Never lock a concept the user did not choose. candidate_select is a choice, NOT approval.",
     "11. step_list {assetId,branchId} shows what is ready. Deliverable generation (generation_plan/start with a deliverable stepId) needs a branchId and every dependsOn deliverable approved; blockers name the unmet dependency.",
@@ -164,6 +177,8 @@ export function buildInstructions(options: McpOptions): string {
     "14. processing_plan {candidateId, outputId?, recipe?} -> READ plan: every recipe default with its source, source frame count, played frames, duration (preserved), output frame count at playbackFps, warnings (CLIPPED, EMPTY_FRAME, PIVOT_OUTSIDE, SCALE_CHANGED, LOOP_DISCONTINUITY, ATLAS_PAGES), blockers -> processing_start {planId, planHash}. The result is a NEW unapproved processed output next to the untouched source; a changed recipe/pivot/crop/fps never edits an earlier result. Compare cadences by planning/running processed outputs at playbackFps 12 and 16 (same duration, different frame count). One uniform scale per branch comes from the scale anchor: never fit per clip or per frame; if CLIPPED blocks, ask the user to enlarge the canvas or revise scale explicitly.",
     "15. Review motion: review_material / candidate_inspect attach the contact sheet and first/last frame as image content blocks. output_inspect {outputId} lists every frame with its zero-based SOURCE frame index, duration and atlas rectangle: annotation_create frameRange uses SOURCE indices, never processed indices. Select the processed output with candidate_select {candidateId, outputId}, then review_decide on that output id.",
     "16. External cleanup: candidate_export_cleanup {candidateId, outputId, stage} writes numbered PNGs + sidecar.json to work/cleanup/<id>/; the user edits them in an external tool; candidate_import_cleanup {parentCandidateId, parentOutputId, stage, frames:[{index,file}], notes, effortMinutes} creates a NEW unapproved child candidate (unlisted frames copied by hash). stage source keeps source size/count, then run processing_plan/processing_start on the new candidate; stage processed keeps the processed canvas, count and durations and is never cropped, scaled or resampled again. Wrong size/count/duplicate index/hash -> specific error, nothing written.",
+    "17. Production versions: first finish every required deliverable (selected PROCESSED output, applicable approval, no unresolved required notes). promotion_plan {assetId, branchId?} lists EVERY blocker for the whole bundle (one missing walk blocks idle too); fix them, re-plan, show the user. promotion_start {planId, planHash, requestId}: use a fresh unique requestId per promotion and the SAME requestId when retrying a lost response (created=false means it already exists). Promotion does NOT activate. version_list {assetId} gives versions plus active.revision; version_inspect {versionId} shows the manifest and differences from current requirements. version_activate {versionId, expectedRevision (from version_list), reason?}; an obsolete version also needs acknowledgeObsolete:true and human authority. HUMAN_AUTHORIZATION_REQUIRED / POLICY_PENDING on promotion or activation: tell the user to do it in the web UI or change approval.promotion / approval.activation and confirm with policy_authorize (human-only); never try to self-authorize.",
+    "18. Export: only immutable PROMOTED versions are exported, never raw or unapproved candidates, and an asset needs an ACTIVE version (promotion_start, then version_activate; a missing active version is a blocker, not skipped). export_plan {assetIds?, versions?, confirmEmpty?} is mutating (it stores the plan) and lists blockers, assets that will leave current (subsets, preset switches), file count and conflicts; show it to the user. export_start {planId, planHash, requestId}: a fresh unique requestId per export, the SAME requestId when retrying a lost response (created=false means it already exists). The stable public path is <destination>/current/assets/... (a managed relative symlink to .releases/<export-id>); game references never include an export id. Unowned files (human-owned, engine sidecars) are never overwritten or deleted: a managed path colliding with one is EXPORT_CONFLICT. Export never changes promotion or activation, and a failure before the pointer switch leaves the previous export intact. For preset godot4, project.yaml export.godotProjectRoot must contain project.godot and the destination must be inside it. export_list / export_inspect show history and externally modified owned files.",
     "The YAML text IS the image prompt (description, identity values, perspective, palette, artDirection; notes are never sent). Read plan.prompt from generation_plan and fix the YAML before generation_start.",
     "The `brainforge` skill has the YAML format reference, references/generation-review.md, references/branches-review.md and references/motion-processing.md.",
   ].join("\n");

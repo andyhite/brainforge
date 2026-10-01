@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { AuthoredSet } from "../authored.ts";
 import { computeEffective } from "../effective.ts";
+import { confirmedPreferences } from "../preferences/store.ts";
 import { stylesFor } from "../generation/prompt.ts";
 import { normalizedHash } from "../operations.ts";
 
@@ -37,7 +38,9 @@ export function selectedOutput(db: Database, branchId: string, deliverableId: st
 export function stepRequirementsHash(open: { db: Database }, set: AuthoredSet, assetId: string, stepId: string, branchId?: string): string {
   const spec = set.assets.find((a) => a.fileId === assetId)?.spec;
   if (!spec) return normalizedHash({ assetId, stepId, missing: "asset" });
-  const effective = computeEffective(set, { assetId }).effective;
+  const { effective } = computeEffective(set, { assetId, preferences: confirmedPreferences(open.db) });
+  // Added only when present so projects without preferences keep their existing fingerprints and approvals.
+  const preferences = Object.entries(effective).filter(([key]) => key.startsWith("preference.")).map(([key, leaf]) => ({ id: key.slice("preference.".length), text: leaf.value })).sort((a, b) => (a.id < b.id ? -1 : 1));
   const base = {
     family: spec.family,
     description: spec.description,
@@ -46,6 +49,7 @@ export function stepRequirementsHash(open: { db: Database }, set: AuthoredSet, a
     palette: effective.palette?.value ?? null,
     artDirection: set.project?.spec?.artDirection ?? null,
     stylePalettes: stylesFor(set, spec).map((s) => ({ id: s.fileId, palette: s.spec?.palette ?? [] })),
+    ...(preferences.length > 0 ? { preferences } : {}),
   };
   if (stepId === "concept") return normalizedHash({ step: "concept", ...base });
 

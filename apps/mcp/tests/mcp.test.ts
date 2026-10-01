@@ -54,6 +54,14 @@ beforeAll(async () => {
         const visuals = [{ fileId: "sheet", role: "matted", label: "Sheet", mediaType: "image/png" }, { fileId: "crop-front", role: "region-crop", label: "front", mediaType: "image/png" }];
         return Response.json({ ok: true, data: { requirementsHash: "h1", visuals }, nextActions: [], warnings: [] });
       }
+      if (path.endsWith("/history.examples")) {
+        const visual = (fileId: string) => ({ fileId, role: "original", label: fileId, mediaType: "image/png" });
+        const examples = [
+          { decisionId: "d-acc", outcome: "accepted", visuals: [visual("ex-a")] },
+          { decisionId: "d-rej", outcome: "rejected", visuals: [visual("ex-r")] },
+        ];
+        return Response.json({ ok: true, data: { examples, total: 2, accepted: 1, rejected: 1 }, nextActions: [], warnings: [] });
+      }
       if (path.endsWith("/candidate.inspect")) {
         const visuals = ["f1", "f2", "bad", "f4", "f5", "f6", "f7", "f8"].map((fileId) => ({ fileId, role: "original", label: `Label ${fileId}`, mediaType: "image/png" }));
         return Response.json({ ok: true, data: { visuals }, nextActions: [], warnings: [] });
@@ -214,5 +222,44 @@ describe("mcp stdio server", () => {
     }
     expect(instructions).toContain("image content blocks");
     expect(instructions).toContain("granted ONLY by the human");
+  });
+
+  test("M5 tools exist with read-only hints and instructions describe the revision loop and preferences", async () => {
+    const { tools } = await client.listTools();
+    const byName = new Map(tools.map((t) => [t.name, t]));
+    for (const tool of ["history_examples", "history_judgments", "preference_list", "review_list"]) expect(byName.get(tool)?.annotations?.readOnlyHint).toBe(true);
+    for (const tool of ["preference_propose", "preference_confirm", "preference_reject", "review_escalate"]) expect(byName.get(tool)?.annotations?.readOnlyHint).toBe(false);
+    for (const tool of ["preference_confirm", "preference_reject"]) expect(byName.get(tool)?.description).toContain("Human-only");
+    expect(byName.get("preference_propose")?.description).not.toContain("Human-only");
+    const instructions = client.getInstructions() ?? "";
+    for (const tool of ["history_examples", "history_judgments", "preference_propose", "preference_confirm", "review_escalate", "revision_respond", "iterationInstructions"]) expect(instructions).toContain(tool);
+  });
+
+  test("M6/M7 production tools exist with correct hints and instructions describe the loop", async () => {
+    const { tools } = await client.listTools();
+    const byName = new Map(tools.map((t) => [t.name, t]));
+    for (const tool of ["version_list", "version_inspect"]) expect(byName.get(tool)?.annotations?.readOnlyHint).toBe(true);
+    for (const tool of ["promotion_plan", "promotion_start", "version_activate"]) expect(byName.get(tool)?.annotations?.readOnlyHint).toBe(false);
+    const instructions = client.getInstructions() ?? "";
+    for (const text of ["promotion_plan", "promotion_start", "version_activate", "version_list", "expectedRevision", "acknowledgeObsolete", "SAME requestId", "does NOT activate", "policy_authorize"]) expect(instructions).toContain(text);
+  });
+
+  test("M8 export tools exist with correct hints and instructions describe the loop", async () => {
+    const { tools } = await client.listTools();
+    const byName = new Map(tools.map((t) => [t.name, t]));
+    for (const tool of ["export_list", "export_inspect"]) expect(byName.get(tool)?.annotations?.readOnlyHint).toBe(true);
+    for (const tool of ["export_plan", "export_start"]) expect(byName.get(tool)?.annotations?.readOnlyHint).toBe(false);
+    const instructions = client.getInstructions() ?? "";
+    for (const text of ["export_plan", "export_start", "ACTIVE version", "<destination>/current/assets", "export id", "godotProjectRoot", "project.godot", "EXPORT_CONFLICT", "never changes promotion or activation"]) expect(instructions).toContain(text);
+  });
+
+  test("history_examples example visuals become labelled image blocks", async () => {
+    fileRequests.length = 0;
+    const result = await client.callTool({ name: "history_examples", arguments: { assetId: "cortex" } });
+    const content = z.array(z.object({ type: z.string(), text: z.string().optional() })).parse(result.content);
+    expect(content.filter((block) => block.type === "image")).toHaveLength(2);
+    expect(content[1]?.text).toContain("accepted example (decision d-acc)");
+    expect(content[1]?.text).toContain("rejected example (decision d-rej)");
+    expect(fileRequests).toEqual(["/api/projects/proj-1/files/ex-a?max=1568", "/api/projects/proj-1/files/ex-r?max=1568"]);
   });
 });
