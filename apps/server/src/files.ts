@@ -46,12 +46,13 @@ export type FileLookup =
 interface PathRow { path: string }
 
 /**
- * Registered ID → media file: a candidate output, annotated review render, reference or retained artifact.
+ * Registered ID → media file: a candidate output, sheet region crop, annotated review render, reference or retained artifact.
  * The stored relative path is revalidated by `resolveIn` on every request.
  */
 export async function lookupRegisteredFile(project: ProjectHandle, fileId: string): Promise<FileLookup> {
   const row =
     project.db.query<PathRow, [string]>("SELECT path FROM candidate_outputs WHERE output_id = ?").get(fileId)
+    ?? project.db.query<PathRow, [string]>("SELECT path FROM output_crops WHERE file_id = ?").get(fileId)
     ?? project.db.query<PathRow, [string]>("SELECT path FROM review_files WHERE file_id = ?").get(fileId)
     ?? project.db.query<PathRow, [string]>("SELECT path FROM reference_records WHERE reference_id = ?").get(fileId)
     ?? project.db.query<PathRow, [string]>("SELECT path FROM artifact_records WHERE artifact_id = ?").get(fileId);

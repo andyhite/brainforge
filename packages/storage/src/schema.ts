@@ -277,6 +277,99 @@ CREATE TABLE review_files (
 CREATE INDEX review_files_revision ON review_files (revision_request_id);
 `,
   },
+  {
+    version: 4,
+    sql: `
+-- Concept locks create branches. A branch is a selection set over the asset's shared candidate history.
+CREATE TABLE branches (
+  branch_id TEXT PRIMARY KEY,
+  asset_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  concept_candidate_id TEXT NOT NULL REFERENCES candidates (candidate_id),
+  concept_output_id TEXT NOT NULL REFERENCES candidate_outputs (output_id),
+  concept_output_hash TEXT NOT NULL,
+  requirements_hash TEXT NOT NULL,
+  locked_by TEXT NOT NULL,
+  locked_by_type TEXT NOT NULL,
+  lock_reason TEXT,
+  locked_at TEXT NOT NULL
+);
+CREATE INDEX branches_asset ON branches (asset_id, locked_at);
+
+CREATE TABLE branch_selections (
+  branch_id TEXT NOT NULL REFERENCES branches (branch_id),
+  deliverable_id TEXT NOT NULL,
+  candidate_id TEXT NOT NULL REFERENCES candidates (candidate_id),
+  output_id TEXT,
+  selected_by TEXT NOT NULL,
+  selected_at TEXT NOT NULL,
+  PRIMARY KEY (branch_id, deliverable_id)
+);
+
+-- Deliverable steps run inside a branch; concept exploration has none.
+ALTER TABLE candidates ADD COLUMN branch_id TEXT;
+ALTER TABLE generation_runs ADD COLUMN branch_id TEXT;
+ALTER TABLE generation_plans ADD COLUMN branch_id TEXT;
+CREATE INDEX candidates_branch ON candidates (branch_id, step_id);
+
+-- Append-only. The standing decision for an output is the latest row, so an override is just a later row.
+CREATE TABLE review_decisions (
+  decision_id TEXT PRIMARY KEY,
+  candidate_id TEXT NOT NULL REFERENCES candidates (candidate_id),
+  output_id TEXT NOT NULL REFERENCES candidate_outputs (output_id),
+  output_hash TEXT NOT NULL,
+  asset_id TEXT NOT NULL,
+  step_id TEXT NOT NULL,
+  branch_id TEXT,
+  requirements_hash TEXT NOT NULL,
+  decision TEXT NOT NULL CHECK (decision IN ('approve','reject')),
+  kind TEXT NOT NULL CHECK (kind IN ('decide','override')),
+  reasons_json TEXT NOT NULL DEFAULT '[]',
+  actor_id TEXT NOT NULL,
+  actor_type TEXT NOT NULL CHECK (actor_type IN ('human','agent','system')),
+  supersedes_decision_id TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX review_decisions_output ON review_decisions (output_id, created_at);
+CREATE INDEX review_decisions_candidate ON review_decisions (candidate_id);
+
+CREATE TABLE review_escalations (
+  escalation_id TEXT PRIMARY KEY,
+  candidate_id TEXT NOT NULL REFERENCES candidates (candidate_id),
+  output_ids_json TEXT NOT NULL,
+  asset_id TEXT NOT NULL,
+  step_id TEXT NOT NULL,
+  branch_id TEXT,
+  reason TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending','decided')),
+  escalated_by TEXT NOT NULL,
+  escalated_at TEXT NOT NULL,
+  decided_by_decision_id TEXT
+);
+CREATE INDEX review_escalations_status ON review_escalations (status, escalated_at);
+`,
+  },
+  {
+    version: 5,
+    sql: `
+-- Region crops of a reference-sheet output, written at publication. Derived deterministically from the pinned
+-- sheet bytes, hashed separately, and servable by file_id like any output.
+CREATE TABLE output_crops (
+  file_id TEXT PRIMARY KEY,
+  output_id TEXT NOT NULL REFERENCES candidate_outputs (output_id),
+  region_id TEXT NOT NULL,
+  x INTEGER NOT NULL,
+  y INTEGER NOT NULL,
+  width INTEGER NOT NULL,
+  height INTEGER NOT NULL,
+  path TEXT NOT NULL,
+  sha256 TEXT NOT NULL,
+  media_type TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (output_id, region_id)
+);
+`,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

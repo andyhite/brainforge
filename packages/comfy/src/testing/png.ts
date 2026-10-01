@@ -37,27 +37,28 @@ export function encodePng(width: number, height: number, channels: 3 | 4, pixels
  * A gradient blob on a light-grey field, determined entirely by `seed`/`frame`. With `matted` the result is RGBA
  * with an opaque subject and a fully transparent border; otherwise it is opaque RGB (what the untouched decode looks like).
  */
-export function generateImage(seed: number, size: number, matted: boolean, frame = 0): Uint8Array {
+export function generateImage(seed: number, size: number | { width: number; height: number }, matted: boolean, frame = 0): Uint8Array {
+  const { width, height } = typeof size === "number" ? { width: size, height: size } : size;
   const channels = matted ? 4 : 3;
-  const px = new Uint8Array(size * size * channels);
+  const px = new Uint8Array(width * height * channels);
   const hue = (seed * 47) % 256;
-  const cx = size / 2 + Math.sin(frame / 4) * size * 0.04;
-  const cy = size / 2;
-  const rx = size * 0.28;
-  const ry = size * 0.4;
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
+  const cx = width / 2 + Math.sin(frame / 4) * width * 0.04;
+  const cy = height / 2;
+  const rx = width * 0.28;
+  const ry = height * 0.4;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
       const inside = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1;
-      const o = (y * size + x) * channels;
+      const o = (y * width + x) * channels;
       if (inside) {
-        px[o] = (hue + (x * 255) / size) % 256;
-        px[o + 1] = (255 - hue + (y * 255) / size) % 256;
-        px[o + 2] = (hue * 3 + ((x + y) * 128) / size) % 256;
+        px[o] = (hue + (x * 255) / width) % 256;
+        px[o + 1] = (255 - hue + (y * 255) / height) % 256;
+        px[o + 2] = (hue * 3 + ((x + y) * 128) / (width + height) * 2) % 256;
         if (matted) px[o + 3] = 255;
       } else {
         px[o] = px[o + 1] = px[o + 2] = 0xd8;
       }
     }
   }
-  return encodePng(size, size, channels, px);
+  return encodePng(width, height, channels, px);
 }

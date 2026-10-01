@@ -46,6 +46,7 @@ export async function inspectConceptStep(db: Database, root: string, assetId: st
     unresolvedJobs: count(db, "SELECT COUNT(*) AS n FROM generation_jobs WHERE asset_id = ? AND step_id = 'concept' AND state = 'unresolved'", assetId),
     favorites: count(db, "SELECT COUNT(*) AS n FROM candidates WHERE asset_id = ? AND step_id = 'concept' AND favorite = 1", assetId),
     openRevisions: count(db, "SELECT COUNT(*) AS n FROM revision_requests WHERE asset_id = ? AND step_id = 'concept' AND status IN ('open','responded')", assetId),
+    pendingEscalations: count(db, "SELECT COUNT(*) AS n FROM review_escalations WHERE asset_id = ? AND step_id = 'concept' AND status = 'pending'", assetId),
   };
   const failedJobs = count(db, "SELECT COUNT(*) AS n FROM generation_jobs WHERE asset_id = ? AND step_id = 'concept' AND state = 'failed'", assetId);
 
@@ -99,10 +100,10 @@ export async function inspectConceptStep(db: Database, root: string, assetId: st
   }
   if (counts.openRevisions > 0) next.push({ label: "See open revision requests", operation: "revision.list", input: { assetId } });
 
-  return { assetId, stepId: "concept", state, blockers, needsReassessment: reasons.length > 0, reassessmentReasons: reasons, counts, nextActions: next };
+  return { assetId, stepId: "concept", kind: "concept", required: true, dependsOn: [], state, blockers, needsReassessment: reasons.length > 0, reassessmentReasons: reasons, counts, nextActions: next };
 }
 
-function specHashesOf(plan: unknown): Record<string, string> {
+export function specHashesOf(plan: unknown): Record<string, string> {
   const out: Record<string, string> = {};
   if (typeof plan !== "object" || plan === null || !("inputs" in plan)) return out;
   const inputs = plan.inputs;

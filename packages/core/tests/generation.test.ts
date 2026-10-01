@@ -106,6 +106,15 @@ describe("generation.plan", () => {
     expect(badParent.blockers.map((b) => b.code)).toContain("PARENT_MISSING");
     expect((await f.plan({ parentCandidateId: "cand-x" })).blockers.map((b) => b.code)).toContain("PARENT_UNEXPECTED");
   });
+
+  test("concept exploration belongs to no branch; jobs and budgets report their own step", async () => {
+    const f = await fixture();
+    const budget = await f.grant({ stepId: "construction-sheet" });
+    expect(budget.stepId).toBe("construction-sheet");
+    const plan = await f.plan({ branchId: "br-x" });
+    expect(plan.blockers.map((b) => b.code)).toContain("BRANCH_UNEXPECTED");
+    expect(plan.crops).toEqual([]);
+  });
 });
 
 describe("generation.start", () => {

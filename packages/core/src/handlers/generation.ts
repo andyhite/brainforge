@@ -5,7 +5,7 @@ import { cancelJob, lookupByIdentity, newAttempt, retryCollect } from "../genera
 import { schedulerOf } from "../generation/scheduler.ts";
 import { startGeneration } from "../generation/start.ts";
 import { ACTIVE_STATES, budgetRow, budgetStatus, jobRow, newId, toBudget, toJob, type BudgetRow, type JobRow } from "../generation/store.ts";
-import { candidateRow, toCandidate } from "../review/records.ts";
+import { candidateRow, requirementsResolver, toCandidate } from "../review/records.ts";
 import { OperationFailure, type HandlerMap } from "../runtime.ts";
 import { requireOpen } from "./common.ts";
 
@@ -57,8 +57,8 @@ export const generationHandlers: HandlerMap = {
     const plan = await createPlan({ project: open, workflowsDir: runtime.workflowsDir, comfy, comfyHost: comfy ? new URL(comfy.baseUrl).host : undefined, actorId: context.actorId }, input);
     const { revision } = await open.mutate(async () =>
       open.transact(() => {
-        open.db.query("INSERT INTO generation_plans (plan_id, plan_hash, plan_json, created_by, created_at) VALUES (?, ?, ?, ?, ?)")
-          .run(plan.planId, plan.planHash, JSON.stringify(plan), context.actorId, plan.createdAt);
+        open.db.query("INSERT INTO generation_plans (plan_id, plan_hash, plan_json, branch_id, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+          .run(plan.planId, plan.planHash, JSON.stringify(plan), plan.branchId ?? null, context.actorId, plan.createdAt);
       }, [{ type: "generation.planned", data: { planId: plan.planId, assetId: plan.assetId, stepId: plan.stepId, mode: plan.mode, count: plan.count, blockers: plan.blockers.length }, actorId: context.actorId }]),
     );
     const budget = plan.budgets.find((b) => b.remainingStarts >= 1 && b.remainingCandidateSubmissions >= plan.count);
@@ -96,7 +96,8 @@ export const generationHandlers: HandlerMap = {
   "job.inspect": async ({ input, project }) => {
     const open = requireOpen(project);
     const row = jobRow(open.db, input.jobId);
-    return { data: { job: toJob(row), ...(row.candidate_id === null ? {} : { candidate: toCandidate(open.db, candidateRow(open.db, row.candidate_id)) }) } };
+    const cand = row.candidate_id === null ? undefined : candidateRow(open.db, row.candidate_id);
+    return { data: { job: toJob(row), ...(cand ? { candidate: toCandidate(open.db, cand, await requirementsResolver(open, cand.asset_id)) } : {}) } };
   },
 
   "job.reconcile": async ({ input, project, runtime }) => {

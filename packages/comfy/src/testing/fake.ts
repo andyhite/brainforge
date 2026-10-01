@@ -177,6 +177,15 @@ export async function createFakeComfy(options: FakeComfyOptions = {}): Promise<F
     }
     return 0;
   }
+  /** The canvas the graph asks for through an EmptySD3LatentImage, so requested sizes show up in the fake's images. */
+  function latentSize(graph: ComfyGraph): { width: number; height: number } | undefined {
+    for (const node of Object.values(graph)) {
+      if (node.class_type === "EmptySD3LatentImage" && typeof node.inputs.width === "number" && typeof node.inputs.height === "number") {
+        return { width: node.inputs.width, height: node.inputs.height };
+      }
+    }
+    return undefined;
+  }
 
   function finish(entry: Entry) {
     const { graph } = entry.prompt;
@@ -200,7 +209,7 @@ export async function createFakeComfy(options: FakeComfyOptions = {}): Promise<F
         const n = (state.counters.get(key) ?? 0) + 1;
         state.counters.set(key, n);
         const filename = `${base}_${String(n).padStart(5, "0")}_.png`;
-        state.files.set(`output/${subfolder}/${filename}`, generateImage(seed, frameCount > 0 ? SEQUENCE_SIZE : STILL_SIZE, matted, frame));
+        state.files.set(`output/${subfolder}/${filename}`, generateImage(seed, frameCount > 0 ? SEQUENCE_SIZE : latentSize(graph) ?? STILL_SIZE, matted, frame));
         images.push({ filename, subfolder, type: "output" });
       }
       outputs[nodeId] = { images };

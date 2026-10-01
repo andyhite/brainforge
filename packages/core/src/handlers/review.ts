@@ -7,10 +7,9 @@ import { paths, resolveIn, sha256, writeFileAtomic } from "@brainforge/storage";
 import { discoverAuthored } from "../authored.ts";
 import { policyView } from "../policy.ts";
 import {
-  annotationRow, annotationsFor, candidateRow, outputRows, outputVisuals, revisionRow, revisionsForCandidate, toAnnotation,
+  annotationRow, annotationsFor, candidateRow, outputRows, outputVisuals, requirementsResolver, revisionRow, revisionsForCandidate, toAnnotation,
   toCandidate, toRevision, type CandidateRow, type RevisionRow,
 } from "../review/records.ts";
-import { inspectConceptStep } from "../review/step.ts";
 import { OperationFailure, type HandlerMap, type ProjectHandle } from "../runtime.ts";
 import type { OperationContext } from "@brainforge/contracts";
 import { requireOpen } from "./common.ts";
@@ -46,13 +45,9 @@ function assertNotTerminal(status: string, id: string): void {
 const RunInfo = GenerationPlan.pick({ workflow: true, inputs: true }).extend({ iterationInstructions: z.string().optional() });
 
 export const reviewHandlers: HandlerMap = {
-  "step.inspect": async ({ input, project }) => {
-    const open = requireOpen(project);
-    return { data: { step: await inspectConceptStep(open.db, open.root, input.assetId) } };
-  },
-
   "candidate.list": async ({ input, project }) => {
-    const { db } = requireOpen(project);
+    const open = requireOpen(project);
+    const { db } = open;
     const where = ["asset_id = ?", "step_id = ?"];
     const args: (string | number)[] = [input.assetId, input.stepId];
     if (input.parentCandidateId !== undefined) { where.push("parent_candidate_id = ?"); args.push(input.parentCandidateId); }
@@ -60,11 +55,13 @@ export const reviewHandlers: HandlerMap = {
     const rows = db.query<CandidateRow, (string | number)[]>(
       `SELECT * FROM candidates WHERE ${where.join(" AND ")} ORDER BY created_at DESC, label LIMIT ?`,
     ).all(...args, input.limit);
-    return { data: { candidates: rows.map((r) => toCandidate(db, r)) } };
+    const hashFor = await requirementsResolver(open, input.assetId);
+    return { data: { candidates: rows.map((r) => toCandidate(db, r, hashFor)) } };
   },
 
   "candidate.inspect": async ({ input, project }) => {
-    const { db } = requireOpen(project);
+    const open = requireOpen(project);
+    const { db } = open;
     const row = candidateRow(db, input.candidateId);
     const planRow = db.query<{ plan_json: string }, [string]>("SELECT plan_json FROM generation_runs WHERE run_id = ?").get(row.run_id);
     if (!planRow) throw new OperationFailure("IO_ERROR", `Run ${row.run_id} of candidate ${row.candidate_id} has no stored record`);
@@ -77,7 +74,7 @@ export const reviewHandlers: HandlerMap = {
     }
     return {
       data: {
-        candidate: toCandidate(db, row),
+        candidate: toCandidate(db, row, await requirementsResolver(open, row.asset_id)),
         annotations: annotationsFor(db, row.candidate_id, false),
         revisionRequests: revisionsForCandidate(db, row.candidate_id),
         lineage,
@@ -97,7 +94,8 @@ export const reviewHandlers: HandlerMap = {
       () => open.db.query("UPDATE candidates SET favorite = ? WHERE candidate_id = ?").run(input.favorite ? 1 : 0, input.candidateId),
       [{ type: "candidate.changed", data: { candidateId: input.candidateId, favorite: input.favorite }, actorId: context.actorId }],
     );
-    return { data: { candidate: toCandidate(open.db, candidateRow(open.db, input.candidateId)) }, revision };
+    const cand = candidateRow(open.db, input.candidateId);
+    return { data: { candidate: toCandidate(open.db, cand, await requirementsResolver(open, cand.asset_id)) }, revision };
   },
 
   "annotation.create": async ({ input, project, context }) => {
@@ -229,7 +227,7 @@ export const reviewHandlers: HandlerMap = {
       data: {
         revision, annotations: notes, visuals: [...originals, ...revisionVisuals(open, revision.revisionRequestId)],
         specs: { projectYaml: set.project?.text ?? "", styles, ...(asset ? { assetYaml: asset.text } : {}), hashes },
-        candidate: toCandidate(open.db, cand), prompt: cand.prompt,
+        candidate: toCandidate(open.db, cand, await requirementsResolver(open, cand.asset_id)), prompt: cand.prompt,
       },
     };
   },

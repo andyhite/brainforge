@@ -1,19 +1,27 @@
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useOperation } from "../../api/hooks.ts";
-import { ErrorBanner, NetworkProblem, PageHeader, Status } from "../../components/ui.tsx";
+import { Banner, ErrorBanner, NetworkProblem, PageHeader, Status } from "../../components/ui.tsx";
 import { useProjectRoot } from "../../lib/project-context.tsx";
 import { DefinitionStep } from "./DefinitionStep.tsx";
 import { ReferencesStep } from "./ReferencesStep.tsx";
 import { ConceptStep } from "../generation/ConceptStep.tsx";
+import { BranchSwitcher } from "../pipeline/BranchSwitcher.tsx";
+import { PipelineView } from "../pipeline/PipelineView.tsx";
+import { StepDetail } from "../pipeline/StepDetail.tsx";
 
 export function AssetPage() {
   const { assetId = "" } = useParams();
-  const [params] = useSearchParams();
-  const stepParam = params.get("step");
-  const step = stepParam === "references" || stepParam === "concept" ? stepParam : "definition";
+  const [params, setParams] = useSearchParams();
+  const step = params.get("step") ?? "definition";
   const { root } = useProjectRoot();
-  const query = useOperation("asset.inspect", { assetId }, { enabled: root !== undefined && assetId !== "" });
-  const conceptState = useOperation("step.inspect", { assetId, stepId: "concept" }, { enabled: root !== undefined && assetId !== "" });
+  const enabled = root !== undefined && assetId !== "";
+  const query = useOperation("asset.inspect", { assetId }, { enabled });
+  const branches = useOperation("branch.list", { assetId }, { enabled });
+  const branchList = branches.data?.ok ? branches.data.data.branches : [];
+  const requestedBranch = params.get("branch");
+  const branchId = branchList.find((branch) => branch.branchId === requestedBranch)?.branchId ?? branchList[0]?.branchId;
+  const steps = useOperation("step.list", { assetId, ...(branchId ? { branchId } : {}) }, { enabled });
+  const activeStep = steps.data?.ok ? steps.data.data.steps.find((candidate) => candidate.stepId === step) : undefined;
 
   if (root === undefined) {
     return <><PageHeader title="Asset" /><p>No project selected. <Link to="/projects/open">Open a project</Link>.</p></>;
@@ -55,13 +63,14 @@ export function AssetPage() {
             <Link to={`${base}?step=references`} aria-current={step === "references" ? "step" : undefined}>References</Link>{" "}
             {referenceCount > 0 ? <Status tone="ok">{referenceCount} imported</Status> : <Status tone="idle">None yet</Status>}
           </li>
-          <li>
-            <Link to={`${base}?step=concept`} aria-current={step === "concept" ? "step" : undefined}>Concept</Link>{" "}
-            {conceptState.data?.ok ? <Status tone={conceptState.data.data.step.state === "complete" ? "ok" : conceptState.data.data.step.state === "failed" ? "bad" : conceptState.data.data.step.state === "blocked" ? "warn" : "info"}>{conceptState.data.data.step.state.replaceAll("_", " ")}</Status> : <Status tone="idle">…</Status>}
-          </li>
         </ol>
       </nav>
-      {step === "concept" ? <ConceptStep assetId={assetId} /> : step === "references" ? <ReferencesStep assetId={assetId} inspect={inspect} /> : <DefinitionStep inspect={inspect} autoCreate={params.get("create") === "1"} />}
+      <section aria-labelledby="pipeline-title" className="panel">
+        <h2 id="pipeline-title" style={{ marginTop: 0 }}>Pipeline</h2>
+        <BranchSwitcher branches={branchList} value={branchId} onChange={(next) => setParams((previous) => { const copy = new URLSearchParams(previous); copy.set("branch", next); return copy; })} />
+        <PipelineView assetId={assetId} branchId={branchId} activeStep={step} base={base} />
+      </section>
+      {step === "concept" ? <ConceptStep assetId={assetId} /> : step === "references" ? <ReferencesStep assetId={assetId} inspect={inspect} /> : step === "definition" ? <DefinitionStep inspect={inspect} autoCreate={params.get("create") === "1"} /> : activeStep && branchId ? <StepDetail key={`${branchId}-${step}`} assetId={assetId} step={activeStep} branchId={branchId} /> : <Banner tone="info" title={branchId ? `No step named ${step}` : "Lock a concept first"}>{branchId ? "Pick a step from the pipeline above." : "Production steps need a locked concept branch."}</Banner>}
     </>
   );
 }

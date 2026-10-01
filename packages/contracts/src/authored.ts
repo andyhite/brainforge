@@ -145,8 +145,16 @@ export const Deliverable = z.object({
     parallax: z.object({ x: z.number(), y: z.number() }).strict().optional(),
   }).strict().optional(),
   ui: z.object({ state: z.string().optional(), nineSlice: Pixels4.optional() }).strict().optional(),
-  /** Only for kind: reference-sheet. Source-pixel regions. */
-  regions: z.array(z.object({ id: KebabId, x: z.number().int().min(0), y: z.number().int().min(0), width: z.number().int().positive(), height: z.number().int().positive() }).strict()).optional(),
+  /**
+   * Only for kind: reference-sheet. Source-pixel regions. `view` is a concrete picture phrase sent to the model
+   * for that region (for example "side profile facing right, body turned ninety degrees").
+   */
+  regions: z.array(z.object({ id: KebabId, x: z.number().int().min(0), y: z.number().int().min(0), width: z.number().int().positive(), height: z.number().int().positive(), view: z.string().min(1).optional() }).strict()).optional(),
+  /**
+   * Reference strength for image-conditioned generation (the workflow's ref_boost). Lower lets the pose change more:
+   * a turnaround from a three-quarter concept needs a lower value than a same-pose variation. Workflow default if omitted.
+   */
+  referenceStrength: z.number().min(0).max(20).optional(),
 }).strict();
 export type Deliverable = z.infer<typeof Deliverable>;
 

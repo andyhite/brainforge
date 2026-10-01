@@ -41,6 +41,10 @@ beforeAll(async () => {
       if (path.endsWith("/project.inspect")) {
         return Response.json({ ok: true, data: { project: { projectId: "proj-1" } }, nextActions: [], warnings: [] });
       }
+      if (path.endsWith("/review.material")) {
+        const visuals = [{ fileId: "sheet", role: "matted", label: "Sheet", mediaType: "image/png" }, { fileId: "crop-front", role: "region-crop", label: "front", mediaType: "image/png" }];
+        return Response.json({ ok: true, data: { requirementsHash: "h1", visuals }, nextActions: [], warnings: [] });
+      }
       if (path.endsWith("/candidate.inspect")) {
         const visuals = ["f1", "f2", "bad", "f4", "f5", "f6", "f7", "f8"].map((fileId) => ({ fileId, role: "original", label: `Label ${fileId}`, mediaType: "image/png" }));
         return Response.json({ ok: true, data: { visuals }, nextActions: [], warnings: [] });
@@ -145,6 +149,26 @@ describe("mcp stdio server", () => {
     expect(note).toContain("Attached image block #6");
     expect(fileRequests.every((entry) => entry.endsWith("?max=1568"))).toBe(true);
     expect(fileRequests).not.toContain("/api/projects/proj-1/files/f8?max=1568");
+  });
+
+  test("review_material visuals, including sheet region crops, become image blocks", async () => {
+    fileRequests.length = 0;
+    const result = await client.callTool({ name: "review_material", arguments: { candidateId: "c1" } });
+    const content = z.array(z.object({ type: z.string(), text: z.string().optional() })).parse(result.content);
+    expect(content.filter((block) => block.type === "image")).toHaveLength(2);
+    expect(content[1]?.text).toContain("role=region-crop");
+    expect(fileRequests).toEqual(["/api/projects/proj-1/files/sheet?max=1568", "/api/projects/proj-1/files/crop-front?max=1568"]);
+  });
+
+  test("M3 tools exist and instructions describe lock, readiness and the review loop", async () => {
+    const instructions = client.getInstructions() ?? "";
+    const names = (await client.listTools()).tools.map((t) => t.name);
+    for (const op of OPERATION_NAMES.filter((n) => /^(concept|branch|step|review)\.|^candidate\.select$/.test(n))) {
+      expect(names).toContain(op.replaceAll(".", "_"));
+    }
+    for (const text of ["concept_lock", "which candidate and output to lock", "step_list", "WORKFLOW_UNAVAILABLE", "review_list", "review_material", "review_decide", "review_escalate", "requirementsHash", "never claim human approval", "review_override is human-only", "NOT approval"]) {
+      expect(instructions).toContain(text);
+    }
   });
 
   test("instructions describe the generation protocol and the named tools exist", async () => {

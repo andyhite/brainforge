@@ -1,6 +1,8 @@
+import type { OperationData } from "@brainforge/contracts";
 import { Link } from "react-router-dom";
 import { fileUrl, useOperation } from "../../api/hooks.ts";
-import { EmptyState, ErrorBanner, NetworkProblem, PageHeader, Status } from "../../components/ui.tsx";
+import { ApprovalBadge } from "./ApprovalBadge.tsx";
+import { ErrorBanner, NetworkProblem, PageHeader, Status } from "../../components/ui.tsx";
 import { useProject } from "../../lib/use-project.ts";
 import { RevisionList } from "./RevisionList.tsx";
 
@@ -21,6 +23,8 @@ export function ReviewPage() {
     <>
       <PageHeader title="Review" />
       <div className="stack">
+        <DecisionQueue />
+
         <section aria-labelledby="q-revisions">
           <h2 id="q-revisions">Revision requests{pending ? ` (${pending.length})` : ""}</h2>
           {revisions.error ? <NetworkProblem error={revisions.error} /> : !revisions.data ? <p className="secondary" role="status">Loading revision requests…</p> : !revisions.data.ok ? <ErrorBanner error={revisions.data.error} /> : pending && pending.length === 0 ? (
@@ -58,10 +62,6 @@ export function ReviewPage() {
             </ul>
           )}
         </section>
-
-        {pending && attention && pending.length === 0 && attention.length === 0 ? (
-          <EmptyState title="Nothing waiting">Generate candidates on an asset page; notes and revision requests you create show up here.</EmptyState>
-        ) : null}
       </div>
     </>
   );
@@ -99,5 +99,46 @@ function AwaitingReview({ assetId, name, projectId }: { assetId: string; name: s
         </ul>
       ) : null}
     </div>
+  );
+}
+
+function DecisionQueue() {
+  const escalated = useOperation("review.list", { filter: "escalated", limit: 200 });
+  const awaiting = useOperation("review.list", { filter: "awaiting", limit: 200 });
+  const failure = escalated.error ?? awaiting.error;
+  if (failure) return <NetworkProblem error={failure} />;
+  if (!escalated.data || !awaiting.data) return <p className="secondary" role="status">Loading decisions…</p>;
+  if (!escalated.data.ok) return <ErrorBanner error={escalated.data.error} />;
+  if (!awaiting.data.ok) return <ErrorBanner error={awaiting.data.error} />;
+  const mine = escalated.data.data.items;
+  const waiting = awaiting.data.data.items.filter((i) => i.kind === "awaiting-review");
+  return (
+    <>
+      <section aria-labelledby="q-decide">
+        <h2 id="q-decide">Needs your decision ({mine.length})</h2>
+        {mine.length === 0 ? <p className="secondary">Nothing waiting. Agents decide on their own when policy allows; when one hands you something it appears here.</p> : <DecisionRows items={mine} />}
+      </section>
+      <section aria-labelledby="q-awaiting">
+        <h2 id="q-awaiting">Awaiting review ({waiting.length})</h2>
+        {waiting.length === 0 ? <p className="secondary">No deliverable candidates are waiting for a decision. Concept candidates are chosen with Lock concept, not here.</p> : <DecisionRows items={waiting} />}
+      </section>
+    </>
+  );
+}
+
+function DecisionRows({ items }: { items: Array<OperationData<"review.list">["items"][number]> }) {
+  return (
+    <ul className="plain stack">
+      {items.map(({ candidate, escalation }) => (
+        <li key={candidate.candidateId} className="panel">
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <strong>{candidate.label}</strong>
+            <ApprovalBadge approval={candidate.approvals.find((a) => a.state !== "none") ?? candidate.approvals[0]} compact />
+          </div>
+          <p className="secondary">{candidate.assetId} · {candidate.stepId}{escalation ? ` · escalated by ${escalation.escalatedBy}: ${escalation.reason}` : ""}</p>
+          <Link to={`/assets/${encodeURIComponent(candidate.assetId)}/candidates/${encodeURIComponent(candidate.candidateId)}?panel=decision`}>Open and decide</Link>
+        </li>
+      ))}
+    </ul>
   );
 }

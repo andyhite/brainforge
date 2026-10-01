@@ -1,12 +1,16 @@
 import type { Database } from "bun:sqlite";
 import { Geometry, type Annotation, type Candidate, type CandidateOutput, type RevisionRequest, type RevisionResponse, type Visual } from "@brainforge/contracts";
 import { OperationFailure } from "../runtime.ts";
+import { discoverAuthored } from "../authored.ts";
+import type { OpenProject } from "../project-runtime.ts";
+import { standingApproval } from "./authority.ts";
+import { stepRequirementsHash } from "./requirements.ts";
 
 export interface CandidateRow {
   candidate_id: string; asset_id: string; step_id: string; run_id: string; job_id: string; parent_candidate_id: string | null;
-  label: string; seed: number | null; prompt: string; favorite: number; created_at: string;
+  label: string; seed: number | null; prompt: string; favorite: number; created_at: string; branch_id: string | null;
 }
-interface OutputRow { output_id: string; candidate_id: string; role: "untouched" | "matted"; file_id: string; path: string; sha256: string; width: number; height: number; media_type: string }
+export interface OutputRow { output_id: string; candidate_id: string; role: "untouched" | "matted"; file_id: string; path: string; sha256: string; width: number; height: number; media_type: string }
 interface AnnotationRow {
   annotation_id: string; candidate_id: string; output_id: string; output_hash: string; image_width: number; image_height: number;
   geometry_json: string; text: string; requires_revision: number; version: number; deleted: number; created_by: string; created_at: string; updated_at: string;
@@ -34,13 +38,26 @@ export function candidateRow(db: Database, candidateId: string): CandidateRow {
   return row;
 }
 
-export function toCandidate(db: Database, r: CandidateRow): Candidate {
+/** Current requirements fingerprint of a step, resolved against the authored files as they are now. */
+export type RequirementsResolver = (stepId: string, branchId: string | undefined) => string;
+
+export async function requirementsResolver(open: OpenProject, assetId: string): Promise<RequirementsResolver> {
+  const set = await discoverAuthored(open.root);
+  return (stepId, branchId) => stepRequirementsHash(open, set, assetId, stepId, branchId);
+}
+
+export function toCandidate(db: Database, r: CandidateRow, hashFor: RequirementsResolver): Candidate {
   const count = (sql: string): number => db.query<{ n: number }, [string]>(sql).get(r.candidate_id)?.n ?? 0;
+  const branchId = r.branch_id ?? undefined;
+  const outputs = outputRows(db, r.candidate_id);
+  const requirementsHash = r.step_id === "concept" ? "" : hashFor(r.step_id, branchId);
   return {
-    candidateId: r.candidate_id, assetId: r.asset_id, stepId: "concept", runId: r.run_id, jobId: r.job_id,
+    candidateId: r.candidate_id, assetId: r.asset_id, stepId: r.step_id, runId: r.run_id, jobId: r.job_id,
     ...(r.parent_candidate_id === null ? {} : { parentCandidateId: r.parent_candidate_id }),
+    ...(branchId === undefined ? {} : { branchId }),
     label: r.label, ...(r.seed === null ? {} : { seed: r.seed }), prompt: r.prompt, createdAt: r.created_at,
-    favorite: r.favorite === 1, outputs: outputRows(db, r.candidate_id).map(toOutput),
+    favorite: r.favorite === 1, outputs: outputs.map(toOutput),
+    approvals: outputs.map((o) => standingApproval(db, o.output_id, requirementsHash, o.sha256)),
     annotationCount: count("SELECT COUNT(*) AS n FROM annotations WHERE candidate_id = ? AND deleted = 0"),
     openRevisionCount: count("SELECT COUNT(*) AS n FROM revision_requests WHERE candidate_id = ? AND status IN ('open','responded')"),
   };

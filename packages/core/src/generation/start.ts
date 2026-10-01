@@ -7,6 +7,7 @@ import { computeEffective } from "../effective.ts";
 import type { OpenProject } from "../project-runtime.ts";
 import { OperationFailure } from "../runtime.ts";
 import { loadDescriptor } from "./descriptors.ts";
+import { resolveDeliverable } from "./deliverable.ts";
 import { PLAN_TTL_MS, changedSpecs, storedPlan } from "./plan.ts";
 import { readPinnedReference } from "./references.ts";
 import { schedulerOf } from "./scheduler.ts";
@@ -16,13 +17,13 @@ import { attemptsInWindow, budgetRow, budgetShortfall, jobRow, newId, toBudget, 
 const CONTENT_BLOCKERS = new Set([
   "PROJECT_INVALID", "ASSET_INVALID", "BATCH_TOO_LARGE", "WORKFLOW_UNAVAILABLE", "PARENT_REQUIRED", "PARENT_MISSING", "PARENT_UNEXPECTED",
   "OUTPUT_MISSING", "REFERENCE_UNSUPPORTED", "REFERENCE_CONFLICT", "REFERENCE_MISSING", "REFERENCE_REQUIRED", "ITERATION_REQUIRED",
-  "STYLE_CONFLICT", "WORKFLOW_INPUT_MISSING",
+  "STYLE_CONFLICT", "WORKFLOW_INPUT_MISSING", "STEP_UNKNOWN", "STEP_BLOCKED", "NO_BRANCH", "DEPENDENCY_NOT_APPROVED", "SIZE_UNSUPPORTED", "BRANCH_UNEXPECTED",
 ]);
 
-const askForBudget = (assetId: string): RecoveryAction => ({
+const askForBudget = (assetId: string, stepId: string): RecoveryAction => ({
   label: "Ask the user to grant a generation budget (only a person can, in the Brainforge UI)",
   operation: "budget.grant",
-  input: { assetId, stepId: "concept", maxStarts: 2, maxCandidateSubmissions: 8, expiresAt: new Date(Date.now() + 24 * 3600_000).toISOString() },
+  input: { assetId, stepId, maxStarts: 2, maxCandidateSubmissions: 8, expiresAt: new Date(Date.now() + 24 * 3600_000).toISOString() },
 });
 
 export interface StartEnvironment {
@@ -60,6 +61,17 @@ export async function startGeneration(env: StartEnvironment, input: ParsedOperat
   const changed = changedSpecs(set, plan.inputs.specHashes);
   if (changed.length > 0) {
     throw new OperationFailure("REVISION_CONFLICT", `Authored files changed since the plan was inspected: ${changed.map((c) => c.path).join(", ")}. Plan again so the prompt reflects them.`, { changed }, [{ label: "Plan again", operation: "generation.plan" }]);
+  }
+  if (plan.stepId !== "concept") {
+    // The branch, the dependencies' approvals and the chosen reference are re-read now, not trusted from the quote.
+    const current = await resolveDeliverable(project, set, plan.assetId, plan.stepId, plan.branchId);
+    if (current.blockers.length > 0) {
+      throw new OperationFailure("STEP_BLOCKED", `${plan.stepId} can no longer be generated: ${current.blockers.map((b) => b.message).join(" ")}`, { blockers: current.blockers }, current.blockers.flatMap((b) => b.recoveryActions));
+    }
+    const pinned = plan.inputs.references.find((r) => r.role === "reference");
+    if (!plan.parentCandidateId && (current.reference?.id !== pinned?.id || current.reference?.sha256 !== pinned?.sha256)) {
+      throw new OperationFailure("REVISION_CONFLICT", "The reference this step is conditioned on changed since the plan was inspected. Plan again.", { was: pinned, now: current.reference }, [{ label: "Plan again", operation: "generation.plan", input: { assetId: plan.assetId, stepId: plan.stepId, branchId: plan.branchId } }]);
+    }
   }
   for (const ref of plan.inputs.references) {
     if (!(await readPinnedReference(project, ref))) {
@@ -101,23 +113,23 @@ export async function startGeneration(env: StartEnvironment, input: ParsedOperat
           throw new OperationFailure("INVALID_INPUT", `Budget ${budget.budget_id} is for ${budget.asset_id}/${budget.step_id}, not ${plan.assetId}/${plan.stepId}.`, undefined, [{ label: "List budgets", operation: "budget.list", input: { assetId: plan.assetId } }]);
         }
         const shortfall = budgetShortfall(budget, { starts: 1, submissions: plan.count });
-        if (shortfall) throw new OperationFailure("HUMAN_AUTHORIZATION_REQUIRED", `${shortfall}. Only the user can authorize more generation; ask them.`, { budget: toBudget(budget) }, [askForBudget(plan.assetId)]);
+        if (shortfall) throw new OperationFailure("HUMAN_AUTHORIZATION_REQUIRED", `${shortfall}. Only the user can authorize more generation; ask them.`, { budget: toBudget(budget) }, [askForBudget(plan.assetId, plan.stepId)]);
         const attempts = attemptsInWindow(project.db, plan.assetId, plan.stepId);
         if (attempts >= plan.limits.maxAttemptsPerStep) {
-          throw new OperationFailure("HUMAN_AUTHORIZATION_REQUIRED", `${attempts} of ${plan.limits.maxAttemptsPerStep} allowed attempts for ${plan.assetId}/${plan.stepId} are used; return to the user, whose new budget opens another window.`, { attempts }, [askForBudget(plan.assetId)]);
+          throw new OperationFailure("HUMAN_AUTHORIZATION_REQUIRED", `${attempts} of ${plan.limits.maxAttemptsPerStep} allowed attempts for ${plan.assetId}/${plan.stepId} are used; return to the user, whose new budget opens another window.`, { attempts }, [askForBudget(plan.assetId, plan.stepId)]);
         }
         const upper = wf.execution.upperBoundPerRunUsd;
         if (budget.spend_cap_usd !== null && upper === undefined) {
-          throw new OperationFailure("HUMAN_AUTHORIZATION_REQUIRED", `Budget ${budget.budget_id} has a spend cap, but workflow ${wf.id} declares no cost upper bound, so the cap cannot be enforced. Cost is unknown, not zero.`, undefined, [askForBudget(plan.assetId)]);
+          throw new OperationFailure("HUMAN_AUTHORIZATION_REQUIRED", `Budget ${budget.budget_id} has a spend cap, but workflow ${wf.id} declares no cost upper bound, so the cap cannot be enforced. Cost is unknown, not zero.`, undefined, [askForBudget(plan.assetId, plan.stepId)]);
         }
         const charge = upper === undefined ? 0 : upper * plan.count;
         if (budget.spend_cap_usd !== null && budget.spent_usd + charge > budget.spend_cap_usd) {
-          throw new OperationFailure("HUMAN_AUTHORIZATION_REQUIRED", `Starting would spend up to $${charge} against a remaining cap of $${budget.spend_cap_usd - budget.spent_usd}.`, undefined, [askForBudget(plan.assetId)]);
+          throw new OperationFailure("HUMAN_AUTHORIZATION_REQUIRED", `Starting would spend up to $${charge} against a remaining cap of $${budget.spend_cap_usd - budget.spent_usd}.`, undefined, [askForBudget(plan.assetId, plan.stepId)]);
         }
 
         const now = new Date().toISOString();
-        project.db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, budget_id, started_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-          .run(runId, plan.assetId, plan.stepId, plan.planHash, JSON.stringify(GenerationPlan.parse(plan)), budget.budget_id, env.actorId, now);
+        project.db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, branch_id, plan_hash, plan_json, budget_id, started_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+          .run(runId, plan.assetId, plan.stepId, plan.branchId ?? null, plan.planHash, JSON.stringify(GenerationPlan.parse(plan)), budget.budget_id, env.actorId, now);
         slots.forEach(({ submission, jobId }, slot) => {
           project.db.query("INSERT INTO generation_jobs (job_id, run_id, asset_id, step_id, slot, attempt, label, identity, seed, state, submission_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, 'queued', ?, ?, ?)")
             .run(jobId, runId, plan.assetId, plan.stepId, slot, submission.label, `bf:${jobId}:1`, submission.seed, JSON.stringify(submission), now, now);

@@ -30,7 +30,7 @@ Schema `brainforge.asset.v2`. `.strict()` everywhere. `id` MUST equal the parent
 |`required`|no|bool, `true`; optional experiments set `false`|
 |`description`|no|string|
 |`dependsOn`|no|deliverable ids in the same asset|
-|`referenceRoles`|no|map role-name -> binding (resolved at plan time)|
+|`referenceRoles`|no|map role-name -> `{deliverableId, outputRole}` where `deliverableId` is in `dependsOn` and `outputRole` is a region id of that reference-sheet (e.g. `identity: {deliverableId: construction-sheet, outputRole: profile}`). The first binding supplies the ONE reference image the deliverable is generated from (a hash-pinned crop of the approved sheet); without a binding the branch's locked concept output is the reference. The workflow takes a single reference, so further bindings are ignored and the plan's `notes` say so|
 |`overrides`|no|Defaults block, highest precedence|
 |`animation`|no|`{motion: string (required), loop: bool=true, sourceFps?, playbackFps?: number>0, sourceFrameCount?: int>0, startReference?, endReference?: string}`|
 |`environment`|no|`{layer?, pivot?{x,y}, relativeScale?>0, tileSize?{width,height ints>0}, connections?{north,east,south,west: label strings}, seamlessAxes?: [] \| ["x"] \| ["y"] \| ["x","y"], parallax?{x,y}}`|
@@ -41,7 +41,9 @@ Animation timing: exact generation size, required images and `4n+1` frame counts
 
 Precedence for settings: project `defaults` → `familyDefaults` → asset `overrides` → deliverable `overrides`. Scalars/arrays replace, objects merge. Check with `settings_inspect {assetId, deliverableId}`.
 
-Prompt rules (full list: SKILL.md "Writing prompt-bearing YAML"): SENT = `description`, every `identity` value, effective `perspective`/`palette` from `overrides`. NEVER sent = `notes`, `name`, all deliverable fields (including descriptions). Describe the picture, positive phrasing only, no doc references/status/other characters' names; front/profile/rear wording only in the construction-sheet deliverable description. Changing a sent field invalidates art; `name` and `notes` do not.
+Prompt rules (full list: SKILL.md "Writing prompt-bearing YAML"): SENT = `description`, every `identity` value, effective `perspective`/`palette` from `overrides`, and, only when that deliverable is generated, that deliverable's own `description` (other deliverables' text is never sent, so each description MUST follow the same rules: concrete picture, positive phrasing). NEVER sent = `notes`, `name`, ids, other deliverables' fields. Describe the picture, no doc references/status/other characters' names; front/profile/rear wording only in the construction-sheet deliverable description. Changing a sent field invalidates art; `name` and `notes` do not.
+
+`dependsOn` (same-asset deliverable ids): a deliverable step is `ready` only after a concept is locked (branch) and every listed deliverable has a selected output with an applicable approval. Independent deliverables are ready independently; cycles, missing ids and a deliverable named `concept` are reported as problems on the affected steps only. Declare only dependencies the art needs: a static prop with no `dependsOn` never gets reference steps. Changing a dependency's approved output makes dependents need reassessment. See [branches-review](branches-review.md).
 
 ## Minimal valid
 

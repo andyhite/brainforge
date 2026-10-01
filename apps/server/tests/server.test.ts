@@ -32,6 +32,7 @@ function fakeProject(projectRoot: string, projectId: string): ProjectHandle {
   db.exec("CREATE TABLE artifact_records (artifact_id TEXT PRIMARY KEY, path TEXT NOT NULL)");
   db.exec("CREATE TABLE candidate_outputs (output_id TEXT PRIMARY KEY, path TEXT NOT NULL)");
   db.exec("CREATE TABLE review_files (file_id TEXT PRIMARY KEY, path TEXT NOT NULL)");
+  db.exec("CREATE TABLE output_crops (file_id TEXT PRIMARY KEY, path TEXT NOT NULL)");
   return {
     root: projectRoot, projectId, db, writable: true, idempotency: store.idempotency,
     revision: () => events.length,
@@ -102,8 +103,11 @@ beforeEach(async () => {
   project.db.query("INSERT INTO reference_records VALUES ('gone', 'brainforge/references/ref1/gone.png')").run();
   project.db.query("INSERT INTO artifact_records VALUES ('art1', 'brainforge/references/ref1/a.png')").run();
   await mkdir(join(root, "brainforge/assets/cortex/work/candidates/c1/original"), { recursive: true });
+  await mkdir(join(root, "brainforge/assets/cortex/work/candidates/c1/processed"), { recursive: true });
   await writeFile(join(root, "brainforge/assets/cortex/work/candidates/c1/original/out1.png"), makePng(300, 150, [200, 40, 40]));
   project.db.query("INSERT INTO candidate_outputs VALUES ('out1', 'brainforge/assets/cortex/work/candidates/c1/original/out1.png')").run();
+  await writeFile(join(root, "brainforge/assets/cortex/work/candidates/c1/processed/crop-front.png"), makePng(100, 50, [10, 90, 200]));
+  project.db.query("INSERT INTO output_crops VALUES ('out1-crop-front', 'brainforge/assets/cortex/work/candidates/c1/processed/crop-front.png')").run();
   const projects = [project, fakeProject(otherRoot, "proj-2")];
   const runtime: OperationRuntime = {
     projects: { get: (r) => projects.find((p) => p.root === r), list: () => projects },
@@ -228,6 +232,12 @@ describe("files", () => {
     expect(await decodeImage(new Uint8Array(await notEnlarged.arrayBuffer()))).toMatchObject({ width: 300, height: 150 });
 
     expect((await call("/api/projects/proj-1/files/out1?max=abc")).status).toBe(400);
+  });
+
+  test("serves a reference-sheet region crop by its file id", async () => {
+    const res = await call("/api/projects/proj-1/files/out1-crop-front");
+    expect(res.status).toBe(200);
+    expect(await decodeImage(new Uint8Array(await res.arrayBuffer()))).toMatchObject({ width: 100, height: 50 });
   });
 
   test("Range: start-end, open end, suffix, and unsatisfiable", async () => {

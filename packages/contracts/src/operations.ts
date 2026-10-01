@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ApprovalPolicy, AssetFamily, AuthoredKind } from "./authored.ts";
 import { NextAction, RecoveryAction } from "./envelope.ts";
-import { Annotation, Budget, Candidate, GenerationPlan, Geometry, Job, JobState, RevisionRequest, RevisionStatus, StepId, StepState, Visual } from "./generation.ts";
+import { Annotation, Branch, Budget, Candidate, Decision, Escalation, GenerationPlan, Geometry, Job, JobState, OutputApproval, RevisionRequest, RevisionStatus, StepId, StepState, Visual } from "./generation.ts";
 
 export { NextAction, RecoveryAction };
 
@@ -257,18 +257,20 @@ export const OPERATIONS = {
     summary: "Human only. Stops further use of a budget; work already started continues.",
   },
   "step.inspect": {
-    input: z.object({ assetId: z.string(), stepId: StepId.default("concept") }).strict(),
+    input: z.object({ assetId: z.string(), stepId: StepId.default("concept"), branchId: z.string().optional() }).strict(),
     data: z.object({ step: StepState }),
     mutating: false, humanOnly: false, needsProject: true,
     summary: "State of one asset step: blocked, ready, running, awaiting_review, complete or failed, with blockers, reassessment reasons, counts and next actions.",
   },
   "generation.plan": {
     input: z.object({
-      assetId: z.string(), stepId: StepId.default("concept"), mode: z.enum(["fresh", "variation"]).default("fresh"),
+      assetId: z.string(), stepId: StepId.default("concept"), branchId: z.string().optional(), mode: z.enum(["fresh", "variation"]).default("fresh"),
       count: z.number().int().min(1).max(8).default(4),
       parentCandidateId: z.string().optional(), parentOutputId: z.string().optional(),
       referenceBindings: z.record(z.string(), z.string()).default({}),
       iterationInstructions: z.string().max(4000).optional(),
+      /** Overrides the deliverable's (or the workflow's) reference strength for this plan: lower lets the pose change more. */
+      referenceStrength: z.number().min(0).max(20).optional(),
     }).strict(),
     data: z.object({ plan: GenerationPlan }),
     mutating: true, humanOnly: false, needsProject: true,
@@ -306,7 +308,7 @@ export const OPERATIONS = {
     summary: "Cancel a queued job (deletes only that queued ComfyUI prompt). A running job returns CANCEL_UNAVAILABLE: it finishes and its result can simply be ignored. Never interrupts the shared ComfyUI.",
   },
   "candidate.list": {
-    input: z.object({ assetId: z.string(), stepId: StepId.default("concept"), parentCandidateId: z.string().optional(), favoriteOnly: z.boolean().default(false), limit: z.number().int().min(1).max(200).default(100) }).strict(),
+    input: z.object({ assetId: z.string(), stepId: StepId.default("concept"), branchId: z.string().optional(), parentCandidateId: z.string().optional(), favoriteOnly: z.boolean().default(false), limit: z.number().int().min(1).max(200).default(100) }).strict(),
     data: z.object({ candidates: z.array(Candidate) }),
     mutating: false, humanOnly: false, needsProject: true,
     summary: "Concept candidates for an asset, newest first, with outputs, favorite flag and note counts.",
@@ -362,6 +364,81 @@ export const OPERATIONS = {
     data: z.object({ revision: RevisionRequest }),
     mutating: true, humanOnly: false, needsProject: true,
     summary: "Close a revision without a fix. A non-empty reason is required. Same authority as revision_resolve.",
+  },
+
+  // ---- M3: concept lock, branches, review decisions
+  "concept.lock": {
+    input: z.object({ assetId: z.string(), candidateId: z.string(), outputId: z.string(), name: z.string().min(1).max(80).optional(), reason: z.string().max(2000).optional() }).strict(),
+    data: z.object({ branch: Branch }),
+    mutating: true, humanOnly: false, needsProject: true,
+    summary: "Choose one exact concept output as the asset's direction and create a branch for production. Authority follows approval.conceptLock in the effective policy (human by default: an agent is refused with an instruction to ask the user). Pins the output hash and the requirements fingerprint. Not a production version. Locking again creates another branch; earlier branches keep their work.",
+  },
+  "branch.list": {
+    input: z.object({ assetId: z.string() }).strict(),
+    data: z.object({ branches: z.array(Branch) }),
+    mutating: false, humanOnly: false, needsProject: true,
+    summary: "Branches of an asset with their locked concept output and per-deliverable selections.",
+  },
+  "candidate.select": {
+    input: z.object({ branchId: z.string(), deliverableId: StepId, candidateId: z.string(), outputId: z.string().optional() }).strict(),
+    data: z.object({ branch: Branch }),
+    mutating: true, humanOnly: false, needsProject: true,
+    summary: "Select a candidate (and optionally one of its outputs) as a branch's choice for a deliverable. Selection is not approval: the step completes only when the selected output has an applicable approval and no unresolved required revision.",
+  },
+  "step.list": {
+    input: z.object({ assetId: z.string(), branchId: z.string().optional() }).strict(),
+    data: z.object({ steps: z.array(StepState) }),
+    mutating: false, humanOnly: false, needsProject: true,
+    summary: "The asset's pipeline in dependency order: the concept step, then one step per authored deliverable with state, blockers (which dependency is unmet), selection and approval. Independent deliverables are ready independently. Without a branch only the concept step can be ready.",
+  },
+  "review.material": {
+    input: z.object({ candidateId: z.string(), outputIds: z.array(z.string()).optional() }).strict(),
+    data: z.object({
+      candidate: Candidate, stepId: StepId, branchId: z.string().optional(),
+      /** Pass this back to review.decide / review.override; a changed requirement changes it. */
+      requirementsHash: z.string(),
+      prompt: z.string(),
+      deliverable: z.object({ id: z.string(), kind: z.string(), description: z.string(), regions: z.array(z.object({ id: z.string(), x: z.number(), y: z.number(), width: z.number(), height: z.number() })).default([]) }).optional(),
+      references: z.array(z.object({ role: z.string(), candidateId: z.string().optional(), outputId: z.string(), label: z.string() })),
+      reviewPolicy: z.enum(["human", "agent", "agent_with_escalation"]),
+      /** What the calling actor may do with this material right now. */
+      you: z.object({ canDecide: z.boolean(), canEscalate: z.boolean(), canOverride: z.boolean(), why: z.string().optional() }),
+      escalation: Escalation.optional(),
+      decisions: z.array(Decision),
+      visuals: z.array(Visual),
+    }),
+    mutating: false, humanOnly: false, needsProject: true,
+    summary: "Everything a reviewer needs for a candidate: the exact images (matted, untouched, sheet crops), prompt, deliverable description, locked references, requirements hash, who may decide under the effective policy, and the decision history.",
+  },
+  "review.decide": {
+    input: z.object({ candidateId: z.string(), outputIds: z.array(z.string()).min(1), requirementsHash: z.string(), decision: z.enum(["approve", "reject"]), reasons: z.array(z.string()).default([]) }).strict(),
+    data: z.object({ decisions: z.array(Decision), approvals: z.array(OutputApproval) }),
+    mutating: true, humanOnly: false, needsProject: true,
+    summary: "Approve or reject exact outputs against a requirements hash. A human may always decide. An agent may decide only when approval.productionReview is agent or agent_with_escalation; otherwise it is refused with an instruction to ask the user. Rejecting needs at least one reason. Decisions pin the output bytes and stop applying when the requirements or bytes change.",
+  },
+  "review.escalate": {
+    input: z.object({ candidateId: z.string(), outputIds: z.array(z.string()).min(1), reason: z.string().min(1).max(2000) }).strict(),
+    data: z.object({ escalation: Escalation }),
+    mutating: true, humanOnly: false, needsProject: true,
+    summary: "Hand an uncertain output to the human reviewer (policy agent_with_escalation). The escalation waits for a human decision and is never approval.",
+  },
+  "review.override": {
+    input: z.object({ candidateId: z.string(), outputIds: z.array(z.string()).min(1), requirementsHash: z.string(), decision: z.enum(["approve", "reject"]), reasons: z.array(z.string()).min(1) }).strict(),
+    data: z.object({ decisions: z.array(Decision), approvals: z.array(OutputApproval) }),
+    mutating: true, humanOnly: true, needsProject: true,
+    summary: "Human only. Replace the standing decision on outputs (including an agent's) with a new one; the earlier decision stays in history and is marked overridden. A reason is required.",
+  },
+  "review.list": {
+    input: z.object({ assetId: z.string().optional(), filter: z.enum(["awaiting", "escalated", "all"]).default("awaiting"), limit: z.number().int().min(1).max(200).default(50) }).strict(),
+    data: z.object({ items: z.array(z.object({ candidate: Candidate, kind: z.enum(["awaiting-review", "escalated", "decided"]), escalation: Escalation.optional() })) }),
+    mutating: false, humanOnly: false, needsProject: true,
+    summary: "Candidates waiting for a review decision (awaiting), those an agent escalated to a human (escalated), or all, newest first. Concept-step candidates are exploration and are not queued.",
+  },
+  "review.history": {
+    input: z.object({ candidateId: z.string() }).strict(),
+    data: z.object({ decisions: z.array(Decision), escalations: z.array(Escalation) }),
+    mutating: false, humanOnly: false, needsProject: true,
+    summary: "Every decision, override and escalation on a candidate, oldest first, with actor identity and reasons.",
   },
 } as const satisfies Record<string, OperationDef>;
 

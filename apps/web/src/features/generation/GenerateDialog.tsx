@@ -2,13 +2,15 @@ import { Fragment, useState } from "react";
 import type { Candidate, GenerationPlan } from "@brainforge/contracts";
 import { useMutationOperation } from "../../api/hooks.ts";
 import { Banner, ErrorBanner, formatTime, Modal, NetworkProblem, Status } from "../../components/ui.tsx";
-import { pickOutput } from "./media.tsx";
+import { outputUrl, pickOutput } from "./media.tsx";
+import { useProject } from "../../lib/use-project.ts";
 
 export interface GenerateRequest { mode: "fresh" | "variation"; parentCandidateId?: string }
 
-export function GenerateDialog({ assetId, candidates, initial, onClose, onGrantBudget }: {
-  assetId: string; candidates: Candidate[]; initial: GenerateRequest; onClose: () => void; onGrantBudget: () => void;
+export function GenerateDialog({ assetId, stepId = "concept", branchId, candidates, initial, onClose, onGrantBudget }: {
+  assetId: string; stepId?: string; branchId?: string; candidates: Candidate[]; initial: GenerateRequest; onClose: () => void; onGrantBudget: () => void;
 }) {
+  const stepNoun = stepId === "concept" ? "concepts" : stepId;
   const plan = useMutationOperation("generation.plan");
   const start = useMutationOperation("generation.start");
   const [mode, setMode] = useState(initial.mode);
@@ -26,7 +28,7 @@ export function GenerateDialog({ assetId, candidates, initial, onClose, onGrantB
   const makePlan = async () => {
     const result = await plan.mutateAsync({
       input: {
-        assetId, stepId: "concept", mode, count,
+        assetId, stepId, mode, count, ...(branchId ? { branchId } : {}),
         ...(mode === "variation" && parent && parentOutput ? { parentCandidateId: parent.candidateId, parentOutputId: parentOutput.outputId } : {}),
         ...(instructions.trim() ? { iterationInstructions: instructions.trim() } : {}),
       },
@@ -50,7 +52,7 @@ export function GenerateDialog({ assetId, candidates, initial, onClose, onGrantB
   const startReason = !planned ? "Plan first." : blocked ? "Resolve the blockers above." : noBudget ? "No active budget covers this plan." : !budgetId ? "Choose a budget." : undefined;
 
   return (
-    <Modal open onOpenChange={(open) => { if (!open) onClose(); }} title={mode === "variation" ? "Generate variations" : "Generate concepts"} description="You will see the exact plan before anything is submitted.">
+    <Modal open onOpenChange={(open) => { if (!open) onClose(); }} title={`${mode === "variation" ? "Generate variations" : "Generate"}: ${stepNoun}`} description="You will see the exact plan before anything is submitted.">
       {started ? (
         <div className="stack">
           <Banner tone="ok" title="Generation started">{started.jobs} {started.jobs === 1 ? "job is" : "jobs are"} queued. Candidates appear in the grid as each finishes; progress is on the Jobs page.</Banner>
@@ -148,10 +150,17 @@ export function GenerateDialog({ assetId, candidates, initial, onClose, onGrantB
 }
 
 function PlanView({ plan }: { plan: GenerationPlan }) {
+  const project = useProject();
+  const projectId = project.data?.project.projectId;
+  const dimensions = plan.submissions.flatMap((submission) => {
+    const { width, height } = submission.values;
+    return typeof width === "number" && typeof height === "number" ? [`${width}×${height}`] : [];
+  })[0];
   return (
     <div className="stack">
       <dl className="kv" aria-label="Plan summary">
-        <dt>Mode</dt><dd>{plan.mode}{plan.parentCandidateId ? ` from ${plan.parentCandidateId}` : ""} · {plan.count} {plan.count === 1 ? "candidate" : "candidates"}</dd>
+        <dt>Step</dt><dd><span className="mono">{plan.stepId}</span>{plan.branchId ? <> on branch <span className="mono">{plan.branchId}</span></> : null}</dd>
+        <dt>Mode</dt><dd>{plan.mode}{plan.parentCandidateId ? ` from ${plan.parentCandidateId}` : ""} · {plan.count} {plan.count === 1 ? "candidate" : "candidates"}{dimensions ? ` · ${dimensions} px` : ""}</dd>
         <dt>Workflow</dt><dd className="mono">{plan.workflow.id} v{plan.workflow.version} <span className="secondary">graph {plan.workflow.graphHash.slice(0, 12)}</span></dd>
         <dt>Plan hash</dt><dd className="mono">{plan.planHash.slice(0, 16)}…</dd>
         <dt>Runs on</dt><dd>{plan.execution.computeLocation}{plan.preflight.comfyHost ? <span className="secondary"> ({plan.preflight.comfyHost})</span> : null}</dd>
@@ -166,6 +175,19 @@ function PlanView({ plan }: { plan: GenerationPlan }) {
         </dd>
         <dt>Limits</dt><dd>up to {plan.limits.maxBatchCandidates} candidates per start · {plan.limits.maxConcurrentGenerations} at a time · {plan.limits.maxAttemptsPerStep} starts per step</dd>
       </dl>
+      {plan.inputs.references.length > 0 && projectId ? (
+        <section aria-label="References used">
+          <h3>References used</h3>
+          <ul className="row" style={{ listStyle: "none", padding: 0, gap: 12, flexWrap: "wrap" }}>
+            {plan.inputs.references.map((reference) => (
+              <li key={`${reference.role}-${reference.id}`} style={{ width: 120 }}>
+                <img src={outputUrl(projectId, reference.id, 240)} alt={`Reference for role ${reference.role}`} style={{ width: 120, height: 120, objectFit: "contain" }} />
+                <div className="secondary"><strong>{reference.role}</strong><div className="mono">{reference.sha256.slice(0, 10)}…</div></div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       <section aria-label="Prompt">
         <h3>Exact prompt</h3>
         <pre className="plan-prompt">{plan.prompt}</pre>

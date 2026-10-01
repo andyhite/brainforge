@@ -9,6 +9,7 @@ import { normalizedHash } from "../operations.ts";
 import type { OpenProject } from "../project-runtime.ts";
 import { OperationFailure } from "../runtime.ts";
 import { loadDescriptor } from "./descriptors.ts";
+import { DELIVERABLE_WORKFLOW, resolveDeliverable } from "./deliverable.ts";
 import { composePrompt, stylesFor } from "./prompt.ts";
 import { attemptsInWindow, budgetStatus, newId, toBudget, type BudgetRow } from "./store.ts";
 
@@ -38,13 +39,13 @@ export function workflowDefaults(wf: WorkflowDescriptor): Record<string, string 
 
 export interface PinnedReference { role: string; id: string; sha256: string }
 
-interface ParentRow { candidate_id: string; asset_id: string }
+interface ParentRow { candidate_id: string; asset_id: string; step_id: string; branch_id: string | null }
 interface OutputPath { output_id: string; path: string; sha256: string; role: string }
 
-const grantAction = (assetId: string, count: number): RecoveryAction => ({
+const grantAction = (assetId: string, stepId: string, count: number): RecoveryAction => ({
   label: "Ask the user to grant a generation budget (only a person can, in the Brainforge UI)",
   operation: "budget.grant",
-  input: { assetId, stepId: "concept", maxStarts: 2, maxCandidateSubmissions: Math.max(count * 2, 4), expiresAt: new Date(Date.now() + 24 * 3600_000).toISOString() },
+  input: { assetId, stepId, maxStarts: 2, maxCandidateSubmissions: Math.max(count * 2, 4), expiresAt: new Date(Date.now() + 24 * 3600_000).toISOString() },
 });
 
 /**
@@ -73,6 +74,11 @@ export async function createPlan(env: PlanEnvironment, input: ParsedOperationInp
       { label: "Write a valid asset.yaml", operation: "spec.write", input: { path: `brainforge/assets/${input.assetId}/asset.yaml` } },
     ]);
   }
+  if (input.stepId === "concept" && input.branchId) {
+    block("BRANCH_UNEXPECTED", "Concept exploration happens before a lock and belongs to no branch; omit branchId.");
+  }
+  const deliverable = input.stepId === "concept" ? undefined : await resolveDeliverable(project, set, input.assetId, input.stepId, input.branchId);
+  if (deliverable) blockers.push(...deliverable.blockers);
   if (input.count > automation.maxBatchCandidates) {
     block("BATCH_TOO_LARGE", `count ${input.count} exceeds the project's maxBatchCandidates (${automation.maxBatchCandidates}).`, [
       { label: `Plan at most ${automation.maxBatchCandidates} candidates, or ask the user to raise automation.maxBatchCandidates in project.yaml` },
@@ -81,7 +87,7 @@ export async function createPlan(env: PlanEnvironment, input: ParsedOperationInp
 
   // --- workflow
   let wf: WorkflowDescriptor | undefined;
-  const workflowId = WORKFLOW_FOR_MODE[input.mode];
+  const workflowId = input.stepId === "concept" ? WORKFLOW_FOR_MODE[input.mode] : DELIVERABLE_WORKFLOW;
   try {
     wf = await loadDescriptor(env.workflowsDir, workflowId);
   } catch (e) {
@@ -97,9 +103,9 @@ export async function createPlan(env: PlanEnvironment, input: ParsedOperationInp
     if (!input.parentCandidateId) {
       block("PARENT_REQUIRED", "A variation continues from a candidate: pass parentCandidateId (and optionally parentOutputId).", [{ label: "List candidates", operation: "candidate.list", input: { assetId: input.assetId } }]);
     } else {
-      const candidate = project.db.query<ParentRow, [string]>("SELECT candidate_id, asset_id FROM candidates WHERE candidate_id = ?").get(input.parentCandidateId);
-      if (!candidate || candidate.asset_id !== input.assetId) {
-        block("PARENT_MISSING", `Candidate ${input.parentCandidateId} does not exist on asset ${input.assetId}.`, [{ label: "List candidates", operation: "candidate.list", input: { assetId: input.assetId } }]);
+      const candidate = project.db.query<ParentRow, [string]>("SELECT candidate_id, asset_id, step_id, branch_id FROM candidates WHERE candidate_id = ?").get(input.parentCandidateId);
+      if (!candidate || candidate.asset_id !== input.assetId || candidate.step_id !== input.stepId || (candidate.branch_id ?? undefined) !== input.branchId) {
+        block("PARENT_MISSING", `Candidate ${input.parentCandidateId} does not exist on ${input.assetId}/${input.stepId}${input.branchId ? ` in branch ${input.branchId}` : ""}.`, [{ label: "List candidates", operation: "candidate.list", input: { assetId: input.assetId, stepId: input.stepId, ...(input.branchId ? { branchId: input.branchId } : {}) } }]);
       } else {
         const outputs = project.db.query<OutputPath, [string]>("SELECT output_id, path, sha256, role FROM candidate_outputs WHERE candidate_id = ?").all(candidate.candidate_id);
         const chosen = input.parentOutputId ? outputs.find((o) => o.output_id === input.parentOutputId) : (outputs.find((o) => o.role === "matted") ?? outputs[0]);
@@ -116,8 +122,9 @@ export async function createPlan(env: PlanEnvironment, input: ParsedOperationInp
         }
       }
     }
-  } else if (input.parentCandidateId || input.parentOutputId) {
-    block("PARENT_UNEXPECTED", "A fresh batch has no parent; use mode \"variation\" to continue from a candidate.");
+  } else {
+    if (input.parentCandidateId || input.parentOutputId) block("PARENT_UNEXPECTED", "A fresh batch has no parent; use mode \"variation\" to continue from a candidate.");
+    if (deliverable?.reference) references.push(deliverable.reference);
   }
   for (const [role, referenceId] of Object.entries(input.referenceBindings)) {
     if (wf && !imageRoles.has(role)) {
@@ -136,7 +143,7 @@ export async function createPlan(env: PlanEnvironment, input: ParsedOperationInp
     }
     references.push({ role, id: referenceId, sha256: row.sha256 });
   }
-  if (wf) {
+  if (wf && !(deliverable && deliverable.blockers.length > 0)) {
     for (const b of wf.inputBindings) {
       if (b.type === "image" && b.required && !references.some((r) => r.role === b.name)) {
         block("REFERENCE_REQUIRED", `Workflow ${wf.id} needs an image for "${b.name}".`);
@@ -155,9 +162,12 @@ export async function createPlan(env: PlanEnvironment, input: ParsedOperationInp
     if (input.mode === "variation" && !input.iterationInstructions?.trim()) {
       block("ITERATION_REQUIRED", "A variation needs iterationInstructions describing what to change.");
     }
-    const effective = computeEffective(set, { assetId: asset.fileId });
+    const effective = computeEffective(set, { assetId: asset.fileId, ...(deliverable?.deliverable ? { deliverableId: deliverable.deliverable.id } : {}) });
     for (const c of effective.conflicts) block("STYLE_CONFLICT", `Styles disagree on ${c.field}: ${c.values.map((v) => `${v.file}=${JSON.stringify(v.value)}`).join("; ")}.`, [{ label: "Resolve in the style files", operation: "spec.read" }]);
-    promptSources = composePrompt({ set, asset, spec, effective, mode: input.mode, workflow: wf, iterationInstructions: input.iterationInstructions }).map((p) => ({ label: p.label, source: p.source, text: p.text }));
+    promptSources = composePrompt({
+      set, asset, spec, effective, mode: input.mode, workflow: wf, iterationInstructions: input.iterationInstructions,
+      ...(deliverable?.deliverable ? { deliverable: { spec: deliverable.deliverable, index: deliverable.index } } : {}),
+    }).map((p) => ({ label: p.label, source: p.source, text: p.text }));
   }
   const prompt = promptSources.map((p) => p.text).join("\n");
 
@@ -167,7 +177,8 @@ export async function createPlan(env: PlanEnvironment, input: ParsedOperationInp
   const planId = newId("plan");
   const submissions = Array.from({ length: input.count }, (_, i) => {
     const seed = randomInt(0, 2 ** 31 - 1);
-    const values: Record<string, string | number> = { ...defaults, prompt, seed };
+    const strength = input.referenceStrength ?? deliverable?.deliverable?.referenceStrength;
+    const values: Record<string, string | number> = { ...defaults, prompt, seed, ...(deliverable?.size ?? {}), ...(strength !== undefined && "ref_boost" in defaults ? { ref_boost: strength } : {}) };
     return {
       submissionId: `${planId}-${i + 1}`,
       label: `${input.mode === "variation" ? "Variation" : "Candidate"} ${firstLabel + i}`,
@@ -204,7 +215,7 @@ export async function createPlan(env: PlanEnvironment, input: ParsedOperationInp
   // --- limits and budgets
   const attempts = attemptsInWindow(project.db, input.assetId, input.stepId);
   if (attempts >= automation.maxAttemptsPerStep) {
-    block("ATTEMPTS_EXHAUSTED", `${attempts} of ${automation.maxAttemptsPerStep} allowed attempts for ${input.assetId}/${input.stepId} are used. Only a new human-granted budget opens another window; return to the user.`, [grantAction(input.assetId, input.count)]);
+    block("ATTEMPTS_EXHAUSTED", `${attempts} of ${automation.maxAttemptsPerStep} allowed attempts for ${input.assetId}/${input.stepId} are used. Only a new human-granted budget opens another window; return to the user.`, [grantAction(input.assetId, input.stepId, input.count)]);
   }
   const now = Date.now();
   const budgetRows = project.db.query<BudgetRow, [string, string]>("SELECT * FROM generation_budgets WHERE asset_id = ? AND step_id = ? ORDER BY rowid").all(input.assetId, input.stepId);
@@ -215,23 +226,25 @@ export async function createPlan(env: PlanEnvironment, input: ParsedOperationInp
   }));
   if (!budgets.some((b) => b.remainingStarts >= 1 && b.remainingCandidateSubmissions >= input.count)) {
     const states = budgetRows.map((r) => `${r.budget_id}: ${toBudget(r, now).status}`).join(", ");
-    block("NO_BUDGET", `No active budget covers 1 start and ${input.count} candidate submission(s) for ${input.assetId}/${input.stepId}${states ? ` (${states})` : " (none granted)"}. Only the user can authorize spending; ask them.`, [grantAction(input.assetId, input.count)]);
+    block("NO_BUDGET", `No active budget covers 1 start and ${input.count} candidate submission(s) for ${input.assetId}/${input.stepId}${states ? ` (${states})` : " (none granted)"}. Only the user can authorize spending; ask them.`, [grantAction(input.assetId, input.stepId, input.count)]);
   }
 
   const execution = wf?.execution ?? { computeLocation: "unknown (workflow unavailable)", externalServices: [], credentialKeys: [], costDescription: "unknown" };
   const content = {
     assetId: input.assetId, stepId: input.stepId, mode: input.mode, count: input.count,
     ...(parent ? { parentCandidateId: parent.candidateId, parentOutputId: parent.outputId } : {}),
+    ...(input.branchId ? { branchId: input.branchId } : {}),
     workflow: wf ? { id: wf.id, version: wf.version, graphHash: graphHash(wf.graph) } : { id: workflowId, version: 0, graphHash: "" },
     prompt, promptSources,
     ...(input.iterationInstructions?.trim() ? { iterationInstructions: input.iterationInstructions.trim() } : {}),
     inputs: { specHashes, references: references.map((r) => ({ role: r.role, id: r.id, sha256: r.sha256 })) },
     submissions,
+    crops: deliverable?.crops ?? [],
     execution: { computeLocation: execution.computeLocation, externalServices: execution.externalServices, credentialKeys: execution.credentialKeys, costDescription: execution.costDescription },
     limits: { maxBatchCandidates: automation.maxBatchCandidates, maxConcurrentGenerations: automation.maxConcurrentGenerations, maxAttemptsPerStep: automation.maxAttemptsPerStep },
   };
   return GenerationPlan.parse({
-    planId, planHash: normalizedHash(content), ...content, preflight: preflightResult, budgets, blockers, createdAt: new Date().toISOString(),
+    planId, planHash: normalizedHash(content), ...content, preflight: preflightResult, budgets, blockers, notes: deliverable?.notes ?? [], createdAt: new Date().toISOString(),
   });
 }
 

@@ -10,7 +10,7 @@ function localDatetimeValue(date: Date): string {
   return shifted.toISOString().slice(0, 16);
 }
 
-function GrantForm({ assetId, onDone }: { assetId: string; onDone: () => void }) {
+function GrantForm({ assetId, stepId, onDone }: { assetId: string; stepId: string; onDone: () => void }) {
   const grant = useMutationOperation("budget.grant");
   const [maxStarts, setMaxStarts] = useState(3);
   const [maxSubmissions, setMaxSubmissions] = useState(12);
@@ -24,7 +24,7 @@ function GrantForm({ assetId, onDone }: { assetId: string; onDone: () => void })
     const cap = spendCap.trim() === "" ? undefined : Number(spendCap);
     const result = await grant.mutateAsync({
       input: {
-        assetId, stepId: "concept", maxStarts, maxCandidateSubmissions: maxSubmissions, expiresAt: expiryDate.toISOString(),
+        assetId, stepId, maxStarts, maxCandidateSubmissions: maxSubmissions, expiresAt: expiryDate.toISOString(),
         ...(cap !== undefined && Number.isFinite(cap) ? { spendCapUsd: cap } : {}),
         ...(note.trim() ? { note: note.trim() } : {}),
       },
@@ -34,7 +34,7 @@ function GrantForm({ assetId, onDone }: { assetId: string; onDone: () => void })
 
   return (
     <form onSubmit={(event) => { event.preventDefault(); void submit(); }} aria-label="Grant a generation budget">
-      <p className="secondary">A budget is a bounded authorization to spend GPU time on this asset's concept step. Only you can grant one; generation stops when it is used up or expires.</p>
+      <p className="secondary">A budget is a bounded authorization to spend GPU time on this asset's <span className="mono">{stepId}</span> step. Only you can grant one; generation stops when it is used up or expires.</p>
       <div className="grid-2">
         <div className="field">
           <label htmlFor="bg-starts">Maximum starts (batches)</label>
@@ -87,32 +87,33 @@ function RevokeRow({ budget }: { budget: Budget }) {
   );
 }
 
-export function BudgetPanel({ assetId, grantOpen, onGrantOpen }: { assetId: string; grantOpen: boolean; onGrantOpen: (open: boolean) => void }) {
+export function BudgetPanel({ assetId, stepId = "concept", grantOpen, onGrantOpen }: { assetId: string; stepId?: string; grantOpen: boolean; onGrantOpen: (open: boolean) => void }) {
   const [showInactive, setShowInactive] = useState(false);
   const query = useOperation("budget.list", { assetId, includeInactive: showInactive });
+  const budgets = query.data?.ok ? query.data.data.budgets.filter((budget) => budget.stepId === stepId) : [];
   return (
     <section className="panel" id="budgets" aria-labelledby="budgets-title">
       <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
-        <h2 id="budgets-title" style={{ margin: 0 }}>Generation budgets</h2>
+        <h2 id="budgets-title" style={{ margin: 0 }}>Generation budgets · {stepId}</h2>
         <div className="row">
           <label className="check" style={{ margin: 0 }}><input type="checkbox" checked={showInactive} onChange={(event) => setShowInactive(event.target.checked)} />Show expired and revoked</label>
           {grantOpen ? null : <button type="button" onClick={() => onGrantOpen(true)}>Grant budget</button>}
         </div>
       </div>
-      {grantOpen ? <GrantForm assetId={assetId} onDone={() => onGrantOpen(false)} /> : null}
+      {grantOpen ? <GrantForm assetId={assetId} stepId={stepId} onDone={() => onGrantOpen(false)} /> : null}
       {query.error ? <NetworkProblem error={query.error} /> : null}
       {!query.data && !query.error ? <p className="secondary" role="status">Loading budgets…</p> : null}
       {query.data && !query.data.ok ? <ErrorBanner error={query.data.error} /> : null}
-      {query.data?.ok && query.data.data.budgets.length === 0 ? (
+      {query.data?.ok && budgets.length === 0 ? (
         <p className="secondary">{showInactive ? "No budgets have been granted for this asset." : "No active budget. Generation cannot start until you grant one."}</p>
       ) : null}
-      {query.data?.ok && query.data.data.budgets.length > 0 ? (
+      {query.data?.ok && budgets.length > 0 ? (
         <div className="table-wrap">
           <table>
             <caption className="sr-only">Generation budgets</caption>
             <thead><tr><th>Status</th><th>Starts</th><th>Submissions</th><th>Spend</th><th>Expires</th><th>Note</th><th><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>
-              {query.data.data.budgets.map((budget) => (
+              {budgets.map((budget) => (
                 <tr key={budget.budgetId}>
                   <td><Status tone={STATUS_TONE[budget.status]}>{budget.status}</Status></td>
                   <td>{budget.usedStarts} of {budget.maxStarts} used · {Math.max(0, budget.maxStarts - budget.usedStarts)} left</td>

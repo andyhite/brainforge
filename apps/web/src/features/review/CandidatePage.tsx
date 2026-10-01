@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
+import { LockConceptButton } from "../pipeline/LockConceptButton.tsx";
 import { Link, useParams } from "react-router-dom";
 import type { Annotation, Geometry, OperationData } from "@brainforge/contracts";
 import { fileUrl, useMutationOperation, useOperation } from "../../api/hooks.ts";
@@ -8,6 +9,8 @@ import { AnnotatedViewer } from "./AnnotatedViewer.tsx";
 import { AnnotationPanel } from "./AnnotationPanel.tsx";
 import { RevisionList } from "./RevisionList.tsx";
 import { NewRevisionForm } from "./NewRevisionForm.tsx";
+import { DecisionPanel } from "./DecisionPanel.tsx";
+import { ApprovalBadge } from "./ApprovalBadge.tsx";
 
 type Inspect = OperationData<"candidate.inspect">;
 type Tab = "notes" | "revisions";
@@ -63,10 +66,12 @@ function CandidateDetail({ assetId, inspect, projectId }: { assetId: string; ins
         >
           {candidate.favorite ? "★ Favorite" : "☆ Mark favorite"}
         </button>
+        {candidate.stepId === "concept" ? <LockConceptButton assetId={assetId} candidate={candidate} /> : null}
         <Link to={`/assets/${encodeURIComponent(assetId)}`}>← {assetId}</Link>
       </PageHeader>
       {favoriteError ? <Banner tone="bad" title="Could not change favorite">{favoriteError}</Banner> : null}
       <p className="secondary">A favorite is a shortlist marker only; it is not an approval.</p>
+      {candidate.stepId !== "concept" && output ? <ApprovalBadge approval={candidate.approvals[candidate.outputs.indexOf(output)]} /> : null}
       {stepState?.needsReassessment ? (
         <Banner tone="warn" title="Needs reassessment">
           The inputs behind this step changed after this candidate was made:
@@ -127,6 +132,7 @@ function CandidateDetail({ assetId, inspect, projectId }: { assetId: string; ins
         </aside>
       </div>
 
+      <DecisionPanel candidateId={candidate.candidateId} stepId={candidate.stepId} />
       <section className="panel" aria-label="Provenance" style={{ marginTop: 16 }}>
         <h2>Exact inputs</h2>
         <dl className="facts">

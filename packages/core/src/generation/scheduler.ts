@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { GenerationPlan, type WorkflowDescriptor } from "@brainforge/contracts";
 import { ComfyHttpError, bindInputs, graphHash, outputImages, type ComfyTransport, type HistoryEntry } from "@brainforge/comfy";
-import { MediaError, decodeImage, flattenOnGrey, type DecodedImage } from "@brainforge/media";
+import { MediaError, decodeImage, extractRegion, flattenOnGrey, type DecodedImage } from "@brainforge/media";
 import { paths, resolveIn, sha256, writeFileAtomic } from "@brainforge/storage";
 import { readAuthoredFile } from "../authored.ts";
 import type { OpenProject } from "../project-runtime.ts";
@@ -370,6 +370,19 @@ export class GenerationScheduler {
         if (!existing || sha256(existing) !== item.decoded.sha256) await writeFileAtomic(abs, item.bytes);
         outputs.push({ id: `${candidateId}-${item.role}`, role: item.role, rel, decoded: item.decoded });
       }
+      // A reference sheet's regions become separately hashed files, derived from these exact output bytes.
+      const crops: { fileId: string; outputId: string; regionId: string; x: number; y: number; width: number; height: number; rel: string; sha256: string }[] = [];
+      for (const item of items) {
+        for (const region of plan.crops) {
+          const bytes = await extractRegion(item.bytes, region);
+          const rel = paths.candidateFile(row.asset_id, candidateId, "processed", `crop-${item.role}-${region.id}.png`);
+          const abs = await resolveIn(project.root, rel);
+          const existing = await readFile(abs).catch(() => undefined);
+          if (!existing || sha256(existing) !== sha256(bytes)) await writeFileAtomic(abs, bytes);
+          const outputId = `${candidateId}-${item.role}`;
+          crops.push({ fileId: `${outputId}-crop-${region.id}`, outputId, regionId: region.id, x: region.x, y: region.y, width: region.width, height: region.height, rel, sha256: sha256(bytes) });
+        }
+      }
       const submission = SUBMISSION.parse(JSON.parse(row.submission_json));
       const prompt = typeof submission.values.prompt === "string" ? submission.values.prompt : plan.prompt;
       const now = new Date().toISOString();
@@ -378,11 +391,15 @@ export class GenerationScheduler {
       project.transact(() => {
         const exists = project.db.query("SELECT 1 FROM candidates WHERE candidate_id = ?").get(candidateId);
         if (!exists) {
-          project.db.query("INSERT INTO candidates (candidate_id, asset_id, step_id, run_id, job_id, parent_candidate_id, label, seed, prompt, favorite, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)")
-            .run(candidateId, row.asset_id, row.step_id, row.run_id, row.job_id, plan.parentCandidateId ?? null, row.label, row.seed, prompt, now);
+          project.db.query("INSERT INTO candidates (candidate_id, asset_id, step_id, run_id, job_id, parent_candidate_id, branch_id, label, seed, prompt, favorite, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)")
+            .run(candidateId, row.asset_id, row.step_id, row.run_id, row.job_id, plan.parentCandidateId ?? null, plan.branchId ?? null, row.label, row.seed, prompt, now);
           for (const o of outputs) {
             project.db.query("INSERT INTO candidate_outputs (output_id, candidate_id, role, file_id, path, sha256, width, height, media_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'image/png')")
               .run(o.id, candidateId, o.role, o.id, o.rel, o.decoded.sha256, o.decoded.width, o.decoded.height);
+          }
+          for (const c of crops) {
+            project.db.query("INSERT INTO output_crops (file_id, output_id, region_id, x, y, width, height, path, sha256, media_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'image/png', ?)")
+              .run(c.fileId, c.outputId, c.regionId, c.x, c.y, c.width, c.height, c.rel, c.sha256, now);
           }
         }
         project.db.query("UPDATE generation_jobs SET state = 'succeeded', candidate_id = ?, collected_at = ?, updated_at = ?, queue_position = NULL, error_json = NULL WHERE job_id = ?")

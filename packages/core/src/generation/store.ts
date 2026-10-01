@@ -46,7 +46,7 @@ export function budgetStatus(row: BudgetRow, now = Date.now()): Budget["status"]
 
 export function toBudget(row: BudgetRow, now = Date.now()): Budget {
   return {
-    budgetId: row.budget_id, assetId: row.asset_id, stepId: "concept",
+    budgetId: row.budget_id, assetId: row.asset_id, stepId: row.step_id,
     maxStarts: row.max_starts, maxCandidateSubmissions: row.max_candidate_submissions,
     usedStarts: row.used_starts, usedCandidateSubmissions: row.used_candidate_submissions,
     ...(row.spend_cap_usd === null ? {} : { spendCapUsd: row.spend_cap_usd }),
@@ -129,7 +129,7 @@ export function toJob(row: JobRow): Job {
   const error = jobError(row);
   const unresolved = jobUnresolved(row);
   return {
-    jobId: row.job_id, runId: row.run_id, assetId: row.asset_id, stepId: "concept", label: row.label, state: row.state, attempt: row.attempt,
+    jobId: row.job_id, runId: row.run_id, assetId: row.asset_id, stepId: row.step_id, label: row.label, state: row.state, attempt: row.attempt,
     ...(row.seed === null ? {} : { seed: row.seed }),
     ...(row.prompt_id === null ? {} : { promptId: row.prompt_id }),
     ...(row.candidate_id === null ? {} : { candidateId: row.candidate_id }),

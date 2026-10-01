@@ -49,7 +49,8 @@ Inputs are JSON objects; unknown keys are rejected. Every tool also accepts opti
 |Workflows|`workflow_list`, `workflow_inspect {workflowId, version?}`, `workflow_preflight {workflowId, version?}` (read-only)|
 |Generation|`budget_list`, `step_inspect`, `generation_plan` (no submit), `generation_start {planId, planHash, budgetId}`, `job_list/inspect/reconcile/retry/cancel`, `candidate_list/inspect/favorite`|
 |Review|`annotation_create/update/delete/list`, `revision_list {status}`, `revision_inspect` (images), `revision_create`, `revision_respond`; `revision_resolve/waive` only if the user says so|
-|Human only|`budget_grant`, `budget_revoke`, `policy_authorize {requestedPolicyHash}`, `connection_set {comfyUrl}`|
+|Branches/review|`concept_lock`, `branch_list`, `step_list`, `candidate_select`, `review_list/material/decide/escalate/history`; `review_override` is human only. See [branches-review](references/branches-review.md)|
+|Human only|`budget_grant`, `budget_revoke`, `policy_authorize {requestedPolicyHash}`, `connection_set {comfyUrl}`, `review_override`|
 
 `spec_write` accepts only `brainforge/project.yaml`, `brainforge/styles/<style-id>.yaml`, `brainforge/assets/<asset-id>/asset.yaml`. Any other path → `INVALID_INPUT`.
 
@@ -65,6 +66,7 @@ Inputs are JSON objects; unknown keys are rejected. Every tool also accepts opti
 8. Afterwards `settings_inspect {assetId}` shows which file supplies each effective value.
 9. Reference images: `reference_import` copies them into the project. NEVER copy files into `assets/` or `brainforge/` yourself.
 10. Before you start a generation: `generation_plan`, read `plan.prompt` and `promptSources` in full, check every sentence against "Writing prompt-bearing YAML", fix the YAML via `spec_write`, re-plan. Only then ask the user / `generation_start`.
+11. Concept chosen: ask the user to lock it (`concept_lock` obeys policy; if refused name the candidate/output for the UI). Then `step_list` shows ready deliverables; plan/start with `branchId` + `stepId`. Review: `review_list` → `review_material` → judge → `review_decide` (with its `requirementsHash`) or `review_escalate`. Details: [branches-review](references/branches-review.md).
 
 ## Writing prompt-bearing YAML
 
@@ -72,7 +74,7 @@ The YAML text IS the image prompt. The model (Krea, cfg 1) obeys what you descri
 
 |Sent to the model|NEVER sent|
 |---|---|
-|asset `description`, EVERY `identity.*` value (unlabelled), effective `perspective` and `palette`, project `artDirection`, style `palette` entries, then a fixed single-figure framing sentence|asset `notes`, project `notes`, style `description`, deliverables (all fields, incl. descriptions), names, ids|
+|asset `description`, EVERY `identity.*` value (unlabelled), effective `perspective` and `palette`, project `artDirection`, style `palette` entries, a fixed single-figure framing sentence; plus the generated deliverable's own `description` (only that one)|asset `notes`, project `notes`, style `description`, other deliverables' text, names, ids|
 
 - Describe the picture, not the design process. Put status, proposals, open questions, doc references, lore, setting in `notes`.
 - Every feature gets shape + colour + position: "two big round white eyes with dark pupils in the middle of the front of the brain". Never "large integrated eyes".
@@ -88,10 +90,10 @@ The YAML text IS the image prompt. The model (Krea, cfg 1) obeys what you descri
 - `project.yaml` rejects URLs, credential-like keys, and absolute or `~` paths. All paths are relative to the game root. ComfyUI URLs are set by the human via `connection_set` in the UI.
 - Do not invent fields, families, deliverable kinds, or workflow ids. Use `workflow_list` for real workflow ids.
 - Take facts from the game's own docs (`docs/` in the game repo), then restate them as concrete visuals. Record guesses and doc sources in `notes`, never in prompt-bearing fields. Asset and project `notes` and style `description` are documentation only.
-- Author the deliverables the user needs; do not omit them because the format seemed unclear.
+- Author the deliverables the user needs.
 - `approval` in `project.yaml` is a request. Relaxing it does not take effect until the human confirms it (`policy_authorize` is human-only). Never claim a policy changed.
 - `requirements.assets` lists required assets. Add an asset id only if the user wants it counted for completeness.
-- Denied with `HUMAN_AUTHORIZATION_REQUIRED` → stop, tell the user what to do in the UI. Do not retry or work around.
+- Denied with `HUMAN_AUTHORIZATION_REQUIRED` → stop, tell the user what to do in the UI.
 
 ## Common agent mistakes
 
@@ -99,23 +101,17 @@ The YAML text IS the image prompt. The model (Krea, cfg 1) obeys what you descri
 - Grepping the filesystem or repo for the schema instead of calling `spec_schema`.
 - Probing with junk `spec_write` calls to see validator errors; use `spec_validate`.
 - Dropping deliverables from an asset because the format was unknown.
-- Treating optional fields like `styleIds` as ignorable: they are real and checked, and unknown keys are errors.
-- Writing YAML as design-doc prose: abstract features, status text, doc references, setting trivia, lore, other characters' names (all end up in the prompt; move to `notes`).
-- Negations ("not part of the character", "without X"): they draw X.
+- Writing YAML as design-doc prose (abstract features, status, doc references, lore, other characters' names) or with negations ("without X" draws X): all of it ends up in the prompt; move to `notes`.
 - Turnaround/front-profile-rear language in `description`/`identity`/`perspective`: the model draws several figures.
 - Starting a generation without reading `plan.prompt` and `promptSources` first.
+- Calling `review_decide` without `review_material` first, or with a stale `requirementsHash`; asserting human approval for your own decision; treating escalation or `candidate_select` as approval.
+- Locking a concept the user did not choose; expecting deliverable generation without a branch or approved dependency; expecting motion before M4.
 
 ## Error codes
 
 `INVALID_INPUT` fix the input. `SPEC_CONFLICT` merge (step 6). `REVISION_CONFLICT` re-read, retry. `NOT_FOUND` check ids/paths via `asset_list`/`spec_list`. `HUMAN_AUTHORIZATION_REQUIRED` human-only action. `PROJECT_NOT_OPEN` handled by client. `IO_ERROR` report to user.
 
-## Trust model
-
-Local-machine trust: requests carrying a UI Origin are the human; requests without one (this MCP server, CLI) are the agent `agent:<name>`. This guards against accidents and cross-site requests, not a hostile local process.
-
-## Setup
-
-Registering and troubleshooting the MCP server: [references/mcp-setup.md](references/mcp-setup.md).
+Trust: requests with a UI Origin are the human; this MCP server is agent `agent:<name>`. Setup: [references/mcp-setup.md](references/mcp-setup.md).
 
 <critical>
 Recap: `spec_schema` → `spec_validate` → `spec_write` with `expectedHash`; YAML is the prompt: read `plan.prompt` before starting; never probe with writes; never touch `.state/`, `versions/`, `work/`; start only under a human budget; respond to revisions, don't resolve them; human-only decisions go to the UI.

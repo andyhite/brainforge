@@ -3,8 +3,11 @@ import { NextAction, RecoveryAction } from "./envelope.ts";
 
 const Sha256 = z.string().regex(/^[0-9a-f]{64}$/);
 
-/** Concept exploration is the only generation step in M2. Later milestones add steps. */
-export const StepId = z.enum(["concept"]);
+/**
+ * A pipeline step: the literal `concept`, or the id of an authored deliverable (for example `construction-sheet`).
+ * A deliverable may not be named `concept`.
+ */
+export const StepId = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
 export type StepId = z.infer<typeof StepId>;
 
 // --------------------------------------------------------------------------- visuals
@@ -99,6 +102,87 @@ export const CandidateOutput = z.object({
 });
 export type CandidateOutput = z.infer<typeof CandidateOutput>;
 
+// --------------------------------------------------------------------------- decisions and branches
+
+export const DecisionKind = z.enum(["decide", "override"]);
+export const Decision = z.object({
+  decisionId: z.string(),
+  candidateId: z.string(),
+  outputId: z.string(),
+  /** Hash of the exact output bytes judged. */
+  outputHash: Sha256,
+  assetId: z.string(),
+  stepId: StepId,
+  branchId: z.string().optional(),
+  /** Fingerprint of the requirements this decision was made against (see review.material). */
+  requirementsHash: Sha256,
+  decision: z.enum(["approve", "reject"]),
+  kind: DecisionKind,
+  reasons: z.array(z.string()),
+  actorId: z.string(),
+  actorType: z.enum(["human", "agent", "system"]),
+  /** For an override: the decision it replaces. */
+  supersedesDecisionId: z.string().optional(),
+  createdAt: z.string(),
+});
+export type Decision = z.infer<typeof Decision>;
+
+export const Escalation = z.object({
+  escalationId: z.string(),
+  candidateId: z.string(),
+  outputIds: z.array(z.string()),
+  assetId: z.string(),
+  stepId: StepId,
+  branchId: z.string().optional(),
+  reason: z.string(),
+  /** `pending` waits for a human decision and is never approval. */
+  status: z.enum(["pending", "decided"]),
+  escalatedBy: z.string(),
+  escalatedAt: z.string(),
+  decidedByDecisionId: z.string().optional(),
+});
+export type Escalation = z.infer<typeof Escalation>;
+
+/** What is currently true of one output. `applicable` is false when the requirements or bytes changed since the decision. */
+export const OutputApproval = z.object({
+  outputId: z.string(),
+  state: z.enum(["none", "escalated", "approved", "rejected"]),
+  decisionId: z.string().optional(),
+  decidedBy: z.string().optional(),
+  decidedByType: z.enum(["human", "agent", "system"]).optional(),
+  overridden: z.boolean().default(false),
+  applicable: z.boolean(),
+  /** When not applicable: why (for example requirements changed). */
+  staleReason: z.string().optional(),
+});
+export type OutputApproval = z.infer<typeof OutputApproval>;
+
+export const BranchSelection = z.object({
+  deliverableId: StepId,
+  candidateId: z.string(),
+  outputId: z.string().optional(),
+  selectedBy: z.string(),
+  selectedAt: z.string(),
+});
+export type BranchSelection = z.infer<typeof BranchSelection>;
+
+/** A human-authorized concept choice. It is not a production version. */
+export const Branch = z.object({
+  branchId: z.string(),
+  assetId: z.string(),
+  name: z.string(),
+  conceptCandidateId: z.string(),
+  conceptOutputId: z.string(),
+  conceptOutputHash: Sha256,
+  /** Requirements fingerprint when the concept was locked. */
+  requirementsHash: Sha256,
+  lockedBy: z.string(),
+  lockedByType: z.enum(["human", "agent", "system"]),
+  lockedAt: z.string(),
+  selections: z.array(BranchSelection),
+});
+export type Branch = z.infer<typeof Branch>;
+
 export const Candidate = z.object({
   candidateId: z.string(),
   assetId: z.string(),
@@ -106,6 +190,8 @@ export const Candidate = z.object({
   runId: z.string(),
   jobId: z.string(),
   parentCandidateId: z.string().optional(),
+  /** Branch the candidate belongs to; absent for concept exploration before a lock. */
+  branchId: z.string().optional(),
   label: z.string(),
   seed: z.number().int().optional(),
   /** The exact positive prompt the model received. */
@@ -114,6 +200,8 @@ export const Candidate = z.object({
   favorite: z.boolean(),
   outputs: z.array(CandidateOutput),
   annotationCount: z.number().int(),
+  /** Per-output approval, in the same order as `outputs`. */
+  approvals: z.array(OutputApproval).default([]),
   openRevisionCount: z.number().int(),
 });
 export type Candidate = z.infer<typeof Candidate>;
@@ -151,6 +239,8 @@ export const GenerationPlan = z.object({
   planHash: Sha256,
   assetId: z.string(),
   stepId: StepId,
+  /** Required for deliverable steps (anything but `concept`). */
+  branchId: z.string().optional(),
   mode: z.enum(["fresh", "variation"]),
   count: z.number().int().min(1),
   parentCandidateId: z.string().optional(),
@@ -173,6 +263,10 @@ export const GenerationPlan = z.object({
   budgets: z.array(z.object({ budgetId: z.string(), remainingStarts: z.number().int(), remainingCandidateSubmissions: z.number().int(), expiresAt: z.string() })),
   /** Non-empty means `generation.start` would be refused; each entry says how to recover. */
   blockers: z.array(PlanBlocker),
+  /** Honest limits of the chosen inputs (for example which reference the single-reference workflow could use). */
+  notes: z.array(z.string()).default([]),
+  /** Reference-sheet regions (source pixels of the generated sheet) cropped into separately hashed files at publication. */
+  crops: z.array(z.object({ id: z.string(), x: z.number().int(), y: z.number().int(), width: z.number().int().positive(), height: z.number().int().positive() })).default([]),
   createdAt: z.string(),
 });
 export type GenerationPlan = z.infer<typeof GenerationPlan>;
@@ -222,11 +316,20 @@ export type StepStatus = z.infer<typeof StepStatus>;
 export const StepState = z.object({
   assetId: z.string(),
   stepId: StepId,
+  /** Branch the state is computed for; deliverable steps need one. */
+  branchId: z.string().optional(),
+  /** `concept` for the concept step, otherwise the deliverable kind (reference-sheet, pose, animation, ...). */
+  kind: z.string().default("concept"),
+  required: z.boolean().default(true),
+  /** Deliverable ids that must be selected AND currently approved before this step is ready. */
+  dependsOn: z.array(StepId).default([]),
   state: StepStatus,
   blockers: z.array(PlanBlocker),
   needsReassessment: z.boolean(),
   reassessmentReasons: z.array(z.string()),
-  counts: z.object({ candidates: z.number().int(), activeJobs: z.number().int(), unresolvedJobs: z.number().int(), favorites: z.number().int(), openRevisions: z.number().int() }),
+  /** The branch's selected candidate for this step, when one is selected. */
+  selected: z.object({ candidateId: z.string(), outputId: z.string().optional(), approval: OutputApproval.optional() }).optional(),
+  counts: z.object({ candidates: z.number().int(), activeJobs: z.number().int(), unresolvedJobs: z.number().int(), favorites: z.number().int(), openRevisions: z.number().int(), pendingEscalations: z.number().int().default(0) }),
   nextActions: z.array(NextAction),
 });
 export type StepState = z.infer<typeof StepState>;
