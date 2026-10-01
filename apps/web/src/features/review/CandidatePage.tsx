@@ -1,11 +1,16 @@
+import { ProcessingSection } from "../processing/ProcessingSection.tsx";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { LockConceptButton } from "../pipeline/LockConceptButton.tsx";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import type { Annotation, Geometry, OperationData } from "@brainforge/contracts";
 import { fileUrl, useMutationOperation, useOperation } from "../../api/hooks.ts";
 import { Banner, ErrorBanner, formatTime, NetworkProblem, PageHeader, Status } from "../../components/ui.tsx";
 import { useProject } from "../../lib/use-project.ts";
 import { AnnotatedViewer } from "./AnnotatedViewer.tsx";
+import { ClipPlayer, type FrameInfoEvent } from "../animation/ClipPlayer.tsx";
+import { CompareClips } from "../animation/CompareClips.tsx";
+import { LoopBoundary } from "../animation/LoopBoundary.tsx";
+import { OutputsList } from "../animation/OutputsList.tsx";
 import { AnnotationPanel } from "./AnnotationPanel.tsx";
 import { RevisionList } from "./RevisionList.tsx";
 import { NewRevisionForm } from "./NewRevisionForm.tsx";
@@ -31,8 +36,16 @@ function CandidateDetail({ assetId, inspect, projectId }: { assetId: string; ins
   const { candidate, run, lineage } = inspect;
   const step = useOperation("step.inspect", { assetId: candidate.assetId, stepId: candidate.stepId });
   const favorite = useMutationOperation("candidate.favorite");
-  const defaultOutput = candidate.outputs.find((o) => o.role === "matted") ?? candidate.outputs[0];
-  const [outputId, setOutputId] = useState(defaultOutput?.outputId);
+  const [params, setParams] = useSearchParams();
+  const defaultOutput = candidate.outputs.find((o) => o.stage === "processed")
+    ?? candidate.outputs.find((o) => o.role === "matted") ?? candidate.outputs[0];
+  const outputId = params.get("output") ?? defaultOutput?.outputId;
+  const compareParam = params.get("compare");
+  const compareId = compareParam !== null && compareParam !== outputId && candidate.outputs.some((o) => o.outputId === compareParam) ? compareParam : undefined;
+  const setOutputId = (id: string) => setParams((p) => { p.set("output", id); p.delete("compare"); return p; }, { replace: true });
+  const setCompareId = (id: string | undefined) => setParams((p) => { if (id) p.set("compare", id); else p.delete("compare"); return p; }, { replace: true });
+  const hasClips = candidate.outputs.some((o) => o.mediaKind === "frames");
+  const [frame, setFrame] = useState<FrameInfoEvent | undefined>();
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const [draft, setDraft] = useState<Geometry | undefined>();
   const [tab, setTab] = useState<Tab>("notes");
@@ -80,8 +93,10 @@ function CandidateDetail({ assetId, inspect, projectId }: { assetId: string; ins
       ) : null}
 
       <div className="candidate-layout">
-        <section aria-label="Image">
-          {candidate.outputs.length > 1 ? (
+        <section aria-label={output?.mediaKind === "frames" ? "Clip" : "Image"}>
+          {hasClips ? (
+            <OutputsList outputs={candidate.outputs} selectedId={output?.outputId} compareId={compareId} onSelect={setOutputId} onCompare={setCompareId} />
+          ) : candidate.outputs.length > 1 ? (
             <div className="viewer-tools" role="group" aria-label="Output">
               {candidate.outputs.map((o) => (
                 <button key={o.outputId} type="button" aria-pressed={o.outputId === output?.outputId} onClick={() => setOutputId(o.outputId)}>
@@ -90,7 +105,27 @@ function CandidateDetail({ assetId, inspect, projectId }: { assetId: string; ins
               ))}
             </div>
           ) : null}
-          {output && projectId ? (
+          {output?.mediaKind === "frames" && compareId ? (
+            <CompareClips outputs={candidate.outputs} outputId={output.outputId} compareId={compareId} onCompare={setCompareId} />
+          ) : output?.mediaKind === "frames" ? (
+            <ClipPlayer
+              key={output.outputId}
+              outputIds={[output.outputId]}
+              annotations={onOutput}
+              selectedId={selectedId}
+              onSelect={(id) => {
+                setSelectedId(id);
+                setTab("notes");
+              }}
+              draft={draft}
+              onDraftChange={(g) => {
+                setDraft(g);
+                if (g) setTab("notes");
+              }}
+              onDraftCommit={() => formRef.current?.focus()}
+              onFrame={setFrame}
+            />
+          ) : output && projectId ? (
             <AnnotatedViewer
               src={fileUrl(projectId, output.fileId)}
               alt={`${candidate.label}, ${output.role} output`}
@@ -120,7 +155,7 @@ function CandidateDetail({ assetId, inspect, projectId }: { assetId: string; ins
           </div>
           {tab === "notes" ? (
             <div role="tabpanel" id="panel-notes" aria-labelledby="tab-notes">
-              {output ? <AnnotationPanel candidateId={candidate.candidateId} output={output} annotations={onOutput} selectedId={selectedId} onSelect={setSelectedId} draft={draft} onDraftChange={setDraft} formRef={formRef} /> : null}
+              {output ? <AnnotationPanel candidateId={candidate.candidateId} output={output} annotations={onOutput} selectedId={selectedId} onSelect={setSelectedId} draft={draft} onDraftChange={setDraft} formRef={formRef} {...(output.mediaKind === "frames" && frame ? { frame } : {})} /> : null}
               {elsewhere > 0 ? <p className="secondary" style={{ marginTop: 12 }}>{elsewhere} {elsewhere === 1 ? "note was" : "notes were"} made on the other output and {elsewhere === 1 ? "is" : "are"} not shown here.</p> : null}
             </div>
           ) : (
@@ -132,6 +167,8 @@ function CandidateDetail({ assetId, inspect, projectId }: { assetId: string; ins
         </aside>
       </div>
 
+      {output?.mediaKind === "frames" && output.frameCount !== undefined && output.frameCount > 1 ? <LoopBoundary outputId={output.outputId} /> : null}
+      <ProcessingSection candidate={candidate} />
       <DecisionPanel candidateId={candidate.candidateId} stepId={candidate.stepId} />
       <section className="panel" aria-label="Provenance" style={{ marginTop: 16 }}>
         <h2>Exact inputs</h2>

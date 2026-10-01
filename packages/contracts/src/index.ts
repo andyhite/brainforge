@@ -5,3 +5,4 @@ export * from "./authored.ts";
 export * from "./operations.ts";
 export * from "./envelope.ts";
 export * from "./generation.ts";
+export * from "./motion.ts";

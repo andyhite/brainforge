@@ -6,6 +6,7 @@ import { discoverAuthored, type AuthoredSet } from "../authored.ts";
 import { buildPipeline, type PipelineNode, type PipelinePlan } from "../pipeline.ts";
 import { standingApproval } from "../review/authority.ts";
 import { stepRequirementsHash, selectedOutput, type SelectedOutput } from "../review/requirements.ts";
+import { onDiskManifestHash } from "../outputs/frames.ts";
 import { inspectConceptStep, specHashesOf, unaddressedRequiredNotes } from "../review/step.ts";
 import { OperationFailure } from "../runtime.ts";
 
@@ -18,18 +19,22 @@ export interface StepContext { db: Database; root: string }
 interface BranchRow { branch_id: string; concept_candidate_id: string; concept_output_id: string }
 
 /** The selected output of a deliverable together with what is currently true of it. */
-interface Standing { selection: SelectedOutput; approval: OutputApproval }
+interface Standing { selection: SelectedOutput; approval: OutputApproval; stage: "source" | "processed" }
 
 const scalar = (db: Database, sql: string, ...args: string[]): number => db.query<{ n: number }, string[]>(sql).get(...args)?.n ?? 0;
 
 async function standingFor(ctx: StepContext, set: AuthoredSet, assetId: string, branchId: string, stepId: string): Promise<Standing | undefined> {
   const selection = selectedOutput(ctx.db, branchId, stepId);
   if (!selection) return undefined;
-  const row = ctx.db.query<{ path: string }, [string]>("SELECT path FROM candidate_outputs WHERE output_id = ?").get(selection.outputId);
-  // The recorded hash is only trusted after the bytes on disk agree with it.
-  const bytes = row ? await readFile(await resolveIn(ctx.root, row.path)).catch(() => undefined) : undefined;
-  const onDisk = bytes ? sha256(bytes) : "missing";
-  return { selection, approval: standingApproval(ctx.db, selection.outputId, stepRequirementsHash(ctx, set, assetId, stepId, branchId), onDisk) };
+  const row = ctx.db.query<{ path: string; media_kind: string; stage: "source" | "processed" }, [string]>("SELECT path, media_kind, stage FROM candidate_outputs WHERE output_id = ?").get(selection.outputId);
+  // The recorded hash is only trusted after the bytes on disk agree with it (a frame sequence's hash is its manifest hash).
+  let onDisk = "missing";
+  if (row?.media_kind === "frames") onDisk = (await onDiskManifestHash(ctx, selection.outputId)) ?? "missing";
+  else if (row) {
+    const bytes = await readFile(await resolveIn(ctx.root, row.path)).catch(() => undefined);
+    if (bytes) onDisk = sha256(bytes);
+  }
+  return { selection, stage: row?.stage ?? "source", approval: standingApproval(ctx.db, selection.outputId, stepRequirementsHash(ctx, set, assetId, stepId, branchId), onDisk) };
 }
 
 const isApproved = (s: Standing | undefined): s is Standing => s !== undefined && s.approval.state === "approved" && s.approval.applicable;
@@ -74,10 +79,12 @@ async function deliverableStep(ctx: StepContext, set: AuthoredSet, assetId: stri
     // Unknown ids and "concept" are already reported as this step's own problems.
     if (dep === "concept" || !pipeline.byId.has(dep)) continue;
     const s = await standing(dep);
-    if (branch && isApproved(s)) continue;
+    // An animation is delivered only as processed frames: approved raw source frames do not satisfy its dependents.
+    const rawMotion = pipeline.byId.get(dep)?.kind === "animation" && s !== undefined && s.stage !== "processed";
+    if (branch && isApproved(s) && !rawMotion) continue;
     blockers.push({
       code: "DEPENDENCY_NOT_APPROVED",
-      message: `Waiting for ${dep}: ${branch ? whyNotApproved(dep, s) : `${dep} needs a branch first`}`,
+      message: `Waiting for ${dep}: ${!branch ? `${dep} needs a branch first` : rawMotion ? `${dep}'s selected output is raw source frames; it needs a processed, approved output` : whyNotApproved(dep, s)}`,
       recoveryActions: [{ label: `Inspect ${dep}`, operation: "step.inspect", input: { assetId, stepId: dep, ...(branchId ? { branchId } : {}) } }],
     });
   }
@@ -133,7 +140,17 @@ async function deliverableStep(ctx: StepContext, set: AuthoredSet, assetId: stri
   }
 
   const structural = blockers.some((b) => BLOCKING.has(b.code));
-  const settled = own !== undefined && own.approval.state === "approved" && own.approval.applicable;
+  // An animation is only ever delivered as processed export-rate frames: approved raw source frames never complete it.
+  const ownStage = own?.stage;
+  const needsProcessing = node.kind === "animation" && own !== undefined && ownStage !== "processed";
+  if (needsProcessing && own) {
+    blockers.push({
+      code: "PROCESSING_REQUIRED",
+      message: `The selected output of ${stepId} is raw source frames. An animation completes only when a processed export-rate output is selected and approved.`,
+      recoveryActions: [{ label: "Plan processing of the source frames", operation: "processing.plan", input: { candidateId: own.selection.candidateId, outputId: own.selection.outputId } }],
+    });
+  }
+  const settled = own !== undefined && own.approval.state === "approved" && own.approval.applicable && !needsProcessing;
   const awaitingHuman = counts.pendingEscalations > 0 || own?.approval.state === "escalated";
   let state: StepState["state"];
   if (counts.activeJobs > 0) state = "running";
@@ -146,12 +163,18 @@ async function deliverableStep(ctx: StepContext, set: AuthoredSet, assetId: stri
 
   if (state === "running") next.push({ label: "Watch running jobs", operation: "job.list", input: { assetId, activeOnly: true } });
   if (state === "ready" || state === "awaiting_review" || state === "failed") {
-    if (node.kind !== "animation") {
-      next.push({ label: state === "ready" && counts.candidates === 0 ? "Plan the first batch" : "Plan another batch", operation: "generation.plan", input: { assetId, stepId, branchId, mode: "fresh" } });
-    }
+    next.push({ label: state === "ready" && counts.candidates === 0 ? "Plan the first batch" : "Plan another batch", operation: "generation.plan", input: { assetId, stepId, branchId, mode: "fresh" } });
   }
   if (branchId && newest) {
-    if (!own) next.push({ label: "Select a candidate for this step", operation: "candidate.select", input: { branchId, deliverableId: stepId, candidateId: newest } });
+    if (node.kind === "animation") {
+      if (!own || ownStage !== "processed") {
+        const base = `FROM candidates c JOIN candidate_outputs o ON o.candidate_id = c.candidate_id WHERE c.asset_id = ? AND c.step_id = ? AND c.branch_id = ?`;
+        const processed = db.query<{ candidate_id: string; output_id: string }, string[]>(`SELECT c.candidate_id, o.output_id ${base} AND o.stage = 'processed' ORDER BY c.created_at DESC, c.rowid DESC, o.rowid DESC LIMIT 1`).get(assetId, stepId, branchId);
+        const source = db.query<{ candidate_id: string; output_id: string }, string[]>(`SELECT c.candidate_id, o.output_id ${base} AND o.stage = 'source' AND o.media_kind = 'frames' ORDER BY c.created_at DESC, c.rowid DESC, o.rowid DESC LIMIT 1`).get(assetId, stepId, branchId);
+        if (processed) next.push({ label: "Select the newest processed output for this step", operation: "candidate.select", input: { branchId, deliverableId: stepId, candidateId: processed.candidate_id, outputId: processed.output_id } });
+        else if (source) next.push({ label: "Process the newest source frames into an export-rate clip", operation: "processing.plan", input: { candidateId: source.candidate_id, outputId: source.output_id } });
+      }
+    } else if (!own) next.push({ label: "Select a candidate for this step", operation: "candidate.select", input: { branchId, deliverableId: stepId, candidateId: newest } });
     next.push({ label: "Review the candidate material", operation: "review.material", input: { candidateId: own?.selection.candidateId ?? newest } });
   }
   if (branchId && counts.candidates > 0) {
@@ -159,7 +182,7 @@ async function deliverableStep(ctx: StepContext, set: AuthoredSet, assetId: stri
     if (!own) {
       const approved = db.query<{ candidate_id: string; output_id: string; sha256: string }, string[]>(
         `SELECT c.candidate_id, o.output_id, o.sha256 FROM candidates c JOIN candidate_outputs o ON o.candidate_id = c.candidate_id
-          WHERE c.asset_id = ? AND c.step_id = ? AND c.branch_id = ? ORDER BY c.created_at DESC, c.rowid DESC`,
+          WHERE c.asset_id = ? AND c.step_id = ? AND c.branch_id = ?${node.kind === "animation" ? " AND o.stage = 'processed'" : ""} ORDER BY c.created_at DESC, c.rowid DESC`,
       ).all(assetId, stepId, branchId).find((o) => {
         const a = standingApproval(db, o.output_id, requirementsHash, o.sha256);
         return a.state === "approved" && a.applicable;

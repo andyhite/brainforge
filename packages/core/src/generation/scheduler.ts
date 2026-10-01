@@ -1,12 +1,14 @@
 import { readFile } from "node:fs/promises";
 import { GenerationPlan, type WorkflowDescriptor } from "@brainforge/contracts";
 import { ComfyHttpError, bindInputs, graphHash, outputImages, type ComfyTransport, type HistoryEntry } from "@brainforge/comfy";
-import { MediaError, decodeImage, extractRegion, flattenOnGrey, type DecodedImage } from "@brainforge/media";
+import { MediaError, applyFraming, decodeImage, extractRegion, flattenOnGrey, type DecodedImage } from "@brainforge/media";
 import { paths, resolveIn, sha256, writeFileAtomic } from "@brainforge/storage";
 import { readAuthoredFile } from "../authored.ts";
 import type { OpenProject } from "../project-runtime.ts";
+import { publishFrameSequence, type FrameInput, type FrameOutputSpec } from "../outputs/frames.ts";
 import { loadDescriptor } from "./descriptors.ts";
 import { lookupByIdentity } from "./jobs.ts";
+import { guideFraming } from "./motion.ts";
 import { readPinnedReference } from "./references.ts";
 import { activeJobCount, jobError, jobRow, patchJob, type JobError, type JobRow } from "./store.ts";
 
@@ -204,8 +206,17 @@ export class GenerationScheduler {
 
     const values: Record<string, string | number> = { ...submission.values };
     for (const ref of plan.inputs.references) {
-      const bytes = await readPinnedReference(this.project, ref);
+      let bytes = await readPinnedReference(this.project, ref);
       if (!bytes) return this.fail(row, "upload", `Reference ${ref.id} is missing or changed since the plan pinned it.`, ["Plan again so the reference is re-pinned."]);
+      const guide = plan.motion?.guides.find((g) => `${g.role}_pose` === ref.role);
+      if (plan.motion && guide) {
+        // Guide poses reach Wan at the branch's one calibrated scale, on the shared feet baseline.
+        try {
+          bytes = (await applyFraming(bytes, guideFraming(plan.motion, guide))).png;
+        } catch (e) {
+          return this.fail(row, "upload", `The ${guide.role} guide ${ref.id} could not be normalized: ${describe(e)}`, ["Plan again; the guide may need a different scale or canvas."]);
+        }
+      }
       try {
         values[ref.role] = await this.upload(comfy, await flattenOnGrey(bytes));
       } catch (e) {
@@ -331,6 +342,8 @@ export class GenerationScheduler {
     }
     if (!entry) return this.fail(row, "download", `Prompt ${promptId} is no longer in ComfyUI's history, so its images cannot be downloaded.`, ["Ask the user to authorize a new attempt."]);
 
+    if (wf.outputBindings.some((b) => b.kind === "frame-sequence")) return this.collectSequences(row, plan, wf, entry, comfy, retry);
+
     const items: (Collected & { bytes: Uint8Array })[] = [];
     for (const binding of wf.outputBindings) {
       const role = ROLES.find((r) => r === binding.role);
@@ -348,6 +361,55 @@ export class GenerationScheduler {
 
     try {
       await this.publish(row, plan, items);
+    } catch (e) {
+      return this.fail(row, "publish", `Saving the candidate failed: ${describe(e)}`, retry);
+    }
+    return false;
+  }
+
+  /**
+   * Frame-sequence workflows (Wan): every frame of every sequence is downloaded and decoded BEFORE anything is
+   * published, so a cut-short download fails the job at `download` with nothing visible; `job.retry collect` reuses
+   * the remote result. The sequences then publish as source outputs of one new candidate, atomically.
+   */
+  private async collectSequences(row: JobRow, plan: GenerationPlan, wf: WorkflowDescriptor, entry: HistoryEntry, comfy: ComfyTransport, retry: string[]): Promise<boolean> {
+    const candidateId = `cand-${row.job_id.replace(/^job-/, "")}`;
+    const sequences: FrameOutputSpec[] = [];
+    for (const binding of wf.outputBindings) {
+      const role = ROLES.find((r) => r === binding.role);
+      if (!role) return this.fail(row, "publish", `Workflow output role "${binding.role}" is not a stored candidate role.`, []);
+      const refs = outputImages(entry, binding.nodeId);
+      const expected = plan.motion?.frameCount;
+      if (refs.length === 0 || (expected !== undefined && refs.length !== expected)) {
+        return this.fail(row, "download", `ComfyUI produced ${refs.length} frame(s) for ${binding.role} (node ${binding.nodeId})${expected !== undefined ? `, expected ${expected}` : ""}.`, retry);
+      }
+      const sourceFps = plan.motion?.sourceFps ?? binding.fps ?? 16;
+      const frames: FrameInput[] = [];
+      for (const [index, ref] of refs.entries()) {
+        try {
+          const bytes = await comfy.view(ref);
+          await decodeImage(bytes, `${binding.role} frame ${index + 1}`);
+          frames.push({ png: bytes, sourceFrame: index, durationMs: 1000 / sourceFps });
+        } catch (e) {
+          const why = e instanceof MediaError ? `is truncated or not a valid image (${e.message})` : `could not be downloaded (${describe(e)})`;
+          return this.fail(row, "download", `Frame ${index + 1} of ${refs.length} of the ${binding.role} sequence ${why}; nothing was published.`, retry);
+        }
+      }
+      sequences.push({
+        outputId: `${candidateId}-${role}`, role, stage: "source", frames, sourceFps, totalDurationMs: (frames.length * 1000) / sourceFps,
+        meta: { workflow: { id: wf.id, version: wf.version }, promptId: row.prompt_id, nodeId: binding.nodeId },
+      });
+    }
+    const submission = SUBMISSION.parse(JSON.parse(row.submission_json));
+    try {
+      await publishFrameSequence(this.project, {
+        assetId: row.asset_id, candidateId, outputs: sequences, actorId: "system:scheduler", purpose: "generation",
+        candidate: {
+          candidateId, runId: row.run_id, jobId: row.job_id, label: row.label, prompt: typeof submission.values.prompt === "string" ? submission.values.prompt : plan.prompt,
+          ...(row.seed !== null ? { seed: row.seed } : {}), ...(plan.branchId ? { branchId: plan.branchId } : {}), ...(plan.parentCandidateId ? { parentCandidateId: plan.parentCandidateId } : {}),
+          completesJob: true,
+        },
+      });
     } catch (e) {
       return this.fail(row, "publish", `Saving the candidate failed: ${describe(e)}`, retry);
     }

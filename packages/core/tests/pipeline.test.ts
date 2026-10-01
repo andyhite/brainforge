@@ -177,14 +177,14 @@ describe("step.list on a character with a construction sheet", () => {
     expect(again["idle-rest"]?.state).toBe("ready");
   });
 
-  test("an animation step may be ready but its plan reports WORKFLOW_UNAVAILABLE (motion arrives in M4)", async () => {
+  test("an animation step without a motion block is ready as a step but its plan says the motion text is missing", async () => {
     const f = await game(CORTEX({ walk: "animation" }));
     const branchId = await lockedBranch(f);
     await approveSheet(f, branchId);
     expect((await steps(f, branchId))["walk-contact"]?.state).toBe("ready");
     const plan = await f.plan({ stepId: "walk-contact", branchId });
-    expect(plan.blockers.map((b) => b.code)).toContain("WORKFLOW_UNAVAILABLE");
-    expect(plan.blockers.find((b) => b.code === "WORKFLOW_UNAVAILABLE")?.message).toContain("M4");
+    expect(plan.blockers.map((b) => b.code)).not.toContain("WORKFLOW_UNAVAILABLE");
+    expect(plan.blockers.find((b) => b.code === "STEP_BLOCKED")?.message).toContain("no animation block");
   });
 
   test("a static prop has concept and its still only, and the still needs no reference step", async () => {

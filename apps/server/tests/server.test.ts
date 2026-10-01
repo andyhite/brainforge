@@ -30,7 +30,9 @@ function fakeProject(projectRoot: string, projectId: string): ProjectHandle {
   const db = new Database(":memory:");
   db.exec("CREATE TABLE reference_records (reference_id TEXT PRIMARY KEY, path TEXT NOT NULL)");
   db.exec("CREATE TABLE artifact_records (artifact_id TEXT PRIMARY KEY, path TEXT NOT NULL)");
-  db.exec("CREATE TABLE candidate_outputs (output_id TEXT PRIMARY KEY, path TEXT NOT NULL)");
+  db.exec("CREATE TABLE candidate_outputs (output_id TEXT PRIMARY KEY, path TEXT NOT NULL, media_kind TEXT NOT NULL DEFAULT 'image')");
+  db.exec("CREATE TABLE output_frames (output_id TEXT NOT NULL, idx INTEGER NOT NULL, file_id TEXT NOT NULL UNIQUE, path TEXT NOT NULL)");
+  db.exec("CREATE TABLE output_files (file_id TEXT PRIMARY KEY, output_id TEXT NOT NULL, path TEXT NOT NULL, media_type TEXT NOT NULL)");
   db.exec("CREATE TABLE review_files (file_id TEXT PRIMARY KEY, path TEXT NOT NULL)");
   db.exec("CREATE TABLE output_crops (file_id TEXT PRIMARY KEY, path TEXT NOT NULL)");
   return {
@@ -105,7 +107,17 @@ beforeEach(async () => {
   await mkdir(join(root, "brainforge/assets/cortex/work/candidates/c1/original"), { recursive: true });
   await mkdir(join(root, "brainforge/assets/cortex/work/candidates/c1/processed"), { recursive: true });
   await writeFile(join(root, "brainforge/assets/cortex/work/candidates/c1/original/out1.png"), makePng(300, 150, [200, 40, 40]));
-  project.db.query("INSERT INTO candidate_outputs VALUES ('out1', 'brainforge/assets/cortex/work/candidates/c1/original/out1.png')").run();
+  project.db.query("INSERT INTO candidate_outputs (output_id, path) VALUES ('out1', 'brainforge/assets/cortex/work/candidates/c1/original/out1.png')").run();
+  const clipDir = "brainforge/assets/cortex/work/candidates/c1/processed/clip1";
+  await mkdir(join(root, clipDir), { recursive: true });
+  await writeFile(join(root, `${clipDir}/0000.png`), makePng(40, 20, [1, 2, 3]));
+  await writeFile(join(root, `${clipDir}/0001.png`), makePng(40, 20, [4, 5, 6]));
+  await writeFile(join(root, `${clipDir}/atlas-0.png`), makePng(90, 24, [7, 8, 9]));
+  await writeFile(join(root, `${clipDir}/animation.json`), JSON.stringify({ schema: "brainforge.animation.v2" }));
+  project.db.query("INSERT INTO candidate_outputs (output_id, path, media_kind) VALUES ('clip1', ?, 'frames')").run(clipDir);
+  for (const i of [0, 1]) project.db.query("INSERT INTO output_frames VALUES ('clip1', ?, ?, ?)").run(i, `clip1-f${i}`, `${clipDir}/000${i}.png`);
+  project.db.query("INSERT INTO output_files VALUES ('clip1-atlas-0', 'clip1', ?, 'image/png')").run(`${clipDir}/atlas-0.png`);
+  project.db.query("INSERT INTO output_files VALUES ('clip1-animation', 'clip1', ?, 'application/json')").run(`${clipDir}/animation.json`);
   await writeFile(join(root, "brainforge/assets/cortex/work/candidates/c1/processed/crop-front.png"), makePng(100, 50, [10, 90, 200]));
   project.db.query("INSERT INTO output_crops VALUES ('out1-crop-front', 'brainforge/assets/cortex/work/candidates/c1/processed/crop-front.png')").run();
   const projects = [project, fakeProject(otherRoot, "proj-2")];
@@ -238,6 +250,18 @@ describe("files", () => {
     const res = await call("/api/projects/proj-1/files/out1-crop-front");
     expect(res.status).toBe(200);
     expect(await decodeImage(new Uint8Array(await res.arrayBuffer()))).toMatchObject({ width: 100, height: 50 });
+  });
+
+  test("serves a frame sequence's frames, atlas pages and animation.json by id; the output id itself serves frame 0", async () => {
+    const dims = async (id: string) => decodeImage(new Uint8Array(await (await call(`/api/projects/proj-1/files/${id}`)).arrayBuffer()));
+    expect(await dims("clip1")).toMatchObject({ width: 40, height: 20 });
+    expect((await dims("clip1-f0")).sha256).not.toBe((await dims("clip1-f1")).sha256);
+    expect(await dims("clip1-atlas-0")).toMatchObject({ width: 90, height: 24 });
+    const json = await call("/api/projects/proj-1/files/clip1-animation");
+    expect(json.status).toBe(200);
+    expect(json.headers.get("content-type")).toBe("application/json");
+    expect(await json.json()).toEqual({ schema: "brainforge.animation.v2" });
+    expect((await call("/api/projects/proj-1/files/clip1-f9")).status).toBe(404);
   });
 
   test("Range: start-end, open end, suffix, and unsatisfiable", async () => {

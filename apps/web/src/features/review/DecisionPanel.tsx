@@ -5,6 +5,7 @@ import { fileUrl, useMutationOperation, useOperation } from "../../api/hooks.ts"
 import { Banner, ErrorBanner, NetworkProblem } from "../../components/ui.tsx";
 import { useProject } from "../../lib/use-project.ts";
 import { ApprovalBadge } from "./ApprovalBadge.tsx";
+import { outputLabel } from "../animation/timing.ts";
 import { DecisionHistory, EscalationBanner } from "./DecisionHistory.tsx";
 
 type Material = OperationData<"review.material">;
@@ -42,7 +43,13 @@ function Body({ material, projectId }: { material: Material; projectId: string |
   const { candidate, you, escalation } = material;
   const sheet = (material.deliverable?.regions.length ?? 0) > 0;
   const primary = candidate.outputs.find((o) => o.role === "matted") ?? candidate.outputs[0];
-  const [outputId, setOutputId] = useState(primary?.outputId);
+  const requested = new URLSearchParams(useLocation().search).get("output");
+  const [outputId, setOutputId] = useState(candidate.outputs.some((o) => o.outputId === requested) ? requested ?? primary?.outputId : primary?.outputId);
+  useEffect(() => {
+    if (requested) setOutputId((current) => (candidate.outputs.some((o) => o.outputId === requested) ? requested : current));
+    // Follow the player only when the requested output changes, not on every refetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requested]);
   const [reasons, setReasons] = useState<string[]>([]);
   const [text, setText] = useState("");
   const [message, setMessage] = useState<{ tone: "bad" | "warn" | "info"; text: string } | undefined>();
@@ -78,7 +85,7 @@ function Body({ material, projectId }: { material: Material; projectId: string |
         <div className="viewer-tools" role="group" aria-label="Output to decide on">
           {candidate.outputs.map((o, i) => (
             <button key={o.outputId} type="button" aria-pressed={o.outputId === outputId} onClick={() => { setMessage(undefined); setOutputId(o.outputId); }}>
-              {o.role === "matted" ? "Matted" : "Untouched"}{sheet ? " sheet" : ""} <ApprovalBadge approval={candidate.approvals[i]} compact />
+              {o.mediaKind === "frames" ? outputLabel(o) : o.role === "matted" ? "Matted" : "Untouched"}{sheet ? " sheet" : ""} <ApprovalBadge approval={candidate.approvals[i]} compact />
             </button>
           ))}
         </div>

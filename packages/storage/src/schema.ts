@@ -370,6 +370,103 @@ CREATE TABLE output_crops (
 );
 `,
   },
+  {
+    version: 6,
+    sql: `
+-- Frame sequences and processed clips are ordinary candidate_outputs rows (so review decisions and annotations
+-- keep working) with a media kind. For 'frames': path is the output directory, sha256 is the manifest hash
+-- (sha256 over ordered 'index:frameSha256' lines), width/height are the frame canvas.
+ALTER TABLE candidate_outputs ADD COLUMN stage TEXT NOT NULL DEFAULT 'source' CHECK (stage IN ('source','processed'));
+ALTER TABLE candidate_outputs ADD COLUMN media_kind TEXT NOT NULL DEFAULT 'image' CHECK (media_kind IN ('image','frames'));
+ALTER TABLE candidate_outputs ADD COLUMN frame_count INTEGER;
+ALTER TABLE candidate_outputs ADD COLUMN source_fps REAL;
+ALTER TABLE candidate_outputs ADD COLUMN playback_fps REAL;
+ALTER TABLE candidate_outputs ADD COLUMN total_duration_ms REAL;
+ALTER TABLE candidate_outputs ADD COLUMN parent_output_id TEXT;
+ALTER TABLE candidate_outputs ADD COLUMN recipe_json TEXT;
+ALTER TABLE candidate_outputs ADD COLUMN recipe_hash TEXT;
+ALTER TABLE candidate_outputs ADD COLUMN meta_json TEXT NOT NULL DEFAULT '{}';
+CREATE INDEX candidate_outputs_parent ON candidate_outputs (parent_output_id);
+
+CREATE TABLE output_frames (
+  output_id TEXT NOT NULL REFERENCES candidate_outputs (output_id),
+  idx INTEGER NOT NULL,
+  file_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  sha256 TEXT NOT NULL,
+  width INTEGER NOT NULL,
+  height INTEGER NOT NULL,
+  source_frame INTEGER NOT NULL,
+  duration_ms REAL NOT NULL,
+  atlas_page INTEGER,
+  atlas_x INTEGER,
+  atlas_y INTEGER,
+  PRIMARY KEY (output_id, idx)
+);
+CREATE UNIQUE INDEX output_frames_file ON output_frames (file_id);
+
+-- Atlas pages, animation.json, contact sheets: derived files of an output, served by file id.
+CREATE TABLE output_files (
+  file_id TEXT PRIMARY KEY,
+  output_id TEXT NOT NULL REFERENCES candidate_outputs (output_id),
+  kind TEXT NOT NULL CHECK (kind IN ('atlas-page','animation-json','contact-sheet')),
+  page INTEGER,
+  path TEXT NOT NULL,
+  sha256 TEXT NOT NULL,
+  media_type TEXT NOT NULL,
+  width INTEGER,
+  height INTEGER
+);
+CREATE INDEX output_files_output ON output_files (output_id, kind);
+
+CREATE TABLE processing_plans (
+  plan_id TEXT PRIMARY KEY,
+  plan_hash TEXT NOT NULL,
+  plan_json TEXT NOT NULL,
+  candidate_id TEXT NOT NULL REFERENCES candidates (candidate_id),
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  started_output_id TEXT
+);
+
+CREATE TABLE cleanup_exports (
+  cleanup_id TEXT PRIMARY KEY,
+  candidate_id TEXT NOT NULL REFERENCES candidates (candidate_id),
+  output_id TEXT NOT NULL REFERENCES candidate_outputs (output_id),
+  stage TEXT NOT NULL,
+  directory TEXT NOT NULL,
+  sidecar_json TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+-- Lineage of an imported correction.
+CREATE TABLE cleanup_imports (
+  candidate_id TEXT PRIMARY KEY REFERENCES candidates (candidate_id),
+  parent_candidate_id TEXT NOT NULL,
+  parent_output_id TEXT NOT NULL,
+  stage TEXT NOT NULL,
+  notes TEXT NOT NULL,
+  effort_minutes REAL,
+  replaced_json TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+-- Two-phase publication: written BEFORE any file lands in its final place, resolved by startup recovery.
+CREATE TABLE publication_intents (
+  intent_id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  staging_path TEXT,
+  state TEXT NOT NULL CHECK (state IN ('prepared','committed','failed')),
+  error TEXT,
+  created_at TEXT NOT NULL,
+  resolved_at TEXT
+);
+CREATE INDEX publication_intents_state ON publication_intents (state);
+`,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

@@ -79,6 +79,21 @@ export async function applyFraming(png: Uint8Array, t: FramingTransform): Promis
   return { png: out, clipped };
 }
 
+/**
+ * Moves an already framed canvas by whole pixels (an authored per-frame correction applied after scaling).
+ * Pixels pushed off the canvas are lost; callers detect that from the bounds they track.
+ */
+export async function shiftCanvas(png: Uint8Array, dx: number, dy: number): Promise<Uint8Array> {
+  if (dx === 0 && dy === 0) return png;
+  const { width: w, height: h } = await sharp(png).metadata();
+  if (!w || !h) throw new MediaError("decode_failed", "no dimensions");
+  const blank = sharp({ create: { width: w, height: h, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } });
+  const cw = w - Math.abs(dx), ch = h - Math.abs(dy);
+  if (cw <= 0 || ch <= 0) return blank.png().toBuffer();
+  const piece = await sharp(png).ensureAlpha().extract({ left: Math.max(0, -dx), top: Math.max(0, -dy), width: cw, height: ch }).png().toBuffer();
+  return blank.composite([{ input: piece, left: Math.max(0, dx), top: Math.max(0, dy) }]).png().toBuffer();
+}
+
 export type FieldBackground = "dark" | "light" | "checker";
 
 async function backgroundField(kind: FieldBackground, width: number, height: number): Promise<Buffer> {

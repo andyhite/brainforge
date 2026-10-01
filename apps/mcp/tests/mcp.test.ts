@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { z } from "zod";
+import { toolName } from "../src/server.ts";
 import { OPERATION_NAMES } from "@brainforge/contracts";
 
 const MAIN = join(import.meta.dir, "..", "src", "main.ts");
@@ -40,6 +41,14 @@ beforeAll(async () => {
       seen.push({ path, agent: request.headers.get("x-brainforge-agent"), origin: request.headers.get("origin"), body });
       if (path.endsWith("/project.inspect")) {
         return Response.json({ ok: true, data: { project: { projectId: "proj-1" } }, nextActions: [], warnings: [] });
+      }
+      if (path.endsWith("/output.inspect")) {
+        const visuals = [
+          { fileId: "o1-contact", role: "contact-sheet", label: "Contact sheet", mediaType: "image/png" },
+          { fileId: "o1-f0000", role: "frame", label: "Frame 1 (source 0)", mediaType: "image/png" },
+          { fileId: "o1-f0031", role: "frame", label: "Frame 32 (source 31)", mediaType: "image/png" },
+        ];
+        return Response.json({ ok: true, data: { visuals }, nextActions: [], warnings: [] });
       }
       if (path.endsWith("/review.material")) {
         const visuals = [{ fileId: "sheet", role: "matted", label: "Sheet", mediaType: "image/png" }, { fileId: "crop-front", role: "region-crop", label: "front", mediaType: "image/png" }];
@@ -91,7 +100,7 @@ describe("mcp stdio server", () => {
 
   test("one tool per registry operation with named properties", async () => {
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(OPERATION_NAMES.map((n) => n.replaceAll(".", "_")).sort());
+    expect(tools.map((t) => t.name).sort()).toEqual(OPERATION_NAMES.map((n) => toolName(n)).sort());
     const write = tools.find((t) => t.name === "spec_write");
     expect(Object.keys(write?.inputSchema.properties ?? {}).sort()).toEqual(["expectedHash", "path", "project", "requestId", "text"]);
     for (const tool of tools) expect(Object.keys(tool.inputSchema.properties ?? {})).toContain("project");
@@ -164,11 +173,35 @@ describe("mcp stdio server", () => {
     const instructions = client.getInstructions() ?? "";
     const names = (await client.listTools()).tools.map((t) => t.name);
     for (const op of OPERATION_NAMES.filter((n) => /^(concept|branch|step|review)\.|^candidate\.select$/.test(n))) {
-      expect(names).toContain(op.replaceAll(".", "_"));
+      expect(names).toContain(toolName(op));
     }
-    for (const text of ["concept_lock", "which candidate and output to lock", "step_list", "WORKFLOW_UNAVAILABLE", "review_list", "review_material", "review_decide", "review_escalate", "requirementsHash", "never claim human approval", "review_override is human-only", "NOT approval"]) {
+    for (const text of ["concept_lock", "which candidate and output to lock", "step_list", "review_list", "review_material", "review_decide", "review_escalate", "requirementsHash", "never claim human approval", "review_override is human-only", "NOT approval"]) {
       expect(instructions).toContain(text);
     }
+  });
+
+  test("M4 tools exist with underscore names and instructions describe the motion protocol", async () => {
+    const instructions = client.getInstructions() ?? "";
+    const names = (await client.listTools()).tools.map((t) => t.name);
+    for (const tool of ["output_inspect", "processing_plan", "processing_start", "candidate_export_cleanup", "candidate_import_cleanup"]) {
+      expect(names).toContain(tool);
+      expect(instructions).toContain(tool);
+    }
+    expect(names.some((name) => name.includes("-"))).toBe(false);
+    for (const text of ["SOURCE frame outputs", "NEW unapproved processed output", "SOURCE frame index", "12 and 16", "scale anchor", "never cropped, scaled or resampled again", "contact sheet"]) {
+      expect(instructions).toContain(text);
+    }
+    expect(instructions).not.toContain("WORKFLOW_UNAVAILABLE");
+  });
+
+  test("contact sheet and frame visuals from output_inspect become image blocks", async () => {
+    fileRequests.length = 0;
+    const result = await client.callTool({ name: "output_inspect", arguments: { outputId: "o1" } });
+    const content = z.array(z.object({ type: z.string(), text: z.string().optional() })).parse(result.content);
+    expect(content.filter((block) => block.type === "image")).toHaveLength(3);
+    expect(content[1]?.text).toContain("role=contact-sheet");
+    expect(content[1]?.text).toContain("role=frame");
+    expect(fileRequests).toEqual(["/api/projects/proj-1/files/o1-contact?max=1568", "/api/projects/proj-1/files/o1-f0000?max=1568", "/api/projects/proj-1/files/o1-f0031?max=1568"]);
   });
 
   test("instructions describe the generation protocol and the named tools exist", async () => {

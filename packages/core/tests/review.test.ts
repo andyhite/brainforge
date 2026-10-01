@@ -30,7 +30,7 @@ async function seeded(): Promise<Seed> {
   db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, budget_id, started_by, created_at) VALUES ('run_1','cortex','concept','p','" + PLAN(hashes).replaceAll("'", "''") + "','b','human:local',?)").run(now);
   db.query("INSERT INTO generation_jobs (job_id, run_id, asset_id, step_id, slot, label, identity, state, submission_json, created_at, updated_at) VALUES ('job_1','run_1','cortex','concept',0,'A','id1','succeeded','{}',?,?)").run(now, now);
   db.query("INSERT INTO candidates (candidate_id, asset_id, step_id, run_id, job_id, parent_candidate_id, label, seed, prompt, favorite, created_at) VALUES ('cand_1','cortex','concept','run_1','job_1',NULL,'A',7,'a prompt',0,?)").run(now);
-  db.query("INSERT INTO candidate_outputs VALUES ('out_1','cand_1','matted','out_1',?,?,200,100,'image/png')").run(rel, sha256(png));
+  db.query("INSERT INTO candidate_outputs (output_id, candidate_id, role, file_id, path, sha256, width, height, media_type) VALUES ('out_1','cand_1','matted','out_1',?,?,200,100,'image/png')").run(rel, sha256(png));
   return { root, candidateId: "cand_1", outputId: "out_1", outputHash: sha256(png) };
 }
 
@@ -80,6 +80,29 @@ describe("annotations", () => {
     expect(wrong.error.code).toBe("NOT_FOUND");
     const upd = await h.call("annotation.update", { annotationId: (await note(s)).annotationId, expectedVersion: 1, geometry: { kind: "rect", x: 0.9, y: 0.9, width: 0.5, height: 0.5 } }, { project: s.root });
     expect(upd.ok).toBe(false);
+  });
+
+  test("frame notes are anchored to source frames: the range survives edits and must lie within the played source frames; stills refuse it", async () => {
+    const s = await seeded();
+    const still = await h.call("annotation.create", { candidateId: s.candidateId, outputId: s.outputId, geometry: pin, frameRange: { start: 0, end: 0 }, text: "x" }, { project: s.root });
+    if (still.ok) throw new Error("a still image cannot take a frame range");
+    expect(still.error.code).toBe("INVALID_INPUT");
+
+    // A processed clip of 3 frames that plays source frames 0, 2 and 4 (resampled from a longer source).
+    const db = h.registry.get(s.root)!.db;
+    db.query("UPDATE candidate_outputs SET media_kind = 'frames', stage = 'processed', frame_count = 3 WHERE output_id = ?").run(s.outputId);
+    [0, 2, 4].forEach((source, idx) => db.query("INSERT INTO output_frames (output_id, idx, file_id, path, sha256, width, height, source_frame, duration_ms) VALUES (?, ?, ?, 'p', ?, 200, 100, ?, 83.3)").run(s.outputId, idx, `f${idx}`, "a".repeat(64), source));
+
+    const a = (await note(s, { frameRange: { start: 2, end: 4 } }));
+    expect(a.frameRange).toEqual({ start: 2, end: 4 });
+    expect(a.geometry).toEqual(pin);
+    const moved = expectOk(await h.call("annotation.update", { annotationId: a.annotationId, expectedVersion: 1, text: "later" }, { project: s.root })).annotation;
+    expect(moved.frameRange).toEqual({ start: 2, end: 4 });
+    const past = await h.call("annotation.create", { candidateId: s.candidateId, outputId: s.outputId, geometry: pin, frameRange: { start: 4, end: 5 }, text: "x" }, { project: s.root });
+    if (past.ok) throw new Error("source frame 5 is never played");
+    expect(past.error.code).toBe("INVALID_INPUT");
+    const backwards = await h.call("annotation.create", { candidateId: s.candidateId, outputId: s.outputId, geometry: pin, frameRange: { start: 3, end: 1 }, text: "x" }, { project: s.root });
+    expect(backwards.ok).toBe(false);
   });
 });
 

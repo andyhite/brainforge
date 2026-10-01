@@ -10,6 +10,7 @@ import type { OpenProject } from "../project-runtime.ts";
 import { OperationFailure } from "../runtime.ts";
 import { loadDescriptor } from "./descriptors.ts";
 import { DELIVERABLE_WORKFLOW, resolveDeliverable } from "./deliverable.ts";
+import { MOTION_WORKFLOW } from "./motion.ts";
 import { composePrompt, stylesFor } from "./prompt.ts";
 import { attemptsInWindow, budgetStatus, newId, toBudget, type BudgetRow } from "./store.ts";
 
@@ -78,6 +79,9 @@ export async function createPlan(env: PlanEnvironment, input: ParsedOperationInp
     block("BRANCH_UNEXPECTED", "Concept exploration happens before a lock and belongs to no branch; omit branchId.");
   }
   const deliverable = input.stepId === "concept" ? undefined : await resolveDeliverable(project, set, input.assetId, input.stepId, input.branchId);
+  if (deliverable?.deliverable?.kind === "animation" && input.mode === "variation") {
+    block("MODE_UNSUPPORTED", "Motion is generated fresh from its approved guide poses; use mode \"fresh\" and put corrections in iterationInstructions.");
+  }
   if (deliverable) blockers.push(...deliverable.blockers);
   if (input.count > automation.maxBatchCandidates) {
     block("BATCH_TOO_LARGE", `count ${input.count} exceeds the project's maxBatchCandidates (${automation.maxBatchCandidates}).`, [
@@ -87,7 +91,8 @@ export async function createPlan(env: PlanEnvironment, input: ParsedOperationInp
 
   // --- workflow
   let wf: WorkflowDescriptor | undefined;
-  const workflowId = input.stepId === "concept" ? WORKFLOW_FOR_MODE[input.mode] : DELIVERABLE_WORKFLOW;
+  const isMotion = deliverable?.deliverable?.kind === "animation";
+  const workflowId = input.stepId === "concept" ? WORKFLOW_FOR_MODE[input.mode] : isMotion ? MOTION_WORKFLOW : DELIVERABLE_WORKFLOW;
   try {
     wf = await loadDescriptor(env.workflowsDir, workflowId);
   } catch (e) {
@@ -125,6 +130,7 @@ export async function createPlan(env: PlanEnvironment, input: ParsedOperationInp
   } else {
     if (input.parentCandidateId || input.parentOutputId) block("PARENT_UNEXPECTED", "A fresh batch has no parent; use mode \"variation\" to continue from a candidate.");
     if (deliverable?.reference) references.push(deliverable.reference);
+    if (deliverable) references.push(...deliverable.references);
   }
   for (const [role, referenceId] of Object.entries(input.referenceBindings)) {
     if (wf && !imageRoles.has(role)) {
@@ -178,7 +184,7 @@ export async function createPlan(env: PlanEnvironment, input: ParsedOperationInp
   const submissions = Array.from({ length: input.count }, (_, i) => {
     const seed = randomInt(0, 2 ** 31 - 1);
     const strength = input.referenceStrength ?? deliverable?.deliverable?.referenceStrength;
-    const values: Record<string, string | number> = { ...defaults, prompt, seed, ...(deliverable?.size ?? {}), ...(strength !== undefined && "ref_boost" in defaults ? { ref_boost: strength } : {}) };
+    const values: Record<string, string | number> = { ...defaults, prompt, seed, ...(deliverable?.size ?? {}), ...(deliverable?.values ?? {}), ...(strength !== undefined && "ref_boost" in defaults ? { ref_boost: strength } : {}) };
     return {
       submissionId: `${planId}-${i + 1}`,
       label: `${input.mode === "variation" ? "Variation" : "Candidate"} ${firstLabel + i}`,
@@ -240,6 +246,7 @@ export async function createPlan(env: PlanEnvironment, input: ParsedOperationInp
     inputs: { specHashes, references: references.map((r) => ({ role: r.role, id: r.id, sha256: r.sha256 })) },
     submissions,
     crops: deliverable?.crops ?? [],
+    ...(deliverable?.motion ? { motion: deliverable.motion } : {}),
     execution: { computeLocation: execution.computeLocation, externalServices: execution.externalServices, credentialKeys: execution.credentialKeys, costDescription: execution.costDescription },
     limits: { maxBatchCandidates: automation.maxBatchCandidates, maxConcurrentGenerations: automation.maxConcurrentGenerations, maxAttemptsPerStep: automation.maxAttemptsPerStep },
   };

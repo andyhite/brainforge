@@ -1,5 +1,6 @@
 import type { AssetSpec, Deliverable } from "@brainforge/contracts";
 import type { AuthoredAsset, AuthoredSet } from "../authored.ts";
+import { STATIC_CAMERA_CLAUSE } from "./motion.ts";
 import type { EffectiveSettings } from "../effective.ts";
 
 export interface PromptPart { label: string; source: string; text: string }
@@ -54,15 +55,21 @@ export function composePrompt(input: PromptInput): PromptPart[] {
     : undefined;
 
   if (input.mode === "variation" && iteration) parts.push({ ...iteration, text: `Change: ${iteration.text}` });
+  const motion = input.deliverable?.spec.kind === "animation" ? input.deliverable.spec.animation?.motion.trim() : undefined;
   if (input.mode === "variation" || input.deliverable) {
     parts.push({
       label: "Identity lock", source: `workflow:${input.workflow.id}@${input.workflow.version}`,
-      text: "Keep the subject's identity, proportions, colours and drawing style identical to the reference image.",
+      text: motion !== undefined
+        ? "Keep the subject's identity, proportions, colours and drawing style identical to the first and last frame."
+        : "Keep the subject's identity, proportions, colours and drawing style identical to the reference image.",
     });
   }
   const description = input.deliverable?.spec.description.trim();
   if (input.deliverable && description) {
     parts.push({ label: `Deliverable: ${input.deliverable.spec.id}`, source: `${asset.path}:deliverables[${input.deliverable.index}].description`, text: description });
+  }
+  if (input.deliverable && motion) {
+    parts.push({ label: `Motion: ${input.deliverable.spec.id}`, source: `${asset.path}:deliverables[${input.deliverable.index}].animation.motion`, text: motion });
   }
   parts.push({ label: "Subject", source: `${asset.path}:description`, text: spec.description.trim() });
   for (const [key, value] of Object.entries(spec.identity)) {
@@ -88,6 +95,8 @@ export function composePrompt(input: PromptInput): PromptPart[] {
   const regions = input.deliverable?.spec.kind === "reference-sheet" ? input.deliverable.spec.regions : undefined;
   if (regions && regions.length > 0) {
     parts.push({ label: "Sheet layout", source: `${asset.path}:deliverables[${input.deliverable?.index}].regions`, text: sheetLayout(spec.family, regions) });
+  } else if (motion !== undefined) {
+    parts.push({ label: "Camera", source: `workflow:${input.workflow.id}@${input.workflow.version}`, text: STATIC_CAMERA_CLAUSE });
   } else {
     parts.push({
       label: "Framing", source: `workflow:${input.workflow.id}@${input.workflow.version}`,

@@ -1,8 +1,16 @@
 import { useEffect, useState, type RefObject } from "react";
-import type { Annotation, CandidateOutput, Geometry, OperationError } from "@brainforge/contracts";
+import type { Annotation, CandidateOutput, FrameRange, Geometry, OperationError } from "@brainforge/contracts";
 import { useMutationOperation } from "../../api/hooks.ts";
 import { ErrorBanner, formatTime } from "../../components/ui.tsx";
 const describe = (g: Geometry): string => (g.kind === "whole" ? "Whole image" : g.kind === "pin" ? "Pin" : "Rectangle");
+/** UI frame numbers are one-based; stored ranges are zero-based source frames. */
+const rangeLabel = (r: FrameRange): string => (r.start === r.end ? `source frame ${r.start + 1}` : `source frames ${r.start + 1}–${r.end + 1}`);
+
+export interface FrameContext {
+  /** Zero-based source frame showing in the player. */
+  sourceFrame: number;
+  lastSourceFrame: number;
+}
 
 interface PanelProps {
   candidateId: string;
@@ -14,12 +22,14 @@ interface PanelProps {
   draft: Geometry | undefined;
   onDraftChange: (geometry: Geometry | undefined) => void;
   formRef: RefObject<HTMLTextAreaElement | null>;
+  /** Present for frame-sequence outputs: notes then carry a source-frame range. */
+  frame?: FrameContext;
 }
 
-export function AnnotationPanel({ candidateId, output, annotations, selectedId, onSelect, draft, onDraftChange, formRef }: PanelProps) {
+export function AnnotationPanel({ candidateId, output, annotations, selectedId, onSelect, draft, onDraftChange, formRef, frame }: PanelProps) {
   return (
     <div className="stack">
-      {draft ? <DraftForm candidateId={candidateId} output={output} draft={draft} onDraftChange={onDraftChange} formRef={formRef} onCreated={onSelect} /> : (
+      {draft ? <DraftForm candidateId={candidateId} output={output} draft={draft} onDraftChange={onDraftChange} formRef={formRef} onCreated={onSelect} frame={frame} /> : (
         <p className="secondary">Choose Pin or Rectangle and click or drag on the image, use “Note on whole image”, or focus the image and press Enter to place a pin at the centre.</p>
       )}
       <h3>Notes on this {output.role === "matted" ? "matted" : "untouched"} output ({annotations.length})</h3>
@@ -34,11 +44,13 @@ export function AnnotationPanel({ candidateId, output, annotations, selectedId, 
 
 const pct = (v: number) => Math.round(v * 1000) / 10;
 
-function DraftForm({ candidateId, output, draft, onDraftChange, formRef, onCreated }: { candidateId: string; output: CandidateOutput; draft: Geometry; onDraftChange: (g: Geometry | undefined) => void; formRef: RefObject<HTMLTextAreaElement | null>; onCreated: (id: string) => void }) {
+function DraftForm({ candidateId, output, draft, onDraftChange, formRef, onCreated, frame }: { candidateId: string; output: CandidateOutput; draft: Geometry; onDraftChange: (g: Geometry | undefined) => void; formRef: RefObject<HTMLTextAreaElement | null>; onCreated: (id: string) => void; frame: FrameContext | undefined }) {
   const create = useMutationOperation("annotation.create");
   const [text, setText] = useState("");
   const [required, setRequired] = useState(false);
   const [error, setError] = useState<OperationError | undefined>();
+  // Defaults to the frame showing when the note was started; the range is edited by the reviewer.
+  const [range, setRange] = useState<FrameRange>({ start: frame?.sourceFrame ?? 0, end: frame?.sourceFrame ?? 0 });
 
   const setField = (field: "x" | "y" | "width" | "height", value: number) => {
     if (draft.kind === "pin" && (field === "x" || field === "y")) onDraftChange({ ...draft, [field]: Math.min(1, Math.max(0, value / 100)) });
@@ -47,7 +59,7 @@ function DraftForm({ candidateId, output, draft, onDraftChange, formRef, onCreat
   const save = async () => {
     if (text.trim() === "") return;
     setError(undefined);
-    const result = await create.mutateAsync({ input: { candidateId, outputId: output.outputId, geometry: draft, text: text.trim(), requiresRevision: required } });
+    const result = await create.mutateAsync({ input: { candidateId, outputId: output.outputId, geometry: draft, ...(frame ? { frameRange: range } : {}), text: text.trim(), requiresRevision: required } });
     if (!result.ok) return setError(result.error);
     setText("");
     setRequired(false);
@@ -76,6 +88,17 @@ function DraftForm({ candidateId, output, draft, onDraftChange, formRef, onCreat
               <input type="number" min={0} max={100} step="any" style={{ width: 84 }} value={pct(draft.kind === "pin" ? draft[field as "x" | "y"] : draft.kind === "rect" ? draft[field] : 0)} onChange={(e) => setField(field, Number(e.target.value))} />
             </label>
           ))}
+        </fieldset>
+      ) : null}
+      {frame ? (
+        <fieldset className="row" aria-label="Source frames this note applies to">
+          <legend className="secondary">Applies to source frames (1 to {frame.lastSourceFrame + 1}); the note stays on source frames even if the clip is resampled</legend>
+          <label className="secondary">from{" "}
+            <input type="number" min={1} max={frame.lastSourceFrame + 1} style={{ width: 72 }} value={range.start + 1} onChange={(e) => setRange({ start: Math.max(0, Number(e.target.value) - 1), end: Math.max(range.end, Number(e.target.value) - 1) })} />
+          </label>
+          <label className="secondary">to{" "}
+            <input type="number" min={1} max={frame.lastSourceFrame + 1} style={{ width: 72 }} value={range.end + 1} onChange={(e) => setRange({ start: Math.min(range.start, Number(e.target.value) - 1), end: Math.max(0, Number(e.target.value) - 1) })} />
+          </label>
         </fieldset>
       ) : null}
       <div className="field">
@@ -135,7 +158,7 @@ function NoteItem({ annotation: a, index, selected, onSelect }: { annotation: An
     <li className={`note${selected ? " selected" : ""}`} aria-current={selected ? "true" : undefined}>
       <div className="row">
         <button type="button" className="note-number" onClick={() => onSelect(a.annotationId)} aria-label={`Select note ${index}, ${describe(a.geometry)}`}>{index}</button>
-        <span className="secondary">{describe(a.geometry)} · {a.createdBy} · {formatTime(a.updatedAt)} · v{a.version}</span>
+        <span className="secondary">{describe(a.geometry)}{a.frameRange ? ` · ${rangeLabel(a.frameRange)}` : ""} · {a.createdBy} · {formatTime(a.updatedAt)} · v{a.version}</span>
         {a.requiresRevision ? <span className="status warn"><span aria-hidden="true">▲</span><span>Requires revision</span></span> : null}
       </div>
       {conflict ? (

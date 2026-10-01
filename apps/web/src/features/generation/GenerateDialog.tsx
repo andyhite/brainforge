@@ -3,19 +3,21 @@ import type { Candidate, GenerationPlan } from "@brainforge/contracts";
 import { useMutationOperation } from "../../api/hooks.ts";
 import { Banner, ErrorBanner, formatTime, Modal, NetworkProblem, Status } from "../../components/ui.tsx";
 import { outputUrl, pickOutput } from "./media.tsx";
+import { MotionPlanView } from "../processing/MotionPlanView.tsx";
 import { useProject } from "../../lib/use-project.ts";
 
 export interface GenerateRequest { mode: "fresh" | "variation"; parentCandidateId?: string }
 
-export function GenerateDialog({ assetId, stepId = "concept", branchId, candidates, initial, onClose, onGrantBudget }: {
-  assetId: string; stepId?: string; branchId?: string; candidates: Candidate[]; initial: GenerateRequest; onClose: () => void; onGrantBudget: () => void;
+export function GenerateDialog({ assetId, stepId = "concept", stepKind, branchId, candidates, initial, onClose, onGrantBudget }: {
+  assetId: string; stepId?: string; stepKind?: string; branchId?: string; candidates: Candidate[]; initial: GenerateRequest; onClose: () => void; onGrantBudget: () => void;
 }) {
   const stepNoun = stepId === "concept" ? "concepts" : stepId;
   const plan = useMutationOperation("generation.plan");
   const start = useMutationOperation("generation.start");
   const [mode, setMode] = useState(initial.mode);
   const [parentId, setParentId] = useState(initial.parentCandidateId ?? candidates[0]?.candidateId ?? "");
-  const [count, setCount] = useState(4);
+  const animation = stepKind === "animation";
+  const [count, setCount] = useState(animation ? 1 : 4);
   const [instructions, setInstructions] = useState("");
   const [planned, setPlanned] = useState<GenerationPlan | undefined>(undefined);
   const [budgetId, setBudgetId] = useState("");
@@ -66,7 +68,7 @@ export function GenerateDialog({ assetId, stepId = "concept", branchId, candidat
                 <legend style={{ fontSize: 13, fontWeight: 600 }}>Mode</legend>
                 <div className="row">
                   <label><input type="radio" name="gen-mode" checked={mode === "fresh"} onChange={() => setMode("fresh")} />Fresh batch from the asset definition</label>
-                  <label><input type="radio" name="gen-mode" checked={mode === "variation"} disabled={candidates.length === 0} onChange={() => setMode("variation")} />Variation of a candidate</label>
+                  <label><input type="radio" name="gen-mode" checked={mode === "variation"} disabled={candidates.length === 0 || animation} onChange={() => setMode("variation")} />Variation of a candidate{animation ? " (not available for motion)" : ""}</label>
                 </div>
               </fieldset>
               {mode === "variation" ? (
@@ -81,7 +83,7 @@ export function GenerateDialog({ assetId, stepId = "concept", branchId, candidat
               <div className="field">
                 <label htmlFor="gen-count">Candidates</label>
                 <input id="gen-count" type="number" min={1} max={8} value={count} onChange={(event) => setCount(Number(event.target.value))} />
-                <div className="hint">One start submits this many candidates to the GPU. The plan shows the batch limit.</div>
+                <div className="hint">{animation ? "Each candidate is one Wan run on the GPU: the same guides and motion with a different seed. " : "One start submits this many candidates to the GPU. "}The plan shows the batch limit.</div>
               </div>
               <div className="field">
                 <label htmlFor="gen-instr">Iteration instructions (optional)</label>
@@ -175,6 +177,7 @@ function PlanView({ plan }: { plan: GenerationPlan }) {
         </dd>
         <dt>Limits</dt><dd>up to {plan.limits.maxBatchCandidates} candidates per start · {plan.limits.maxConcurrentGenerations} at a time · {plan.limits.maxAttemptsPerStep} starts per step</dd>
       </dl>
+      {plan.motion && projectId ? <MotionPlanView motion={plan.motion} projectId={projectId} /> : null}
       {plan.inputs.references.length > 0 && projectId ? (
         <section aria-label="References used">
           <h3>References used</h3>

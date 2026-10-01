@@ -9,6 +9,8 @@ import { OperationFailure } from "../runtime.ts";
 import { loadDescriptor } from "./descriptors.ts";
 import { resolveDeliverable } from "./deliverable.ts";
 import { PLAN_TTL_MS, changedSpecs, storedPlan } from "./plan.ts";
+import { motionBasis } from "./motion.ts";
+import { normalizedHash } from "../operations.ts";
 import { readPinnedReference } from "./references.ts";
 import { schedulerOf } from "./scheduler.ts";
 import { attemptsInWindow, budgetRow, budgetShortfall, jobRow, newId, toBudget, toJob } from "./store.ts";
@@ -18,6 +20,7 @@ const CONTENT_BLOCKERS = new Set([
   "PROJECT_INVALID", "ASSET_INVALID", "BATCH_TOO_LARGE", "WORKFLOW_UNAVAILABLE", "PARENT_REQUIRED", "PARENT_MISSING", "PARENT_UNEXPECTED",
   "OUTPUT_MISSING", "REFERENCE_UNSUPPORTED", "REFERENCE_CONFLICT", "REFERENCE_MISSING", "REFERENCE_REQUIRED", "ITERATION_REQUIRED",
   "STYLE_CONFLICT", "WORKFLOW_INPUT_MISSING", "STEP_UNKNOWN", "STEP_BLOCKED", "NO_BRANCH", "DEPENDENCY_NOT_APPROVED", "SIZE_UNSUPPORTED", "BRANCH_UNEXPECTED",
+  "GUIDE_MISSING", "GUIDE_NOT_APPROVED", "GUIDE_CLIPPED", "FRAME_COUNT_INVALID", "ANCHOR_MISSING", "MODE_UNSUPPORTED",
 ]);
 
 const askForBudget = (assetId: string, stepId: string): RecoveryAction => ({
@@ -71,6 +74,9 @@ export async function startGeneration(env: StartEnvironment, input: ParsedOperat
     const pinned = plan.inputs.references.find((r) => r.role === "reference");
     if (!plan.parentCandidateId && (current.reference?.id !== pinned?.id || current.reference?.sha256 !== pinned?.sha256)) {
       throw new OperationFailure("REVISION_CONFLICT", "The reference this step is conditioned on changed since the plan was inspected. Plan again.", { was: pinned, now: current.reference }, [{ label: "Plan again", operation: "generation.plan", input: { assetId: plan.assetId, stepId: plan.stepId, branchId: plan.branchId } }]);
+    }
+    if (normalizedHash(motionBasis(current.motion)) !== normalizedHash(motionBasis(plan.motion))) {
+      throw new OperationFailure("REVISION_CONFLICT", "The guide poses or the scale anchor changed since the plan was inspected. Plan again.", { was: motionBasis(plan.motion), now: motionBasis(current.motion) }, [{ label: "Plan again", operation: "generation.plan", input: { assetId: plan.assetId, stepId: plan.stepId, branchId: plan.branchId } }]);
     }
   }
   for (const ref of plan.inputs.references) {

@@ -4,6 +4,7 @@ import type { Database } from "bun:sqlite";
 import { GenerationPlan, type Decision, type OperationContext, type OutputApproval, type Visual } from "@brainforge/contracts";
 import { resolveIn, sha256 } from "@brainforge/storage";
 import { discoverAuthored } from "../authored.ts";
+import { onDiskManifestHash } from "../outputs/frames.ts";
 import type { OpenProject } from "../project-runtime.ts";
 import { policyView } from "../policy.ts";
 import { canActorReview, decisionsFor, escalationsFor, pendingEscalation, standingApproval, toDecision, toEscalation, type DecisionRow, type EscalationRow } from "../review/authority.ts";
@@ -40,9 +41,15 @@ async function currentHash(open: OpenProject, cand: CandidateRow): Promise<strin
 /** A decision judges bytes; refuse when the file on disk is not the recorded output. */
 async function assertBytesIntact(open: OpenProject, outputs: OutputRow[]): Promise<void> {
   for (const out of outputs) {
-    const abs = await resolveIn(open.root, out.path).catch(() => undefined);
-    const bytes = abs ? await readFile(abs).catch(() => undefined) : undefined;
-    if (!bytes || sha256(bytes) !== out.sha256) {
+    let intact: boolean;
+    if (out.media_kind === "frames") {
+      intact = (await onDiskManifestHash(open, out.output_id)) === out.sha256;
+    } else {
+      const abs = await resolveIn(open.root, out.path).catch(() => undefined);
+      const bytes = abs ? await readFile(abs).catch(() => undefined) : undefined;
+      intact = bytes !== undefined && sha256(bytes) === out.sha256;
+    }
+    if (!intact) {
       throw new OperationFailure("OUTPUT_MISSING", `Output ${out.output_id} is missing or no longer matches its recorded hash, so it cannot be judged`, { outputId: out.output_id, path: out.path });
     }
   }
@@ -122,7 +129,7 @@ export const decisionHandlers: HandlerMap = {
     const deliverable = spec?.deliverables.find((d) => d.id === cand.step_id);
 
     const wanted = new Set(outputs.map((o) => o.output_id));
-    const visuals: Visual[] = outputVisuals(open.db, cand.candidate_id).filter((v) => outputs.some((o) => o.file_id === v.fileId));
+    const visuals: Visual[] = await outputVisuals(open, cand.candidate_id, [...wanted]);
     const hasCrops = open.db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'output_crops'").get()?.n === 1;
     if (hasCrops) {
       const crops = open.db.query<{ output_id: string; region_id: string; file_id: string; width: number; height: number; media_type: string }, []>(

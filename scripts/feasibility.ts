@@ -472,7 +472,7 @@ async function processAction() {
     scaleAnchor: { referenceOutputId: ref.outputId, referenceHash: ref.sha256, sourceStandingHeightPx: refBounds.height * GUIDE_SCALE, targetStandingHeightPx: SUBJECT_HEIGHT_PX, sourceFeet: GUIDE_FEET },
   });
   const recipeHash = sha256(stable(recipe));
-  const clip = await processClip(frames, manifest.fps, recipe);
+  const clip = await processClip(frames, manifest.fps, recipe, { allowClipped: true, allowEmpty: true });
 
   const candidateId = input.outputId.replace(/-(matted|untouched)$/, "");
   const tag = `fps${recipe.playbackFps}-${recipeHash.slice(0, 8)}`;
@@ -492,14 +492,14 @@ async function processAction() {
   const animation = JSON.stringify({
     schema: "brainforge.processed-clip.v1", sourceOutputId: input.outputId, sourceHash: source.sha256, sourceFps: manifest.fps, playbackFps: recipe.playbackFps,
     loop: recipe.loop, canvas: recipe.output, pivot: recipe.pivot, pivotPx: { x: recipe.pivot.x * recipe.output.width, y: recipe.pivot.y * recipe.output.height },
-    scale: clip.scale, recipe, recipeHash, unionBounds: clip.unionBounds, clipped: clip.clipped, totalDurationMs: clip.totalDurationMs, atlasPages: pages, frames: frameRows,
+    scale: clip.scale, recipe, recipeHash, unionBounds: clip.unionBounds, clipped: clip.clippedFrames.length > 0, totalDurationMs: clip.totalDurationMs, atlasPages: pages, frames: frameRows,
   }, null, 2) + "\n";
   const rel = paths.candidateFile(ASSET, candidateId, "processed", `${tag}-animation.json`);
   await writeFileAtomic(await abs(rel), animation);
   const entry: ProcessedEntry = { outputId: `${candidateId}-processed-${tag}`, sourceOutputId: input.outputId, playbackFps: recipe.playbackFps, recipeHash, path: rel, sha256: sha256(animation) };
   const index = (await loadProcessedIndex(trialId)).filter((x) => x.outputId !== entry.outputId);
   await writeJsonAtomic(await abs(processedIndexPath(trialId)), [...index, entry]);
-  console.log(JSON.stringify({ ...entry, frames: clip.frames.length, totalDurationMs: clip.totalDurationMs, scale: clip.scale, unionBounds: clip.unionBounds, clipped: clip.clipped, atlasPages: pages.map((p) => `${p.width}x${p.height}`) }, null, 2));
+  console.log(JSON.stringify({ ...entry, frames: clip.frames.length, totalDurationMs: clip.totalDurationMs, scale: clip.scale, unionBounds: clip.unionBounds, clipped: clip.clippedFrames.length > 0, atlasPages: pages.map((p) => `${p.width}x${p.height}`) }, null, 2));
 }
 
 // --------------------------------------------------------------------------- decide

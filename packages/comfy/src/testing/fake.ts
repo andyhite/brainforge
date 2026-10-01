@@ -6,6 +6,7 @@ export const FAULT_NAMES = [
   "submit-timeout-after-accept",
   "submit-timeout-before-accept",
   "view-truncate",
+  "view-truncate-late",
   "view-500-once",
   "history-missing",
   "server-restart",
@@ -20,7 +21,9 @@ const ONE_SHOT: ReadonlySet<FaultName> = new Set(["submit-timeout-after-accept",
 const BUNDLED_WORKFLOWS = ["krea2-still", "krea2-variation", "wan22-motion"];
 const STILL_SIZE = 512;
 const SEQUENCE_SIZE = 128;
-const SEQUENCE_MAX_FRAMES = 65;
+const SEQUENCE_MAX_FRAMES = 81;
+/** Downloads that `view-truncate-late` serves intact before it starts cutting them short. */
+const LATE_VIEWS = 4;
 
 export interface FakeComfyOptions {
   /** Default 0 = any free port. */
@@ -177,10 +180,19 @@ export async function createFakeComfy(options: FakeComfyOptions = {}): Promise<F
     }
     return 0;
   }
-  /** The canvas the graph asks for through an EmptySD3LatentImage, so requested sizes show up in the fake's images. */
+  /** The canvas the graph asks for through an empty latent node, so requested sizes show up in the fake's images. */
   function latentSize(graph: ComfyGraph): { width: number; height: number } | undefined {
     for (const node of Object.values(graph)) {
-      if (node.class_type === "EmptySD3LatentImage" && typeof node.inputs.width === "number" && typeof node.inputs.height === "number") {
+      if ((node.class_type === "EmptySD3LatentImage" || node.class_type === "EmptyLatentImage") && typeof node.inputs.width === "number" && typeof node.inputs.height === "number") {
+        return { width: node.inputs.width, height: node.inputs.height };
+      }
+    }
+    return undefined;
+  }
+  /** The canvas a WanFirstLastFrameToVideo node asks for: every frame of the returned sequence has exactly this size. */
+  function videoSize(graph: ComfyGraph): { width: number; height: number } | undefined {
+    for (const node of Object.values(graph)) {
+      if (node.class_type === "WanFirstLastFrameToVideo" && typeof node.inputs.width === "number" && typeof node.inputs.height === "number") {
         return { width: node.inputs.width, height: node.inputs.height };
       }
     }
@@ -209,7 +221,7 @@ export async function createFakeComfy(options: FakeComfyOptions = {}): Promise<F
         const n = (state.counters.get(key) ?? 0) + 1;
         state.counters.set(key, n);
         const filename = `${base}_${String(n).padStart(5, "0")}_.png`;
-        state.files.set(`output/${subfolder}/${filename}`, generateImage(seed, frameCount > 0 ? SEQUENCE_SIZE : latentSize(graph) ?? STILL_SIZE, matted, frame));
+        state.files.set(`output/${subfolder}/${filename}`, generateImage(seed, frameCount > 0 ? videoSize(graph) ?? SEQUENCE_SIZE : latentSize(graph) ?? STILL_SIZE, matted, frame));
         images.push({ filename, subfolder, type: "output" });
       }
       outputs[nodeId] = { images };
@@ -232,6 +244,7 @@ export async function createFakeComfy(options: FakeComfyOptions = {}): Promise<F
     state.timer = setTimeout(() => finish(entry), latencyMs);
   }
 
+  let lateViews = 0;
   function fire(name: FaultName): boolean {
     if (!faults.has(name)) return false;
     if (ONE_SHOT.has(name)) faults.delete(name);
@@ -287,7 +300,9 @@ export async function createFakeComfy(options: FakeComfyOptions = {}): Promise<F
     if (fire("view-500-once")) return new Response("injected failure", { status: 500 });
     const bytes = state.files.get(`${url.searchParams.get("type") ?? "output"}/${url.searchParams.get("subfolder") ?? ""}/${url.searchParams.get("filename") ?? ""}`);
     if (!bytes) return new Response("file not found", { status: 404 });
-    const body = faults.has("view-truncate") ? bytes.slice(0, Math.floor(bytes.length * 0.6)) : bytes;
+    // `view-truncate-late` lets the first few downloads through, then cuts every later one short: a sequence that dies midway.
+    const late = faults.has("view-truncate-late") && lateViews++ >= LATE_VIEWS;
+    const body = faults.has("view-truncate") || late ? bytes.slice(0, Math.floor(bytes.length * 0.6)) : bytes;
     return new Response(body as Uint8Array<ArrayBuffer>, { headers: { "content-type": "image/png" } });
   }
 
@@ -346,9 +361,15 @@ export async function createFakeComfy(options: FakeComfyOptions = {}): Promise<F
     port,
     injectFault(name) {
       if (name === "server-restart") restart();
-      else faults.add(name);
+      else {
+        if (name === "view-truncate-late") lateViews = 0;
+        faults.add(name);
+      }
     },
-    clearFault(name) { if (name) faults.delete(name); else faults.clear(); },
+    clearFault(name) {
+      if (!name || name === "view-truncate-late") lateViews = 0;
+      if (name) faults.delete(name); else faults.clear();
+    },
     faults: () => [...faults],
     prompts: () => [...state.entries.values()].map((e) => ({ ...e.prompt })),
     submissionCount: () => state.accepted,

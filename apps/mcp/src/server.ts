@@ -12,7 +12,12 @@ export interface McpOptions {
   serverUrl?: string;
 }
 
-const TOOL_TO_OPERATION: Record<string, OperationName> = Object.fromEntries(OPERATION_NAMES.map((name) => [name.replaceAll(".", "_"), name]));
+/** Tool name of an operation: `.` and `-` become `_` (`candidate.export-cleanup` -> `candidate_export_cleanup`). */
+export function toolName(name: string): string {
+  return name.replaceAll(/[.-]/g, "_");
+}
+
+const TOOL_TO_OPERATION: Record<string, OperationName> = Object.fromEntries(OPERATION_NAMES.map((name) => [toolName(name), name]));
 
 const InputSchemaShape = z.object({ properties: z.record(z.string(), z.unknown()).optional(), required: z.array(z.string()).optional() }).passthrough();
 const CallArguments = z.record(z.string(), z.unknown());
@@ -37,7 +42,7 @@ function buildTool(name: OperationName): Tool {
   const def = OPERATIONS[name];
   const shape = InputSchemaShape.parse(z.toJSONSchema(def.input, { io: "input", unrepresentable: "any" }));
   return {
-    name: name.replaceAll(".", "_"),
+    name: toolName(name),
     description: describeOperation(name),
     inputSchema: { ...shape, type: "object", properties: { ...shape.properties, ...EXTRA_PROPERTIES } },
   };
@@ -64,7 +69,7 @@ export function toToolResult(envelope: OperationResult): CallToolResult {
   if (error.recoveryActions.length > 0) {
     lines.push("Recovery:");
     for (const action of error.recoveryActions) {
-      lines.push(`- ${action.label}${action.operation ? ` (${action.operation.replaceAll(".", "_")})` : ""}${action.input !== undefined ? ` ${JSON.stringify(action.input)}` : ""}`);
+      lines.push(`- ${action.label}${action.operation ? ` (${toolName(action.operation)})` : ""}${action.input !== undefined ? ` ${JSON.stringify(action.input)}` : ""}`);
     }
   }
   if (error.details !== undefined) lines.push("Details:", JSON.stringify(error.details, null, 2));
@@ -153,10 +158,14 @@ export function buildInstructions(options: McpOptions): string {
     "8. Review: candidate_inspect / revision_inspect return the actual images as image content blocks (model-sized derivatives; the text lists each original fileId and anything not attached). revision_list status=open finds work waiting for you. After acting (editing specs, starting a variation) call revision_respond. NEVER revision_resolve or revision_waive unless the user told you to and policy allows.",
     "9. Human-only actions (policy confirmation, ComfyUI connection, granting budgets) must be done by the user in the Brainforge web UI; ask them.",
     "10. Concepts become production through concept_lock {assetId,candidateId,outputId}, which obeys the effective approval.conceptLock policy (usually the user locks in the web UI). If refused (HUMAN_AUTHORIZATION_REQUIRED / POLICY_PENDING), tell the user exactly which candidate and output to lock; do not retry. Never lock a concept the user did not choose. candidate_select is a choice, NOT approval.",
-    "11. step_list {assetId,branchId} shows what is ready. Deliverable generation (generation_plan/start with a deliverable stepId) needs a branchId and every dependsOn deliverable approved; blockers name the unmet dependency. Motion (kind animation) generation arrives in M4: expect WORKFLOW_UNAVAILABLE.",
+    "11. step_list {assetId,branchId} shows what is ready. Deliverable generation (generation_plan/start with a deliverable stepId) needs a branchId and every dependsOn deliverable approved; blockers name the unmet dependency.",
     "12. Review loop: review_list -> review_material {candidateId} (the visuals, including sheet region crops, arrive as image content blocks) -> judge the images against the deliverable description, requirements and exact prompt -> review_decide {candidateId,outputIds,requirementsHash (from review_material, never a stale one),decision,reasons (concrete; required to reject)}. When unsure call review_escalate {candidateId,outputIds,reason}: never guess; an escalation is not approval. Your decisions are recorded as agent decisions; never claim human approval. review_override is human-only. If review_material says you.canDecide is false, ask the user.",
+    "13. Motion (step kind animation): ready only when its start and end guide poses (pose deliverables, default the first approved pose dependency) are approved. generation_plan/start per step under a human budget; read plan.prompt (the motion text is prompt-bearing) and the guide-normalization transform first. When the job succeeds the candidate holds SOURCE frame outputs (stage source). NEVER review_decide-approve source frames as the deliverable: an animation step completes only when a PROCESSED output is selected and approved.",
+    "14. processing_plan {candidateId, outputId?, recipe?} -> READ plan: every recipe default with its source, source frame count, played frames, duration (preserved), output frame count at playbackFps, warnings (CLIPPED, EMPTY_FRAME, PIVOT_OUTSIDE, SCALE_CHANGED, LOOP_DISCONTINUITY, ATLAS_PAGES), blockers -> processing_start {planId, planHash}. The result is a NEW unapproved processed output next to the untouched source; a changed recipe/pivot/crop/fps never edits an earlier result. Compare cadences by planning/running processed outputs at playbackFps 12 and 16 (same duration, different frame count). One uniform scale per branch comes from the scale anchor: never fit per clip or per frame; if CLIPPED blocks, ask the user to enlarge the canvas or revise scale explicitly.",
+    "15. Review motion: review_material / candidate_inspect attach the contact sheet and first/last frame as image content blocks. output_inspect {outputId} lists every frame with its zero-based SOURCE frame index, duration and atlas rectangle: annotation_create frameRange uses SOURCE indices, never processed indices. Select the processed output with candidate_select {candidateId, outputId}, then review_decide on that output id.",
+    "16. External cleanup: candidate_export_cleanup {candidateId, outputId, stage} writes numbered PNGs + sidecar.json to work/cleanup/<id>/; the user edits them in an external tool; candidate_import_cleanup {parentCandidateId, parentOutputId, stage, frames:[{index,file}], notes, effortMinutes} creates a NEW unapproved child candidate (unlisted frames copied by hash). stage source keeps source size/count, then run processing_plan/processing_start on the new candidate; stage processed keeps the processed canvas, count and durations and is never cropped, scaled or resampled again. Wrong size/count/duplicate index/hash -> specific error, nothing written.",
     "The YAML text IS the image prompt (description, identity values, perspective, palette, artDirection; notes are never sent). Read plan.prompt from generation_plan and fix the YAML before generation_start.",
-    "The `brainforge` skill has the YAML format reference, references/generation-review.md and references/branches-review.md.",
+    "The `brainforge` skill has the YAML format reference, references/generation-review.md, references/branches-review.md and references/motion-processing.md.",
   ].join("\n");
 }
 

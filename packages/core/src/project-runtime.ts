@@ -6,6 +6,7 @@ import {
 } from "@brainforge/storage";
 import { OperationFailure, type IdempotencyStore, type ProjectHandle, type ProjectRegistry } from "./runtime.ts";
 import { GenerationScheduler, type SchedulerOptions } from "./generation/scheduler.ts";
+import { recoverPublications } from "./outputs/frames.ts";
 import { readAuthoredFile } from "./authored.ts";
 
 export type ProjectState = "open" | "closing";
@@ -264,7 +265,13 @@ export function createProjectRegistry(options: ProjectRegistryOptions = {}): Ope
       if (existing) return existing;
       let inflight = pending.get(root);
       if (!inflight) {
-        inflight = doOpen(root).then((p) => { open.set(root, p); startBackground(p); return p; }).finally(() => { pending.delete(root); });
+        inflight = doOpen(root).then(async (p) => {
+          // Finish or roll back interrupted frame publications before the scheduler can look at their jobs.
+          if (p.writable) await recoverPublications(p);
+          open.set(root, p);
+          startBackground(p);
+          return p;
+        }).finally(() => { pending.delete(root); });
         pending.set(root, inflight);
       }
       return inflight;

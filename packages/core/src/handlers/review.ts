@@ -1,13 +1,13 @@
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
-import { GenerationPlan, type Annotation, type Geometry, type Visual } from "@brainforge/contracts";
+import { GenerationPlan, type Annotation, type FrameRange, type Geometry, type Visual } from "@brainforge/contracts";
 import { renderAnnotated } from "@brainforge/media";
 import { paths, resolveIn, sha256, writeFileAtomic } from "@brainforge/storage";
 import { discoverAuthored } from "../authored.ts";
 import { policyView } from "../policy.ts";
 import {
-  annotationRow, annotationsFor, candidateRow, outputRows, outputVisuals, requirementsResolver, revisionRow, revisionsForCandidate, toAnnotation,
+  annotationRow, annotationsFor, candidateRow, encodeGeometry, outputRows, outputVisuals, requirementsResolver, revisionRow, revisionsForCandidate, toAnnotation,
   toCandidate, toRevision, type CandidateRow, type RevisionRow,
 } from "../review/records.ts";
 import { OperationFailure, type HandlerMap, type ProjectHandle } from "../runtime.ts";
@@ -22,6 +22,15 @@ function assertGeometryInBounds(g: Geometry): void {
   if (g.width <= 0 || g.height <= 0) throw new OperationFailure("INVALID_INPUT", "A rectangle note needs a positive width and height");
   if (g.x + g.width > 1 + EPS || g.y + g.height > 1 + EPS) {
     throw new OperationFailure("INVALID_INPUT", "The rectangle extends past the image edge (x + width and y + height must be at most 1)", { geometry: g });
+  }
+}
+
+function assertFrameRange(open: ProjectHandle, outputId: string, range: FrameRange): void {
+  const row = open.db.query<{ media_kind: string }, [string]>("SELECT media_kind FROM candidate_outputs WHERE output_id = ?").get(outputId);
+  if (row?.media_kind !== "frames") throw new OperationFailure("INVALID_INPUT", `Output ${outputId} is a still image; a frame range only applies to frame sequences`);
+  const last = open.db.query<{ last: number | null }, [string]>("SELECT MAX(source_frame) AS last FROM output_frames WHERE output_id = ?").get(outputId)?.last ?? -1;
+  if (range.end > last) {
+    throw new OperationFailure("INVALID_INPUT", `Frame range ${range.start}-${range.end} is past the last source frame this output plays (${last}); frames are zero-based source indices`, { lastSourceFrame: last });
   }
 }
 
@@ -82,7 +91,7 @@ export const reviewHandlers: HandlerMap = {
           runId: row.run_id, workflowId: plan.workflow.id, workflowVersion: plan.workflow.version, graphHash: plan.workflow.graphHash,
           specHashes: plan.inputs.specHashes, ...(plan.iterationInstructions === undefined ? {} : { iterationInstructions: plan.iterationInstructions }),
         },
-        visuals: outputVisuals(db, row.candidate_id),
+        visuals: await outputVisuals(open, row.candidate_id),
       },
     };
   },
@@ -104,13 +113,14 @@ export const reviewHandlers: HandlerMap = {
     const out = outputRows(open.db, cand.candidate_id).find((o) => o.output_id === input.outputId);
     if (!out) throw new OperationFailure("NOT_FOUND", `Output ${input.outputId} does not belong to candidate ${cand.candidate_id}`, { outputs: outputRows(open.db, cand.candidate_id).map((o) => o.output_id) });
     assertGeometryInBounds(input.geometry);
+    if (input.frameRange !== undefined) assertFrameRange(open, out.output_id, input.frameRange);
     const now = new Date().toISOString();
     const annotationId = newId("ann");
     const { revision } = open.transact(() => {
       open.db.query(
         `INSERT INTO annotations (annotation_id, candidate_id, output_id, output_hash, image_width, image_height, geometry_json, text, requires_revision, version, deleted, created_by, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?)`,
-      ).run(annotationId, cand.candidate_id, out.output_id, out.sha256, out.width, out.height, JSON.stringify(input.geometry), input.text, input.requiresRevision ? 1 : 0, context.actorId, now, now);
+      ).run(annotationId, cand.candidate_id, out.output_id, out.sha256, out.width, out.height, encodeGeometry(input.geometry, input.frameRange), input.text, input.requiresRevision ? 1 : 0, context.actorId, now, now);
       writeHistory(open, annotationId, context.actorId, now);
     }, [{ type: "annotation.changed", data: { annotationId, candidateId: cand.candidate_id, change: "created" }, actorId: context.actorId }]);
     return { data: { annotation: toAnnotation(annotationRow(open.db, annotationId)) }, revision };
@@ -119,14 +129,15 @@ export const reviewHandlers: HandlerMap = {
   "annotation.update": async ({ input, project, context }) => {
     const open = requireOpen(project);
     const current = loadForEdit(open, input.annotationId, input.expectedVersion);
-    if (input.text === undefined && input.geometry === undefined && input.requiresRevision === undefined) {
-      throw new OperationFailure("INVALID_INPUT", "Nothing to update: provide text, geometry or requiresRevision");
+    if (input.text === undefined && input.geometry === undefined && input.frameRange === undefined && input.requiresRevision === undefined) {
+      throw new OperationFailure("INVALID_INPUT", "Nothing to update: provide text, geometry, frameRange or requiresRevision");
     }
     if (input.geometry) assertGeometryInBounds(input.geometry);
+    if (input.frameRange !== undefined) assertFrameRange(open, current.outputId, input.frameRange);
     const now = new Date().toISOString();
     const { revision } = open.transact(() => {
       open.db.query("UPDATE annotations SET text = ?, geometry_json = ?, requires_revision = ?, version = version + 1, updated_at = ? WHERE annotation_id = ?").run(
-        input.text ?? current.text, JSON.stringify(input.geometry ?? current.geometry), (input.requiresRevision ?? current.requiresRevision) ? 1 : 0, now, current.annotationId,
+        input.text ?? current.text, encodeGeometry(input.geometry ?? current.geometry, input.frameRange ?? current.frameRange), (input.requiresRevision ?? current.requiresRevision) ? 1 : 0, now, current.annotationId,
       );
       writeHistory(open, current.annotationId, context.actorId, now);
     }, [{ type: "annotation.changed", data: { annotationId: current.annotationId, candidateId: current.candidateId, change: "updated" }, actorId: context.actorId }]);
@@ -214,7 +225,7 @@ export const reviewHandlers: HandlerMap = {
     const revision = toRevision(open.db, row);
     const cand = candidateRow(open.db, row.candidate_id);
     const notes = revision.annotationIds.map((id) => toAnnotation(annotationRow(open.db, id)));
-    const originals = outputVisuals(open.db, cand.candidate_id).filter((v) => revision.outputIds.includes(v.fileId));
+    const originals = await outputVisuals(open, cand.candidate_id, revision.outputIds);
     const set = await discoverAuthored(open.root);
     const styles: Record<string, string> = {};
     const hashes: Record<string, string> = {};

@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { ApprovalPolicy, AssetFamily, AuthoredKind } from "./authored.ts";
 import { NextAction, RecoveryAction } from "./envelope.ts";
-import { Annotation, Branch, Budget, Candidate, Decision, Escalation, GenerationPlan, Geometry, Job, JobState, OutputApproval, RevisionRequest, RevisionStatus, StepId, StepState, Visual } from "./generation.ts";
+import { Annotation, Branch, Budget, Candidate, Decision, Escalation, FrameRange, GenerationPlan, Geometry, Job, JobState, OutputApproval, RevisionRequest, RevisionStatus, StepId, StepState, Visual } from "./generation.ts";
+import { CleanupSidecar, OutputDetail, ProcessingPlan, RecipeRequest } from "./motion.ts";
 
 export { NextAction, RecoveryAction };
 
@@ -321,13 +322,13 @@ export const OPERATIONS = {
   },
   "candidate.favorite": { input: z.object({ candidateId: z.string(), favorite: z.boolean() }).strict(), data: z.object({ candidate: Candidate }), mutating: true, humanOnly: false, needsProject: true, summary: "Mark or unmark a favorite. Favorites are a shortlist only and never imply approval." },
   "annotation.create": {
-    input: z.object({ candidateId: z.string(), outputId: z.string(), geometry: Geometry, text: z.string().min(1).max(4000), requiresRevision: z.boolean().default(false) }).strict(),
+    input: z.object({ candidateId: z.string(), outputId: z.string(), geometry: Geometry, frameRange: FrameRange.optional(), text: z.string().min(1).max(4000), requiresRevision: z.boolean().default(false) }).strict(),
     data: z.object({ annotation: Annotation }),
     mutating: true, humanOnly: false, needsProject: true,
-    summary: "Attach a note to an exact output: whole image, a pin or a rectangle in normalized [0,1] coordinates. requiresRevision marks it as needing a fix before the step can complete.",
+    summary: "Attach a note to an exact output: whole image, a pin or a rectangle in normalized [0,1] coordinates. On a frame-sequence output pass frameRange (inclusive zero-based SOURCE frame indices) to anchor it to frames; the geometry then applies to those frames. requiresRevision marks it as needing a fix before the step can complete.",
   },
   "annotation.update": {
-    input: z.object({ annotationId: z.string(), expectedVersion: z.number().int(), text: z.string().min(1).max(4000).optional(), geometry: Geometry.optional(), requiresRevision: z.boolean().optional() }).strict(),
+    input: z.object({ annotationId: z.string(), expectedVersion: z.number().int(), text: z.string().min(1).max(4000).optional(), geometry: Geometry.optional(), frameRange: FrameRange.optional(), requiresRevision: z.boolean().optional() }).strict(),
     data: z.object({ annotation: Annotation }),
     mutating: true, humanOnly: false, needsProject: true,
     summary: "Edit a note. History is kept. Marking a previously resolved note as requiring revision reopens it.",
@@ -439,6 +440,43 @@ export const OPERATIONS = {
     data: z.object({ decisions: z.array(Decision), escalations: z.array(Escalation) }),
     mutating: false, humanOnly: false, needsProject: true,
     summary: "Every decision, override and escalation on a candidate, oldest first, with actor identity and reasons.",
+  },
+
+  // ---- M4: motion outputs, processing, cleanup
+  "output.inspect": {
+    input: z.object({ outputId: z.string() }).strict(),
+    data: z.object({ output: OutputDetail }),
+    mutating: false, humanOnly: false, needsProject: true,
+    summary: "One output in full. For a frame sequence or processed clip: every frame with source-frame index, duration and atlas rectangle, atlas pages, the recipe and its warnings, and its parent output. Frames are served by file id; indices are zero-based source frames.",
+  },
+  "processing.plan": {
+    input: z.object({ candidateId: z.string(), outputId: z.string().optional(), recipe: RecipeRequest.default({}) }).strict(),
+    data: z.object({ plan: ProcessingPlan }),
+    mutating: true, humanOnly: false, needsProject: true,
+    summary: "Plan processing of a source frame sequence (matted by default) into an export-rate clip without running it: resolved recipe with the source of every default, frame map with durations, canvas, pivot, foreground bounds, and warnings (clipping, empty frames, pivot outside, scale change, loop discontinuity). One uniform scale comes from the branch's approved scale reference, never from a frame's bounding box. Returns planId and planHash for processing.start. Never touches ComfyUI.",
+  },
+  "processing.start": {
+    input: z.object({ planId: z.string(), planHash: z.string() }).strict(),
+    data: z.object({ output: OutputDetail }),
+    mutating: true, humanOnly: false, needsProject: true,
+    summary: "Run an inspected processing plan. Creates a NEW unapproved processed output next to its untouched source (stage processed, parentOutputId set); a changed recipe, pivot, crop or fps never edits an earlier result and never inherits its approval. Publication is atomic and crash-safe: no partial clip is ever visible.",
+  },
+  "candidate.export-cleanup": {
+    input: z.object({ candidateId: z.string(), outputId: z.string(), stage: z.enum(["source", "processed"]) }).strict(),
+    data: z.object({ directory: z.string(), sidecar: CleanupSidecar }),
+    mutating: true, humanOnly: false, needsProject: true,
+    summary: "Write an output's frames as numbered PNGs plus a sidecar into brainforge/assets/<asset>/work/cleanup/<id>/ for editing in an external tool. Originals are never touched. The sidecar records hashes, canvas, durations and the source-frame map the import verifies.",
+  },
+  "candidate.import-cleanup": {
+    input: z.object({
+      parentCandidateId: z.string(), parentOutputId: z.string(), stage: z.enum(["source", "processed"]),
+      /** Replacements by output frame index (index 0 for a still); unlisted frames are copied by hash from the parent. */
+      frames: z.array(z.object({ index: z.number().int().min(0), file: z.string().min(1) })).min(1),
+      notes: z.string().max(4000).default(""), effortMinutes: z.number().nonnegative().optional(),
+    }).strict(),
+    data: z.object({ candidate: Candidate, output: OutputDetail }),
+    mutating: true, humanOnly: false, needsProject: true,
+    summary: "Import corrected PNGs as a NEW unapproved child candidate with parent ids, file hashes, notes and effort recorded. Source-stage imports keep the source dimensions and count and are processed afterwards through processing.plan; processed-stage imports keep the processed canvas, count and durations and are never cropped, scaled or resampled again. Dimension, count, index or hash mismatches are refused with the specific conflict; originals stay intact and approval is never inherited.",
   },
 } as const satisfies Record<string, OperationDef>;
 

@@ -50,6 +50,7 @@ Inputs are JSON objects; unknown keys are rejected. Every tool also accepts opti
 |Generation|`budget_list`, `step_inspect`, `generation_plan` (no submit), `generation_start {planId, planHash, budgetId}`, `job_list/inspect/reconcile/retry/cancel`, `candidate_list/inspect/favorite`|
 |Review|`annotation_create/update/delete/list`, `revision_list {status}`, `revision_inspect` (images), `revision_create`, `revision_respond`; `revision_resolve/waive` only if the user says so|
 |Branches/review|`concept_lock`, `branch_list`, `step_list`, `candidate_select`, `review_list/material/decide/escalate/history`; `review_override` is human only. See [branches-review](references/branches-review.md)|
+|Motion|`output_inspect` (frames with source indices), `processing_plan` → `processing_start`, `candidate_export_cleanup` / `candidate_import_cleanup`. See [motion-processing](references/motion-processing.md)|
 |Human only|`budget_grant`, `budget_revoke`, `policy_authorize {requestedPolicyHash}`, `connection_set {comfyUrl}`, `review_override`|
 
 `spec_write` accepts only `brainforge/project.yaml`, `brainforge/styles/<style-id>.yaml`, `brainforge/assets/<asset-id>/asset.yaml`. Any other path → `INVALID_INPUT`.
@@ -67,6 +68,7 @@ Inputs are JSON objects; unknown keys are rejected. Every tool also accepts opti
 9. Reference images: `reference_import` copies them into the project. NEVER copy files into `assets/` or `brainforge/` yourself.
 10. Before you start a generation: `generation_plan`, read `plan.prompt` and `promptSources` in full, check every sentence against "Writing prompt-bearing YAML", fix the YAML via `spec_write`, re-plan. Only then ask the user / `generation_start`.
 11. Concept chosen: ask the user to lock it (`concept_lock` obeys policy; if refused name the candidate/output for the UI). Then `step_list` shows ready deliverables; plan/start with `branchId` + `stepId`. Review: `review_list` → `review_material` → judge → `review_decide` (with its `requirementsHash`) or `review_escalate`. Details: [branches-review](references/branches-review.md).
+12. Motion: an animation step needs its start/end guide poses approved. After generation only SOURCE frames exist: `processing_plan` → read it (sources, frame count, duration, warnings) → `processing_start` → NEW unapproved processed output → `candidate_select` it → review/decide that id. Compare 12 vs 16 fps outputs; one scale anchor per branch. Details: [motion-processing](references/motion-processing.md).
 
 ## Writing prompt-bearing YAML
 
@@ -74,7 +76,7 @@ The YAML text IS the image prompt. The model (Krea, cfg 1) obeys what you descri
 
 |Sent to the model|NEVER sent|
 |---|---|
-|asset `description`, EVERY `identity.*` value (unlabelled), effective `perspective` and `palette`, project `artDirection`, style `palette` entries, a fixed single-figure framing sentence; plus the generated deliverable's own `description` (only that one)|asset `notes`, project `notes`, style `description`, other deliverables' text, names, ids|
+|asset `description`, EVERY `identity.*` value (unlabelled), effective `perspective` and `palette`, project `artDirection`, style `palette` entries, a fixed single-figure framing sentence; plus the generated deliverable's own `description` (only that one) or, for an animation, its `animation.motion`|asset `notes`, project `notes`, style `description`, other deliverables' text, names, ids|
 
 - Describe the picture, not the design process. Put status, proposals, open questions, doc references, lore, setting in `notes`.
 - Every feature gets shape + colour + position: "two big round white eyes with dark pupils in the middle of the front of the brain". Never "large integrated eyes".
@@ -105,7 +107,8 @@ The YAML text IS the image prompt. The model (Krea, cfg 1) obeys what you descri
 - Turnaround/front-profile-rear language in `description`/`identity`/`perspective`: the model draws several figures.
 - Starting a generation without reading `plan.prompt` and `promptSources` first.
 - Calling `review_decide` without `review_material` first, or with a stale `requirementsHash`; asserting human approval for your own decision; treating escalation or `candidate_select` as approval.
-- Locking a concept the user did not choose; expecting deliverable generation without a branch or approved dependency; expecting motion before M4.
+- Locking a concept the user did not choose; expecting deliverable generation without a branch or approved dependency.
+- Approving source frames as an animation; annotating processed frame indices (use source indices); per-clip scaling; expecting a changed recipe to edit an old output.
 
 ## Error codes
 

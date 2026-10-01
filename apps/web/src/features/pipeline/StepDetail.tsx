@@ -8,6 +8,7 @@ import { ActiveJobsStrip } from "../jobs/JobsPage.tsx";
 import { BudgetPanel } from "../generation/BudgetPanel.tsx";
 import { GenerateDialog } from "../generation/GenerateDialog.tsx";
 import { BackdropPicker, outputUrl, pickOutput, useBackdrop } from "../generation/media.tsx";
+import { formatMs, outputLabel } from "../animation/timing.ts";
 
 const REGION_ORDER = ["front", "profile", "rear"];
 
@@ -40,13 +41,17 @@ function SheetCrops({ candidate, outputId, projectId }: { candidate: Candidate; 
 function CandidateRow({ candidate, step, branchId, projectId, assetId }: { candidate: Candidate; step: StepState; branchId: string; projectId: string; assetId: string }) {
   const select = useMutationOperation("candidate.select");
   const [backdrop] = useBackdrop();
-  const output = pickOutput(candidate, "matted");
+  const animation = step.kind === "animation";
+  const processed = candidate.outputs.filter((o) => o.stage === "processed");
+  const output = animation ? processed[processed.length - 1] ?? pickOutput(candidate, "matted") : pickOutput(candidate, "matted");
+  const needsProcessing = animation && output?.stage !== "processed";
+  const candidateLink = `/assets/${encodeURIComponent(assetId)}/candidates/${encodeURIComponent(candidate.candidateId)}${animation && output ? `?output=${encodeURIComponent(output.outputId)}` : ""}`;
   const approval = output ? candidate.approvals.find((item) => item.outputId === output.outputId) : undefined;
   const isSelected = step.selected?.candidateId === candidate.candidateId && (step.selected.outputId === undefined || step.selected.outputId === output?.outputId);
   return (
     <li className={`candidate-card${isSelected ? " selected" : ""}`} style={{ gridColumn: step.kind === "reference-sheet" ? "1 / -1" : undefined }}>
       <div className="stack" style={{ alignItems: "stretch", gap: 16 }}>
-        <Link to={`/assets/${encodeURIComponent(assetId)}/candidates/${encodeURIComponent(candidate.candidateId)}`} className="candidate-link" aria-label={`Open ${candidate.label}`} style={{ maxWidth: 640 }}>
+        <Link to={candidateLink} className="candidate-link" aria-label={`Open ${candidate.label}`} style={{ maxWidth: 640 }}>
           <div className={`stage-bg ${backdrop} candidate-thumb`} style={{ aspectRatio: output ? `${output.width} / ${output.height}` : "1 / 1" }}>
             {output ? <img src={outputUrl(projectId, output.fileId, 640)} width={output.width} height={output.height} loading="lazy" alt={`${candidate.label}${step.kind === "reference-sheet" ? ", full sheet" : ""}`} /> : <span className="secondary">No image output</span>}
           </div>
@@ -56,6 +61,7 @@ function CandidateRow({ candidate, step, branchId, projectId, assetId }: { candi
             <strong>{candidate.label}</strong>
             {isSelected ? <Status tone="info">Selected</Status> : null}
           </div>
+          {output && output.mediaKind === "frames" ? <p className="secondary" style={{ margin: 0 }}>{outputLabel(output)}{output.totalDurationMs !== undefined ? ` · ${formatMs(output.totalDurationMs)}` : ""}</p> : null}
           <div className="secondary">
             {approval && approval.state !== "none"
               ? <>{approval.state}{approval.decidedByType ? ` by ${approval.decidedByType}` : ""}{approval.overridden ? " (overridden)" : ""}{approval.applicable ? "" : " — stale, needs reassessment"}</>
@@ -64,12 +70,14 @@ function CandidateRow({ candidate, step, branchId, projectId, assetId }: { candi
           </div>
           {step.kind === "reference-sheet" && output ? <SheetCrops candidate={candidate} outputId={output.outputId} projectId={projectId} /> : null}
           <div className="row">
-            <button type="button" disabled={isSelected || !output || select.isPending} onClick={() => void select.mutateAsync({ input: { branchId, deliverableId: step.stepId, candidateId: candidate.candidateId, ...(output ? { outputId: output.outputId } : {}) } })}>
+            <button type="button" disabled={isSelected || !output || needsProcessing || select.isPending} onClick={() => void select.mutateAsync({ input: { branchId, deliverableId: step.stepId, candidateId: candidate.candidateId, ...(output ? { outputId: output.outputId } : {}) } })}>
               {isSelected ? "In use" : "Use this one"}
             </button>
-            <Link to={`/assets/${encodeURIComponent(assetId)}/candidates/${encodeURIComponent(candidate.candidateId)}`} className="button">Review</Link>
+            <Link to={candidateLink} className="button">{needsProcessing ? "Process and review" : "Review"}</Link>
           </div>
-          <p className="secondary" style={{ margin: 0 }}>Using a candidate is not approval; it still needs a review decision.</p>
+          {animation
+            ? <p className="secondary" style={{ margin: 0 }}>{needsProcessing ? "Raw frames cannot complete this step. Process them into an export clip first." : `Showing the latest of ${processed.length} processed ${processed.length === 1 ? "clip" : "clips"}.`} Using a clip is not approval.</p>
+            : <p className="secondary" style={{ margin: 0 }}>Using a candidate is not approval; it still needs a review decision.</p>}
           {select.error ? <NetworkProblem error={select.error} /> : null}
           {select.data && !select.data.ok ? <ErrorBanner error={select.data.error} /> : null}
         </div>
@@ -96,7 +104,7 @@ export function StepDetail({ assetId, step, branchId }: { assetId: string; step:
           <button type="button" className="primary" disabled={!canGenerate} onClick={() => setDialog(true)}>{candidates.length === 0 ? "Generate" : "Generate more"}</button>
         </div>
         {step.blockers.map((blocker) => <Banner key={blocker.code + blocker.message} tone="warn" title={blocker.message} />)}
-        {step.kind === "animation" && step.state === "ready" ? <p className="secondary">Ready by its dependencies. The plan shows whether motion generation is available yet.</p> : null}
+        {step.kind === "animation" && step.state === "ready" ? <p className="secondary">Ready by its dependencies. Generating makes raw frames; you then process them into an export clip, and only a reviewed processed clip completes this step.</p> : null}
         {step.needsReassessment ? <Banner tone="warn" title="Needs reassessment"><ul style={{ margin: 0, paddingLeft: 20 }}>{step.reassessmentReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></Banner> : null}
       </section>
 
@@ -122,7 +130,7 @@ export function StepDetail({ assetId, step, branchId }: { assetId: string; step:
 
       {dialog ? (
         <GenerateDialog
-          assetId={assetId} stepId={step.stepId} branchId={branchId} candidates={candidates} initial={{ mode: "fresh" }}
+          assetId={assetId} stepId={step.stepId} stepKind={step.kind} branchId={branchId} candidates={candidates} initial={{ mode: "fresh" }}
           onClose={() => setDialog(false)}
           onGrantBudget={() => { setGrantOpen(true); requestAnimationFrame(() => document.getElementById("budgets")?.scrollIntoView({ block: "start" })); }}
         />

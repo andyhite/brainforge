@@ -271,3 +271,53 @@ fieldset { border: 0; padding: 0; margin: 0; }
 .pipeline-step.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 .crop-row { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 200px)); gap: calc(var(--u) * 3); }
 .crop-row figure { margin: 0; }
+
+/* animation: clip player, compare, outputs list */
+.clip-player { display: grid; gap: calc(var(--u) * 2); }
+.clip-stage-wrap { border: 1px solid var(--border); border-radius: var(--radius); padding: calc(var(--u) * 3); overflow: auto; background: var(--surface-2); }
+.clip-stages { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; outline-offset: 4px; }
+.clip-fig { margin: 0; display: grid; gap: 6px; justify-items: center; }
+.clip-box { position: relative; line-height: 0; overflow: hidden; }
+.clip-box canvas { display: block; }
+.clip-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.clip-baseline { stroke: #e0245e; stroke-width: 1; stroke-dasharray: 4 3; }
+.clip-pivot { stroke: #e0245e; stroke-width: 2; }
+.clip-annot { position: absolute; inset: 0; line-height: normal; }
+.clip-annot.drawing { cursor: crosshair; touch-action: none; }
+.clip-annot .annot-marker { position: absolute; }
+.clip-error { padding: 16px; }
+.frame-stepper .row { align-items: center; }
+.frame-notes-track { display: flex; gap: 1px; height: 6px; margin-top: 2px; }
+.frame-notes-track span { flex: 1; background: var(--border); }
+.frame-notes-track span.has-note { background: var(--accent); }
+.outputs-list { margin-bottom: calc(var(--u) * 3); }
+.outputs-children { margin: 6px 0 0 20px; padding-left: 12px; border-left: 2px solid var(--border); }
+.output-row { padding: 4px 0; }
+.output-row.selected { background: var(--accent-soft); border-radius: var(--radius); padding: 4px 8px; }
+
+/* processing: recipe form, previews, lineage */
+.proc-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: calc(var(--u) * 6); align-items: start; }
+@media (max-width: 1100px) { .proc-layout { grid-template-columns: minmax(0, 1fr); } }
+.proc-side { position: sticky; top: calc(var(--u) * 3); }
+@media (max-width: 1100px) { .proc-side { position: static; } }
+.recipe-group { border: 1px solid var(--border); border-radius: var(--radius); padding: calc(var(--u) * 3) calc(var(--u) * 4); margin-bottom: calc(var(--u) * 4); }
+.recipe-group legend { font-weight: 650; font-size: 13px; color: var(--text-muted); padding: 0 var(--u); }
+.field.compact { margin-bottom: calc(var(--u) * 2); }
+.field-source { margin-top: 0; }
+.field-error { color: var(--danger); font-weight: 600; margin: 0; }
+.plain-list { list-style: none; margin: 0 0 calc(var(--u) * 3); padding: 0; }
+.plain-list > li + li { margin-top: calc(var(--u) * 2); }
+.block { display: block; overflow-wrap: anywhere; }
+.pivot-figure { margin: 0 0 calc(var(--u) * 4); }
+.pivot-stage { position: relative; max-width: 560px; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.pivot-stage.canvas-stage { max-width: 320px; }
+.pivot-stage img { display: block; width: 100%; height: auto; }
+.pivot-overlay { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; }
+.lineage-root, .lineage-children { list-style: none; margin: 0; padding: 0; }
+.lineage-children { margin-left: calc(var(--u) * 6); border-left: 2px solid var(--border); padding-left: calc(var(--u) * 3); }
+.lineage-item { margin-top: calc(var(--u) * 3); }
+.lineage-row { display: flex; flex-wrap: wrap; gap: calc(var(--u) * 2) calc(var(--u) * 4); justify-content: space-between; align-items: center; padding: calc(var(--u) * 2) calc(var(--u) * 3); border: 1px solid var(--border); border-radius: var(--radius); }
+.lineage-row.current { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.clip-fig figcaption { width: 0; min-width: 100%; text-align: center; }
+.proc-form, .proc-side { min-width: 0; overflow-wrap: anywhere; }
+.field.compact input[type="number"] { width: 9em; }

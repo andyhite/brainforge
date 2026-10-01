@@ -1,4 +1,4 @@
-import type { Deliverable, PlanBlocker } from "@brainforge/contracts";
+import type { Deliverable, MotionPlan, PlanBlocker } from "@brainforge/contracts";
 import type { AuthoredSet } from "../authored.ts";
 import { buildPipeline } from "../pipeline.ts";
 import { computeSteps } from "../pipeline/steps.ts";
@@ -6,6 +6,7 @@ import { selectedOutput } from "../review/requirements.ts";
 import type { OpenProject } from "../project-runtime.ts";
 import type { PinnedReference } from "./plan.ts";
 import { readPinnedReference } from "./references.ts";
+import { WAN_CANVAS, resolveMotion } from "./motion.ts";
 
 export const DELIVERABLE_WORKFLOW = "krea2-variation";
 /** Codes computeSteps reports that make a step unrunnable; they carry over to the plan unchanged. */
@@ -24,6 +25,12 @@ export interface DeliverableInputs {
   size?: { width: number; height: number };
   /** Regions of a reference sheet to crop at publication. */
   crops: { id: string; x: number; y: number; width: number; height: number }[];
+  /** Extra hash-pinned images the workflow consumes by role (an animation's `start_pose` and `end_pose`). */
+  references: PinnedReference[];
+  /** Workflow values this step fixes (an animation's `length`). */
+  values?: Record<string, number>;
+  /** Present for animations: guides, scale anchor and frame count. */
+  motion?: MotionPlan;
 }
 
 interface CropRow { file_id: string; sha256: string; region_id: string }
@@ -45,7 +52,7 @@ function sheetSize(regions: readonly { x: number; y: number; width: number; heig
  * alone; otherwise it is conditioned on the branch's locked concept output alone.
  */
 export async function resolveDeliverable(project: OpenProject, set: AuthoredSet, assetId: string, stepId: string, branchId: string | undefined): Promise<DeliverableInputs> {
-  const out: DeliverableInputs = { blockers: [], notes: [], index: -1, crops: [] };
+  const out: DeliverableInputs = { blockers: [], notes: [], index: -1, crops: [], references: [] };
   const spec = set.assets.find((a) => a.fileId === assetId)?.spec;
   const node = buildPipeline(spec).byId.get(stepId);
   const index = spec?.deliverables.findIndex((d) => d.id === stepId) ?? -1;
@@ -69,18 +76,27 @@ export async function resolveDeliverable(project: OpenProject, set: AuthoredSet,
     out.blockers.push({ code: "NO_BRANCH", message: `Asset ${assetId} has no branch ${branchId}.`, recoveryActions: [{ label: "List branches", operation: "branch.list", input: { assetId } }] });
   }
 
-  if (branch) {
-    const step = (await computeSteps(project, assetId, branchId)).find((s) => s.stepId === stepId);
-    for (const b of step?.blockers ?? []) if (STEP_BLOCKERS.has(b.code)) out.blockers.push(b);
-  }
-  if (node.deliverable.kind === "animation") {
-    out.blockers.push({
-      code: "WORKFLOW_UNAVAILABLE",
-      message: `Motion generation arrives in milestone M4; "${stepId}" is an animation, and no Wan workflow can be planned yet.`,
-      recoveryActions: [{ label: "See the step's state", operation: "step.inspect", input: { assetId, stepId, ...(branchId ? { branchId } : {}) } }],
-    });
-  }
+  const steps = branch && branchId ? await computeSteps(project, assetId, branchId) : [];
+  for (const b of steps.find((s) => s.stepId === stepId)?.blockers ?? []) if (STEP_BLOCKERS.has(b.code)) out.blockers.push(b);
   if (!branch || !branchId) return out;
+
+  // --- motion: Wan takes two hash-pinned, normalized guide poses instead of a single reference
+  if (node.deliverable.kind === "animation") {
+    if (!node.deliverable.animation) {
+      out.blockers.push({ code: "STEP_BLOCKED", message: `${stepId} is an animation but has no animation block (motion text) in asset.yaml.`, recoveryActions: [{ label: "Read the asset definition", operation: "spec.read", input: { path: `brainforge/assets/${assetId}/asset.yaml` } }] });
+      return out;
+    }
+    out.size = { width: WAN_CANVAS, height: WAN_CANVAS };
+    const motion = await resolveMotion(project, set, assetId, spec, { ...node.deliverable, animation: node.deliverable.animation }, branchId, { id: branch.concept_output_id, sha256: branch.concept_output_hash }, steps);
+    out.blockers.push(...motion.blockers);
+    out.notes.push(...motion.notes);
+    out.references.push(...motion.references);
+    if (motion.motion) {
+      out.motion = motion.motion;
+      out.values = { length: motion.motion.frameCount };
+    }
+    return out;
+  }
 
   // --- canvas
   const regions = node.deliverable.kind === "reference-sheet" ? node.deliverable.regions ?? [] : [];

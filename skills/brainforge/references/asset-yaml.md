@@ -37,7 +37,7 @@ Schema `brainforge.asset.v2`. `.strict()` everywhere. `id` MUST equal the parent
 |`ui`|no|`{state?: string, nineSlice?{left,top,right,bottom: ints>=0}}`|
 |`regions`|no|only for `reference-sheet`: `[{id: kebab, x,y: int>=0, width,height: int>0}]` in source pixels|
 
-Animation timing: exact generation size, required images and `4n+1` frame counts come from the workflow; do not guess them. `animation.startReference`/`endReference` name a guide deliverable (e.g. `idle-rest`).
+Animation timing: exact generation size, required images and `4n+1` frame counts come from the workflow; `sourceFrameCount` must be `4n+1` (5..81). `animation.startReference`/`endReference` name a POSE deliverable in `dependsOn` (e.g. `idle-rest`; default: the first approved pose dependency). `animation.motion` is prompt-bearing: one concrete positive sentence of what moves. `playbackFps` is the export rate (processing resamples, preserving duration). Full guide: [motion-processing](motion-processing.md).
 
 Precedence for settings: project `defaults` → `familyDefaults` → asset `overrides` → deliverable `overrides`. Scalars/arrays replace, objects merge. Check with `settings_inspect {assetId, deliverableId}`.
 

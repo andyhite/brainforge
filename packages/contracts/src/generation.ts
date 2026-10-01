@@ -38,6 +38,10 @@ export const Geometry = z.discriminatedUnion("kind", [
 ]);
 export type Geometry = z.infer<typeof Geometry>;
 
+/** Inclusive zero-based SOURCE frame indices a note applies to (a frame sequence output). A single frame has start = end. */
+export const FrameRange = z.object({ start: z.number().int().min(0), end: z.number().int().min(0) }).refine((r) => r.end >= r.start, { message: "end must be at least start" });
+export type FrameRange = z.infer<typeof FrameRange>;
+
 export const Annotation = z.object({
   annotationId: z.string(),
   candidateId: z.string(),
@@ -47,6 +51,8 @@ export const Annotation = z.object({
   imageWidth: z.number().int(),
   imageHeight: z.number().int(),
   geometry: Geometry,
+  /** Present only for notes on frame-sequence outputs; anchored to source frames. Absent on stills. */
+  frameRange: FrameRange.optional(),
   text: z.string(),
   requiresRevision: z.boolean(),
   /** Increments on each edit; used as `expectedVersion`. */
@@ -95,10 +101,24 @@ export const CandidateOutput = z.object({
   outputId: z.string(),
   role: z.enum(["untouched", "matted"]),
   fileId: z.string(),
+  /** For `frames` outputs: sha256 over the ordered `index:frameSha256` lines (the manifest hash). */
   sha256: Sha256,
+  /** For `frames` outputs: the frame canvas. */
   width: z.number().int(),
   height: z.number().int(),
   mediaType: z.string(),
+  /** `source` = what the model/importer produced; `processed` = the result of a processing recipe (never replaces its source). */
+  stage: z.enum(["source", "processed"]).default("source"),
+  /** `frames` outputs are ordered frame sequences (`output.inspect` lists them); `fileId` then serves frame 0. */
+  mediaKind: z.enum(["image", "frames"]).default("image"),
+  frameCount: z.number().int().optional(),
+  /** Source frames per second of a frame sequence. */
+  sourceFps: z.number().positive().optional(),
+  /** Playback rate of a processed clip. */
+  playbackFps: z.number().positive().optional(),
+  totalDurationMs: z.number().optional(),
+  parentOutputId: z.string().optional(),
+  recipeHash: Sha256.optional(),
 });
 export type CandidateOutput = z.infer<typeof CandidateOutput>;
 
@@ -233,6 +253,54 @@ export type Budget = z.infer<typeof Budget>;
 export const PlanBlocker = z.object({ code: z.string(), message: z.string(), recoveryActions: z.array(RecoveryAction) });
 export type PlanBlocker = z.infer<typeof PlanBlocker>;
 
+/** One guide pose (Wan start or end image): the approved pose output and where its normalized copy sits in the Wan canvas. */
+export const MotionGuide = z.object({
+  role: z.enum(["start", "end"]),
+  deliverableId: z.string(),
+  /** The selected, approved pose output (served by the files route). */
+  outputId: z.string(),
+  originalFileId: z.string(),
+  /** Hash of the approved original; the normalized copy is derived from exactly these bytes. */
+  sha256: Sha256,
+  transform: z.object({
+    scale: z.number().positive(),
+    /** Top-left of the scaled guide in the Wan canvas, in canvas pixels. */
+    offsetX: z.number().int(),
+    offsetY: z.number().int(),
+    /** Foreground bounds measured on the original, in original pixels. */
+    sourceBounds: z.object({ x: z.number().int(), y: z.number().int(), width: z.number().int(), height: z.number().int() }),
+  }),
+});
+export type MotionGuide = z.infer<typeof MotionGuide>;
+
+export const MotionPlan = z.object({
+  motion: z.string(),
+  /** Wan frame count (4n+1). */
+  frameCount: z.number().int(),
+  sourceFps: z.number().positive(),
+  width: z.number().int(),
+  height: z.number().int(),
+  loop: z.boolean(),
+  /** What the default processing recipe will do with the closing frame of the clip. */
+  closingFrame: z.enum(["keep", "exclude-last"]),
+  /**
+   * One uniform scale for the branch, measured once on the scale-anchor reference: `scale` maps reference pixels to
+   * Wan-canvas pixels so the standing figure is `subjectHeightPx` tall there; `feet` is where each guide's bottom-centre lands.
+   */
+  guideNormalization: z.object({
+    scale: z.number().positive(),
+    feet: z.object({ x: z.number(), y: z.number() }),
+    canvas: z.object({ width: z.number().int(), height: z.number().int() }),
+    referenceOutputId: z.string(),
+    referenceHash: Sha256,
+    sourceStandingHeightPx: z.number().positive(),
+    targetStandingHeightPx: z.number().positive(),
+    subjectHeightPx: z.number().positive(),
+  }),
+  guides: z.array(MotionGuide).min(1),
+});
+export type MotionPlan = z.infer<typeof MotionPlan>;
+
 export const GenerationPlan = z.object({
   planId: z.string(),
   /** Content hash of everything that defines the plan; start must present it back. */
@@ -267,6 +335,8 @@ export const GenerationPlan = z.object({
   notes: z.array(z.string()).default([]),
   /** Reference-sheet regions (source pixels of the generated sheet) cropped into separately hashed files at publication. */
   crops: z.array(z.object({ id: z.string(), x: z.number().int(), y: z.number().int(), width: z.number().int().positive(), height: z.number().int().positive() })).default([]),
+  /** Present for animation steps: what Wan is asked to do and how the guide poses were normalized into its canvas. */
+  motion: MotionPlan.optional(),
   createdAt: z.string(),
 });
 export type GenerationPlan = z.infer<typeof GenerationPlan>;

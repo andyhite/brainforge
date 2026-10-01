@@ -43,7 +43,7 @@ export type FileLookup =
   | { kind: "not-found"; message: string }
   | { kind: "missing"; message: string };
 
-interface PathRow { path: string }
+interface PathRow { path: string; media_type?: string }
 
 /**
  * Registered ID → media file: a candidate output, sheet region crop, annotated review render, reference or retained artifact.
@@ -51,14 +51,18 @@ interface PathRow { path: string }
  */
 export async function lookupRegisteredFile(project: ProjectHandle, fileId: string): Promise<FileLookup> {
   const row =
-    project.db.query<PathRow, [string]>("SELECT path FROM candidate_outputs WHERE output_id = ?").get(fileId)
+    project.db.query<PathRow, [string]>("SELECT path FROM candidate_outputs WHERE output_id = ? AND media_kind = 'image'").get(fileId)
+    // A frame sequence's own id serves its first frame.
+    ?? project.db.query<PathRow, [string]>("SELECT f.path AS path FROM candidate_outputs o JOIN output_frames f ON f.output_id = o.output_id AND f.idx = 0 WHERE o.output_id = ? AND o.media_kind = 'frames'").get(fileId)
+    ?? project.db.query<PathRow, [string]>("SELECT path FROM output_frames WHERE file_id = ?").get(fileId)
+    ?? project.db.query<PathRow, [string]>("SELECT path, media_type FROM output_files WHERE file_id = ?").get(fileId)
     ?? project.db.query<PathRow, [string]>("SELECT path FROM output_crops WHERE file_id = ?").get(fileId)
     ?? project.db.query<PathRow, [string]>("SELECT path FROM review_files WHERE file_id = ?").get(fileId)
     ?? project.db.query<PathRow, [string]>("SELECT path FROM reference_records WHERE reference_id = ?").get(fileId)
     ?? project.db.query<PathRow, [string]>("SELECT path FROM artifact_records WHERE artifact_id = ?").get(fileId);
   if (!row) return { kind: "not-found", message: `No registered file ${fileId}` };
-  const mediaType = MEDIA_TYPES[extname(row.path).toLowerCase()];
-  if (!mediaType) return { kind: "not-found", message: `File ${fileId} is not an image or video` };
+  const mediaType = row.media_type ?? MEDIA_TYPES[extname(row.path).toLowerCase()];
+  if (!mediaType) return { kind: "not-found", message: `File ${fileId} is not an image, video or animation document` };
   let abs: string;
   try {
     abs = await resolveIn(project.root, row.path);

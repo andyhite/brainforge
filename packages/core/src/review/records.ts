@@ -1,8 +1,9 @@
 import type { Database } from "bun:sqlite";
-import { Geometry, type Annotation, type Candidate, type CandidateOutput, type RevisionRequest, type RevisionResponse, type Visual } from "@brainforge/contracts";
+import { FrameRange, Geometry, type Annotation, type Candidate, type CandidateOutput, type RevisionRequest, type RevisionResponse, type Visual } from "@brainforge/contracts";
 import { OperationFailure } from "../runtime.ts";
 import { discoverAuthored } from "../authored.ts";
 import type { OpenProject } from "../project-runtime.ts";
+import { frameVisuals, outputRow as frameOutputRow } from "../outputs/frames.ts";
 import { standingApproval } from "./authority.ts";
 import { stepRequirementsHash } from "./requirements.ts";
 
@@ -10,7 +11,11 @@ export interface CandidateRow {
   candidate_id: string; asset_id: string; step_id: string; run_id: string; job_id: string; parent_candidate_id: string | null;
   label: string; seed: number | null; prompt: string; favorite: number; created_at: string; branch_id: string | null;
 }
-export interface OutputRow { output_id: string; candidate_id: string; role: "untouched" | "matted"; file_id: string; path: string; sha256: string; width: number; height: number; media_type: string }
+export interface OutputRow {
+  output_id: string; candidate_id: string; role: "untouched" | "matted"; file_id: string; path: string; sha256: string; width: number; height: number; media_type: string;
+  stage: "source" | "processed"; media_kind: "image" | "frames"; frame_count: number | null; source_fps: number | null; playback_fps: number | null;
+  total_duration_ms: number | null; parent_output_id: string | null; recipe_hash: string | null;
+}
 interface AnnotationRow {
   annotation_id: string; candidate_id: string; output_id: string; output_hash: string; image_width: number; image_height: number;
   geometry_json: string; text: string; requires_revision: number; version: number; deleted: number; created_by: string; created_at: string; updated_at: string;
@@ -29,7 +34,16 @@ export function outputRows(db: Database, candidateId: string): OutputRow[] {
 }
 
 export function toOutput(r: OutputRow): CandidateOutput {
-  return { outputId: r.output_id, role: r.role, fileId: r.file_id, sha256: r.sha256, width: r.width, height: r.height, mediaType: r.media_type };
+  return {
+    outputId: r.output_id, role: r.role, fileId: r.file_id, sha256: r.sha256, width: r.width, height: r.height, mediaType: r.media_type,
+    stage: r.stage, mediaKind: r.media_kind,
+    ...(r.frame_count !== null ? { frameCount: r.frame_count } : {}),
+    ...(r.source_fps !== null ? { sourceFps: r.source_fps } : {}),
+    ...(r.playback_fps !== null ? { playbackFps: r.playback_fps } : {}),
+    ...(r.total_duration_ms !== null ? { totalDurationMs: r.total_duration_ms } : {}),
+    ...(r.parent_output_id !== null ? { parentOutputId: r.parent_output_id } : {}),
+    ...(r.recipe_hash !== null ? { recipeHash: r.recipe_hash } : {}),
+  };
 }
 
 export function candidateRow(db: Database, candidateId: string): CandidateRow {
@@ -69,10 +83,20 @@ export function annotationRow(db: Database, annotationId: string): AnnotationRow
   return row;
 }
 
+/**
+ * `geometry_json` holds the geometry object and, for notes on frame sequences, an extra `frameRange` key
+ * (no schema migration needed; Geometry parsing ignores the key).
+ */
+export function encodeGeometry(geometry: Geometry, frameRange: FrameRange | undefined): string {
+  return JSON.stringify(frameRange === undefined ? geometry : { ...geometry, frameRange });
+}
+
 export function toAnnotation(r: AnnotationRow): Annotation {
+  const raw: unknown = JSON.parse(r.geometry_json);
+  const frameRange = typeof raw === "object" && raw !== null && "frameRange" in raw ? FrameRange.parse(raw.frameRange) : undefined;
   return {
     annotationId: r.annotation_id, candidateId: r.candidate_id, outputId: r.output_id, outputHash: r.output_hash,
-    imageWidth: r.image_width, imageHeight: r.image_height, geometry: Geometry.parse(JSON.parse(r.geometry_json)),
+    imageWidth: r.image_width, imageHeight: r.image_height, geometry: Geometry.parse(raw), ...(frameRange === undefined ? {} : { frameRange }),
     text: r.text, requiresRevision: r.requires_revision === 1, version: r.version, deleted: r.deleted === 1,
     createdBy: r.created_by, createdAt: r.created_at, updatedAt: r.updated_at,
   };
@@ -111,9 +135,22 @@ export function revisionsForCandidate(db: Database, candidateId: string): Revisi
   return db.query<RevisionRow, [string]>("SELECT * FROM revision_requests WHERE candidate_id = ? ORDER BY created_at DESC, rowid DESC").all(candidateId).map((r) => toRevision(db, r));
 }
 
-export function outputVisuals(db: Database, candidateId: string): Visual[] {
-  return outputRows(db, candidateId).map((o) => ({
-    fileId: o.file_id, role: o.role, label: o.role === "matted" ? "Matted (transparent background)" : "Untouched generation",
-    mediaType: o.media_type, width: o.width, height: o.height,
-  }));
+/**
+ * Review images of a candidate's outputs (optionally only the named output ids). A still is one image; a frame
+ * sequence contributes its first and last frame and a contact sheet, so motion can be judged from images alone.
+ */
+export async function outputVisuals(open: OpenProject, candidateId: string, onlyOutputIds?: readonly string[]): Promise<Visual[]> {
+  const visuals: Visual[] = [];
+  for (const o of outputRows(open.db, candidateId)) {
+    if (onlyOutputIds && !onlyOutputIds.includes(o.output_id)) continue;
+    if (o.media_kind === "frames") {
+      visuals.push(...(await frameVisuals(open, frameOutputRow(open, o.output_id))));
+      continue;
+    }
+    visuals.push({
+      fileId: o.file_id, role: o.role, label: o.role === "matted" ? "Matted (transparent background)" : "Untouched generation",
+      mediaType: o.media_type, width: o.width, height: o.height,
+    });
+  }
+  return visuals;
 }

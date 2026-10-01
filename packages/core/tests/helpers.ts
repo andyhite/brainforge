@@ -108,22 +108,37 @@ function crc32(buf: Uint8Array): number {
   return ~c >>> 0;
 }
 
-/** A valid solid-colour RGB PNG. */
-export function makePng(width: number, height: number, rgb: [number, number, number]): Buffer {
-  const chunk = (type: string, data: Buffer): Buffer => {
-    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
-    const out = Buffer.alloc(body.length + 8);
-    out.writeUInt32BE(data.length, 0);
-    body.copy(out, 4);
-    out.writeUInt32BE(crc32(body), body.length + 4);
-    return out;
-  };
+function pngChunk(type: string, data: Buffer): Buffer {
+  const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+  const out = Buffer.alloc(body.length + 8);
+  out.writeUInt32BE(data.length, 0);
+  body.copy(out, 4);
+  out.writeUInt32BE(crc32(body), body.length + 4);
+  return out;
+}
+
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+function encodePng(width: number, height: number, colorType: 2 | 6, rows: Buffer): Buffer {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(width, 0);
   ihdr.writeUInt32BE(height, 4);
   ihdr[8] = 8;
-  ihdr[9] = 2;
+  ihdr[9] = colorType;
+  return Buffer.concat([PNG_SIGNATURE, pngChunk("IHDR", ihdr), pngChunk("IDAT", deflateSync(rows)), pngChunk("IEND", Buffer.alloc(0))]);
+}
+
+/** A valid solid-colour RGB PNG. */
+export function makePng(width: number, height: number, rgb: [number, number, number]): Buffer {
   const row = Buffer.concat([Buffer.from([0]), Buffer.from(Array.from({ length: width }, () => rgb).flat())]);
-  const raw = Buffer.concat(Array.from({ length: height }, () => row));
-  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", ihdr), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
+  return encodePng(width, height, 2, Buffer.concat(Array.from({ length: height }, () => row)));
+}
+
+/** A valid RGBA PNG whose pixels come from `pixel(x, y)`. */
+export function makeRgbaPng(width: number, height: number, pixel: (x: number, y: number) => [number, number, number, number]): Buffer {
+  const rows = Buffer.alloc(height * (1 + width * 4));
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) Buffer.from(pixel(x, y)).copy(rows, y * (1 + width * 4) + 1 + x * 4);
+  }
+  return encodePng(width, height, 6, rows);
 }

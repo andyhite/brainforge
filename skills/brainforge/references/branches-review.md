@@ -20,7 +20,7 @@ Bare operation names below. Host forms: oh-my-pi writes JSON to `xd://mcp__brain
 - `complete`: selected output has an applicable approval AND no unresolved required revision note.
 - A static asset with no sheet/animations authored has only concept → its stills. Never expect reference steps it did not declare.
 - Cycles, duplicate ids, missing dependency ids and a deliverable called `concept` are reported on the affected steps only.
-- Generation: `generation_plan`/`generation_start` accept a deliverable `stepId` plus `branchId`, only when the step is `ready`. Budgets and attempt limits are per (asset, step). Animation deliverables may show `ready`, but `generation_plan` returns `WORKFLOW_UNAVAILABLE` until M4.
+- Generation: `generation_plan`/`generation_start` accept a deliverable `stepId` plus `branchId`, only when the step is `ready`. Budgets and attempt limits are per (asset, step). An animation step is ready once its guide poses are approved; its generated source frames never complete it, only an approved processed output does. See [motion-processing](motion-processing.md).
 - A `reference-sheet` candidate's `regions` are cropped into separately hashed outputs; they are shown in `review_material.visuals` and used as references for dependents.
 
 ## Review loop
@@ -56,4 +56,4 @@ A decision is applicable only if its `requirementsHash` equals the current one A
 - Guessing instead of escalating; calling an escalation or a selection "approval".
 - Claiming a human approved what you decided.
 - Locking a concept the user did not pick; retrying a refused lock.
-- Generating a deliverable with no branch, or before its dependency is approved; expecting motion before M4.
+- Generating a deliverable with no branch, or before its dependency is approved.
