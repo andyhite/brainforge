@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { bindInputs, ComfyClient, ComfyDownloadError, ComfyHttpError, loadWorkflow, outputImages, pngProblem, preflight } from "../src/index.ts";
+import { bindInputs, ComfyClient, ComfyDownloadError, ComfyHttpError, loadWorkflow, outputImages, pngProblem, preflight, workflowVersions } from "../src/index.ts";
 import { createFakeComfy, type FakeComfy } from "../src/testing/index.ts";
 
 let fake: FakeComfy;
@@ -152,13 +152,23 @@ describe("queue deletion", () => {
 });
 
 describe("preflight", () => {
-  test("passes against the fake with all bundled workflows", async () => {
-    for (const id of ["krea2-still", "krea2-variation", "wan22-motion"]) {
-      const report = await preflight(await loadWorkflow(id, 1), client);
-      expect(report.missingNodes).toEqual([]);
-      expect(report.missingModels).toEqual([]);
-      expect(report.ok).toBe(true);
+  test("passes against the fake with every version of the bundled workflows", async () => {
+    for (const id of ["krea2-still", "krea2-variation", "wan22-motion", "wan22-motion-opaque"]) {
+      for (const version of await workflowVersions(id)) {
+        const report = await preflight(await loadWorkflow(id, version), client);
+        expect(report.missingNodes).toEqual([]);
+        expect(report.missingModels).toEqual([]);
+        expect(report.ok).toBe(true);
+      }
     }
+  });
+
+  test("wan22-motion 2 needs the animate adapter LoRA on both experts and reports it when it is missing", async () => {
+    fake.hideModel("wan2.2_animate_adapter_model.safetensors");
+    const report = await preflight(await loadWorkflow("wan22-motion", 2), client);
+    expect(report.ok).toBe(false);
+    expect(report.missingModels.map((m) => m.nodeId).sort()).toEqual(["hi_adapter", "lo_adapter"]);
+    expect((await preflight(await loadWorkflow("wan22-motion", 1), client)).ok).toBe(true);
   });
 
   test("reports a missing node and a missing model for the variation workflow", async () => {

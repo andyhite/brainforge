@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { WorkflowDescriptor, type ComfyGraph } from "@brainforge/contracts";
@@ -23,6 +23,13 @@ export async function loadWorkflow(id: string, version = 1): Promise<WorkflowDes
   const wf = WorkflowDescriptor.parse(parse(text));
   if (wf.id !== id || wf.version !== version) throw new Error(`Workflow file ${id}/${version}.yaml declares ${wf.id}@${wf.version}`);
   return wf;
+}
+
+/** Version numbers of a bundled workflow, ascending. */
+export async function workflowVersions(id: string): Promise<number[]> {
+  if (!/^[a-z0-9-]+$/.test(id)) throw new Error(`Bad workflow id ${id}`);
+  const entries = await readdir(join(WORKFLOW_DIR, id));
+  return entries.flatMap((f) => (/^\d+\.yaml$/.test(f) ? [Number.parseInt(f, 10)] : [])).sort((a, b) => a - b);
 }
 
 /** Values keyed by input binding name; image bindings take the uploaded ComfyUI file name. */

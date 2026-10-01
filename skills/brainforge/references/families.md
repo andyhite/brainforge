@@ -27,6 +27,7 @@ Templates contain `REPLACE:` placeholders. `spec_validate` reports each as a WAR
 - `attachments` is only valid on `equipment` and `prop` (error otherwise).
 - Motion guides: `character`/`creature` animations start and end on a `pose` deliverable; every other family may use a `pose`, `still`, `view` or `variant` as `startReference`/`endReference`. Both must be in `dependsOn`.
 - Workflows are chosen from family, stage and alpha (`workflow_list`): `krea2-still`, `krea2-variation`, `wan22-motion` for transparent; `krea2-still-opaque`, `krea2-variation-opaque`, `wan22-motion-opaque` for opaque. The opaque workflows are UNVERIFIED on real ComfyUI (no GPU run yet); `workflow_preflight` and the fake ComfyUI only prove the graph classes and wiring. Say so when you report opaque results; do not claim art quality.
+- `wan22-motion` and `wan22-motion-opaque` have a version 2 that adds the `wan2.2_animate_adapter_model` LoRA to both experts and switches the sampler to `ddim`. The newest version is used by default, and it is UNVERIFIED on real ComfyUI (version 1 is the one that has run live). Say so when you report motion results from it; `workflow_preflight` also fails if the adapter file is missing on the server.
 
 ## `output` and other deliverable fields
 

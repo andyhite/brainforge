@@ -1,5 +1,5 @@
 import type { ComfyGraph } from "@brainforge/contracts";
-import { loadWorkflow } from "../workflow.ts";
+import { loadWorkflow, workflowVersions } from "../workflow.ts";
 import { generateImage } from "./png.ts";
 
 export const FAULT_NAMES = [
@@ -92,17 +92,19 @@ async function bundledObjectInfo(): Promise<{ classes: Set<string>; models: Map<
   const classes = new Set<string>();
   const models = new Map<string, Map<string, Set<string>>>();
   for (const id of BUNDLED_WORKFLOWS) {
-    const wf = await loadWorkflow(id, 1);
-    for (const n of Object.values(wf.graph)) classes.add(n.class_type);
-    for (const c of wf.requiredNodes) classes.add(c);
-    for (const m of wf.requiredModels) {
-      const cls = wf.graph[m.nodeId]?.class_type;
-      if (!cls) continue;
-      const fields = models.get(cls) ?? new Map<string, Set<string>>();
-      const files = fields.get(m.field) ?? new Set<string>();
-      files.add(m.filename);
-      fields.set(m.field, files);
-      models.set(cls, fields);
+    for (const version of await workflowVersions(id)) {
+      const wf = await loadWorkflow(id, version);
+      for (const n of Object.values(wf.graph)) classes.add(n.class_type);
+      for (const c of wf.requiredNodes) classes.add(c);
+      for (const m of wf.requiredModels) {
+        const cls = wf.graph[m.nodeId]?.class_type;
+        if (!cls) continue;
+        const fields = models.get(cls) ?? new Map<string, Set<string>>();
+        const files = fields.get(m.field) ?? new Set<string>();
+        files.add(m.filename);
+        fields.set(m.field, files);
+        models.set(cls, fields);
+      }
     }
   }
   return { classes, models };
