@@ -2,7 +2,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { join, posix, sep } from "node:path";
 import { z } from "zod";
 import { ExportManifest, type ExportPlan, type ExportPreset, type ExportSelectionRow, type PlanBlocker, type RecoveryAction } from "@brainforge/contracts";
-import { ExportError, animationJsonPath, assetJsonPath, atlasPagePath, checkGodotRoot, framePath, planGodotFiles, stillPath, type ExportAsset, type ExportInput, type GodotTarget } from "@brainforge/export";
+import { ExportError, animationJsonPath, assetJsonPath, atlasPagePath, checkGodotRoot, framePath, planGodotFiles, planSprites, spriteAtlasPath, spritesJsonPath, stillPath, type ExportAsset, type ExportInput, type GodotTarget } from "@brainforge/export";
 import { resolveIn } from "@brainforge/storage";
 import { discoverAuthored } from "../authored.ts";
 import { normalizedHash } from "../operations.ts";
@@ -80,14 +80,20 @@ function plannedPaths(e: ExportEvaluation, godotPaths: string[]): string[] {
   const out = ["manifest.json", ...godotPaths];
   for (const asset of e.assets) {
     out.push(assetJsonPath(asset.assetId));
+    const sprites = planSprites(asset);
+    const atlasOnly = new Set(sprites?.packaging === "atlas" ? sprites.members.map((m) => m.deliverableId) : []);
     for (const d of asset.deliverables) {
       if (d.media.kind === "still") {
-        out.push(stillPath(asset.assetId, d.deliverableId));
+        if (!atlasOnly.has(d.deliverableId)) out.push(stillPath(asset.assetId, d.deliverableId));
         continue;
       }
       out.push(animationJsonPath(asset.assetId, d.deliverableId));
       if (d.media.packaging !== "atlas") for (const f of d.media.frames) out.push(framePath(asset.assetId, d.deliverableId, f.index));
       if (d.media.packaging !== "frames") (d.media.atlasPages ?? []).forEach((_, page) => out.push(atlasPagePath(asset.assetId, d.deliverableId, page)));
+    }
+    if (sprites) {
+      out.push(spritesJsonPath(asset.assetId));
+      sprites.layout.pages.forEach((_, page) => out.push(spriteAtlasPath(asset.assetId, page)));
     }
   }
   return out;
@@ -180,7 +186,7 @@ export async function evaluateExport(open: OpenProject, request: ExportRequest):
   }
   for (const id of Object.keys(request.versions ?? {})) wanted.add(id);
 
-  const chosen: { row: VersionRow; source: "active" | "explicit"; active: string | null }[] = [];
+  const chosen: { row: VersionRow; source: "active" | "explicit" | "member"; active: string | null; direct: boolean; via?: string }[] = [];
   for (const assetId of [...wanted].sort()) {
     const active = activeSelection(open.db, assetId);
     const pin = request.versions?.[assetId];
@@ -190,7 +196,7 @@ export async function evaluateExport(open: OpenProject, request: ExportRequest):
         blockers.push({ code: "VERSION_NOT_FOUND", message: `Version ${pin} is not a promoted version of ${assetId}`, recoveryActions: [action(`List versions of ${assetId}`, "version.list", { assetId })] });
         continue;
       }
-      chosen.push({ row, source: "explicit", active: active.versionId });
+      chosen.push({ row, source: "explicit", active: active.versionId, direct: true });
     } else if (active.versionId === null) {
       blockers.push({
         code: "NO_ACTIVE_VERSION",
@@ -199,10 +205,31 @@ export async function evaluateExport(open: OpenProject, request: ExportRequest):
       });
     } else {
       const row = open.db.query<VersionRow | null, [string]>("SELECT * FROM asset_versions WHERE version_id = ?").get(active.versionId);
-      if (row) chosen.push({ row, source: "active", active: active.versionId });
+      if (row) chosen.push({ row, source: "active", active: active.versionId, direct: request.assetIds?.includes(assetId) === true });
     }
   }
 
+  // --- an environment version brings the member versions it pinned. A member chosen directly at another version is
+  // left alone here: the dependency check below reports it as EXPORT_CONFLICT naming both versions. An implicit
+  // (active-default) selection of a member yields to the aggregate's pin.
+  for (const aggregate of [...chosen]) {
+    const read = await readManifest(open, aggregate.row);
+    if (!("manifest" in read)) continue; // reported by the verification below
+    for (const pin of read.manifest.members ?? []) {
+      const at = chosen.findIndex((c) => c.row.asset_id === pin.assetId);
+      const existing = chosen[at];
+      if (existing?.row.version_id === pin.versionId) continue;
+      if (existing && (existing.direct || existing.source === "member")) continue;
+      const row = open.db.query<VersionRow | null, [string, string]>("SELECT * FROM asset_versions WHERE version_id = ? AND asset_id = ?").get(pin.versionId, pin.assetId);
+      if (!row) {
+        blockers.push({ code: "VERSION_NOT_FOUND", message: `${aggregate.row.asset_id} pins ${pin.assetId} at version ${pin.versionId}, which is not a promoted version of ${pin.assetId}`, recoveryActions: [action(`List versions of ${pin.assetId}`, "version.list", { assetId: pin.assetId })] });
+        continue;
+      }
+      const member = { row, source: "member" as const, active: activeSelection(open.db, pin.assetId).versionId, direct: false, via: `${aggregate.row.asset_id} version ${aggregate.row.version_number}` };
+      if (existing) chosen[at] = member;
+      else chosen.push(member);
+    }
+  }
   if (chosen.length === 0 && blockers.length === 0) {
     if (!request.confirmEmpty) {
       blockers.push({ code: "EMPTY_SELECTION", message: "No asset has an active version, so this export would contain nothing and remove everything currently exported. Confirm an empty export explicitly if that is intended.", recoveryActions: [action("Plan again, confirming the empty export", "export.plan", { confirmEmpty: true })] });
@@ -212,7 +239,7 @@ export async function evaluateExport(open: OpenProject, request: ExportRequest):
   }
 
   // --- verify and map each version
-  for (const { row, source, active } of chosen) {
+  for (const { row, source, active, via } of chosen) {
     const problems = await verifyVersion(open, row);
     const read = await readManifest(open, row);
     if (problems.length > 0 || !("manifest" in read)) {
@@ -226,6 +253,7 @@ export async function evaluateExport(open: OpenProject, request: ExportRequest):
     const manifest = read.manifest;
     const notes: string[] = [];
     const { matchesCurrent } = compareToCurrent(open, set, manifest);
+    if (source === "member") notes.push(`Pinned by ${via ?? "an environment aggregate"}; included at exactly that version.`);
     if (source === "explicit") {
       if (active !== row.version_id) notes.push(active ? "Not the asset's active version." : "The asset has no active version.");
       if (!matchesCurrent) notes.push("No longer matches the asset's current requirements.");
@@ -307,21 +335,8 @@ export async function evaluateExport(open: OpenProject, request: ExportRequest):
   return evaluation;
 }
 
-function countFiles(e: ExportEvaluation): number {
-  let n = 1; // manifest.json
-  for (const asset of e.assets) {
-    n += 1; // asset.json
-    for (const d of asset.deliverables) {
-      if (d.media.kind === "still") n += 1;
-      else {
-        n += 1; // animation.json
-        if (d.media.packaging !== "atlas") n += d.media.frames.length;
-        if (d.media.packaging !== "frames") n += d.media.atlasPages?.length ?? 0;
-      }
-    }
-  }
-  return n;
-}
+/** Files the generic layout writes (Godot resources are counted separately). One definition with the collision check. */
+const countFiles = (e: ExportEvaluation): number => plannedPaths(e, []).length;
 
 export function toInput(e: ExportEvaluation, projectId: string, exportId: string, createdAt: string): ExportInput {
   return { projectId, exportId, preset: e.preset, createdAt, ...(e.godot ? { godot: e.godot } : {}), assets: e.assets };

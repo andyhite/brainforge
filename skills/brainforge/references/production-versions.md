@@ -27,6 +27,7 @@ Bare operation names. Host forms: oh-my-pi `xd://mcp__brainforge_<op>` (read fir
 |`blocked-dependency`|A `dependsOn` deliverable is not ready|fix the dependency first|
 
 Also blocking: empty required-deliverable list, a branch whose requirements differ from current (`requirements-basis-mismatch`), and `capability.allowed:false`.
+Environment aggregates: `promotion_plan {assetId, members?}` also lists every collection member's pinned version and adds `COLLECTION_INCOMPLETE`, `MEMBER_UNKNOWN`, `VERSION_NOT_FOUND`, `VERSION_CORRUPT`, `DIRECTION_MISMATCH` blockers; activating the aggregate never changes a child's active pointer. See [environments](environments.md).
 
 ## Manifest (`brainforge.production.v2`)
 

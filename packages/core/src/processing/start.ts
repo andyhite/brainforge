@@ -2,7 +2,8 @@ import { randomBytes } from "node:crypto";
 import type { OutputDetail, ParsedOperationInput } from "@brainforge/contracts";
 import { MediaError, processClip } from "@brainforge/media";
 import { assertId } from "@brainforge/storage";
-import { publishFrameSequence, readFrameSequence, type PublicationFaults } from "../outputs/frames.ts";
+import { publishFrameSequence, type PublicationFaults } from "../outputs/frames.ts";
+import { readProcessingSource } from "./source.ts";
 import type { OpenProject } from "../project-runtime.ts";
 import { OperationFailure } from "../runtime.ts";
 import { loadReferenceImage } from "./anchor.ts";
@@ -44,23 +45,25 @@ async function execute(open: OpenProject, actorId: string, input: ParsedOperatio
     throw new OperationFailure("STEP_BLOCKED", `The plan has blockers: ${plan.blockers.map((b) => b.message).join(" ")}`, { blockers: plan.blockers }, plan.blockers.flatMap((b) => b.recoveryActions));
   }
   const anchor = plan.recipe.scaleAnchor;
-  if (!anchor) throw new OperationFailure("STEP_BLOCKED", "The plan has no scale anchor.");
 
   // --- everything the plan consumed is unchanged
-  const { output: source, frames } = await readFrameSequence(open, plan.sourceOutputId);
+  const { output: source, frames, sourceFps, isStill } = await readProcessingSource(open, plan.sourceOutputId);
   const replan = [{ label: "Plan processing again", operation: "processing.plan", input: { candidateId: plan.candidateId, outputId: plan.sourceOutputId } }];
   if (source.sha256 !== plan.sourceHash) throw new OperationFailure("REVISION_CONFLICT", `Source output ${source.output_id} changed since the plan was inspected.`, { expected: plan.sourceHash, got: source.sha256 }, replan);
-  const reference = await loadReferenceImage(open, anchor.referenceOutputId);
-  if (!reference || reference.sha256 !== anchor.referenceHash) {
-    throw new OperationFailure("REVISION_CONFLICT", `Scale reference ${anchor.referenceOutputId} is missing or changed since the plan was inspected.`, { referenceOutputId: anchor.referenceOutputId }, replan);
+  if (plan.recipe.fit === "none" && !anchor && !isStill) throw new OperationFailure("STEP_BLOCKED", "The plan has no scale anchor.");
+  if (anchor) {
+    const reference = await loadReferenceImage(open, anchor.referenceOutputId);
+    if (!reference || reference.sha256 !== anchor.referenceHash) {
+      throw new OperationFailure("REVISION_CONFLICT", `Scale reference ${anchor.referenceOutputId} is missing or changed since the plan was inspected.`, { referenceOutputId: anchor.referenceOutputId }, replan);
+    }
   }
   const candidate = open.db.query<{ asset_id: string }, [string]>("SELECT asset_id FROM candidates WHERE candidate_id = ?").get(plan.candidateId);
-  if (!candidate || !source.source_fps) throw new OperationFailure("NOT_FOUND", `Candidate ${plan.candidateId} or its source frame rate is gone.`, undefined, replan);
+  if (!candidate || !sourceFps) throw new OperationFailure("NOT_FOUND", `Candidate ${plan.candidateId} or its source frame rate is gone.`, undefined, replan);
 
   // --- process: strict about clipping (the plan carries no clipping blocker, so a mismatch means the inputs changed)
   let clip;
   try {
-    clip = await processClip(frames.map((f) => f.bytes), source.source_fps, plan.recipe, { allowEmpty: true });
+    clip = await processClip(frames.map((f) => f.bytes), sourceFps, plan.recipe, { allowEmpty: true });
   } catch (e) {
     if (e instanceof MediaError) throw new OperationFailure(e.code === "invalid_input" || e.code === "clipped" ? "STEP_BLOCKED" : "IO_ERROR", `Processing failed: ${e.message}`, { mediaError: e.code }, replan);
     throw e;
@@ -70,15 +73,15 @@ async function execute(open: OpenProject, actorId: string, input: ParsedOperatio
 
   const outputId = assertId("output", `${plan.candidateId}-p${randomBytes(4).toString("hex")}`, true);
   const packaged = await packageClip({
-    outputId, canvas: plan.recipe.output, pivot: plan.recipe.pivot, loop: plan.recipe.loop, sourceFps: source.source_fps, playbackFps: plan.recipe.playbackFps,
+    outputId, canvas: plan.recipe.output, pivot: plan.recipe.pivot, loop: plan.recipe.loop, sourceFps, playbackFps: plan.recipe.playbackFps,
     packaging: plan.recipe.packaging, atlas: plan.recipe.atlas, frames: clip.frames,
   });
   await publishFrameSequence(open, {
     assetId: candidate.asset_id, candidateId: plan.candidateId, actorId, purpose: "processing",
     outputs: [{
-      outputId, role: "matted", stage: "processed", frames: packaged.frames, sourceFps: source.source_fps, playbackFps: plan.recipe.playbackFps, totalDurationMs: clip.totalDurationMs,
+      outputId, role: isStill ? source.role : "matted", stage: "processed", frames: packaged.frames, sourceFps, playbackFps: plan.recipe.playbackFps, totalDurationMs: clip.totalDurationMs,
       parentOutputId: source.output_id, recipe: plan.recipe, recipeHash: plan.recipeHash, files: packaged.files,
-      meta: { planId: plan.planId, planHash: plan.planHash, warnings: plan.warnings, sources: plan.sources, scale: clip.scale, foregroundBounds: plan.foregroundBounds ?? null, pivotPx: plan.pivotPx, atlasPages: packaged.files.filter((f) => f.kind === "atlas-page").length },
+      meta: { planId: plan.planId, planHash: plan.planHash, warnings: plan.warnings, sources: plan.sources, scale: clip.scale, foregroundBounds: plan.foregroundBounds ?? null, pivotPx: plan.pivotPx, atlasPages: packaged.files.filter((f) => f.kind === "atlas-page").length, ...(isStill ? { still: true } : {}) },
     }],
   }, faults);
   open.transact(() => {

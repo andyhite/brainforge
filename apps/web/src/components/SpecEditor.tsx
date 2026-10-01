@@ -127,7 +127,8 @@ export function SpecEditor({ file, onOpenFile }: { file: SpecFile; onOpenFile?: 
         ) : (
           <>
             <div className="row" style={{ marginBottom: 4 }}>
-              <Status tone="bad">{all.length} problem{all.length === 1 ? "" : "s"}</Status>
+              {all.some((p) => p.severity !== "warning") ? <Status tone="bad">{all.filter((p) => p.severity !== "warning").length} error{all.filter((p) => p.severity !== "warning").length === 1 ? "" : "s"}</Status> : null}
+              {all.some((p) => p.severity === "warning") ? <Status tone="warn">{all.filter((p) => p.severity === "warning").length} warning{all.filter((p) => p.severity === "warning").length === 1 ? "" : "s"}</Status> : null}
               <span className="secondary">{file.dirty ? "Syntax is checked live; schema checks run when saved." : "As last read from disk."}</span>
             </div>
             <ProblemList problems={all} blocked={BLOCKED_TEXT} {...(onOpenFile ? { onOpenFile } : {})} />

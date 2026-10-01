@@ -5,6 +5,7 @@ import { cleanupHandlers } from "./cleanup.ts";
 import { exportHandlers } from "./export.ts";
 import { historyHandlers } from "./history.ts";
 import { decisionHandlers } from "./decisions.ts";
+import { familyHandlers } from "./families.ts";
 import { generationHandlers } from "./generation.ts";
 import { pipelineHandlers } from "./pipeline.ts";
 import { lifecycleHandlers } from "./project.ts";
@@ -16,4 +17,4 @@ import { specDocHandlers } from "./spec-docs.ts";
 import { specHandlers } from "./specs.ts";
 
 /** Handlers for project lifecycle, authored files, settings, policy, references, workflows and assets. */
-export const projectHandlers: HandlerMap = { ...lifecycleHandlers, ...specHandlers, ...specDocHandlers, ...catalogHandlers, ...reviewHandlers, ...pipelineHandlers, ...branchHandlers, ...decisionHandlers, ...generationHandlers, ...cleanupHandlers, ...processingHandlers, ...historyHandlers, ...preferenceHandlers, ...productionHandlers, ...exportHandlers };
+export const projectHandlers: HandlerMap = { ...lifecycleHandlers, ...specHandlers, ...specDocHandlers, ...catalogHandlers, ...reviewHandlers, ...pipelineHandlers, ...branchHandlers, ...decisionHandlers, ...generationHandlers, ...cleanupHandlers, ...processingHandlers, ...historyHandlers, ...preferenceHandlers, ...productionHandlers, ...exportHandlers, ...familyHandlers };

@@ -50,6 +50,8 @@ export interface ExportDeliverable {
   displayScale?: number;
   relativeScale?: number;
   nineSlice?: { left: number; top: number; right: number; bottom: number };
+  /** Named UI/variant state (`ui.state`); the sprite sheet entry carries it. Defaults to the deliverable id. */
+  state?: string;
   tile?: ExportTile;
   /** Applicable family metadata (layer, parallax, attachment pivots, ...). Copied verbatim into asset.json. */
   metadata: Record<string, unknown>;
@@ -63,6 +65,8 @@ export interface ExportAsset {
   dependencies: { assetId: string; versionId: string }[];
   metadata: Record<string, unknown>;
   deliverables: ExportDeliverable[];
+  /** Still packaging: `atlas` packs this asset's non-tile stills into sprites/atlas-<n>.png, `both` also keeps their PNGs. Default individual. */
+  sprites?: "individual" | "atlas" | "both";
 }
 
 export interface ExportInput {

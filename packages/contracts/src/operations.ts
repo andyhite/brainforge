@@ -1,10 +1,12 @@
 import { z } from "zod";
 import { ApprovalPolicy, AssetFamily, AuthoredKind } from "./authored.ts";
 import { NextAction, RecoveryAction } from "./envelope.ts";
-import { Annotation, Branch, Budget, Candidate, Decision, Escalation, FrameRange, GenerationPlan, Geometry, Job, JobState, OutputApproval, RevisionRequest, RevisionStatus, StepId, StepState, Visual } from "./generation.ts";
+import { Annotation, Branch, Budget, Candidate, Decision, Escalation, FrameRange, GenerationPlan, Geometry, InputMode, Job, JobState, OutputApproval, RevisionRequest, RevisionStatus, StepId, StepState, Visual } from "./generation.ts";
+import { BranchComparison, BranchPlan } from "./branches.ts";
 import { HistoryExample, JudgmentSummary, Preference, PreferenceScope, PreferenceStatus } from "./history.ts";
-import { ActivationEvent, ActiveSelection, AssetVersion, ProductionManifest, PromotionPlan } from "./production.ts";
+import { ActivationEvent, ActiveSelection, AssetVersion, CollectionState, ProductionManifest, PromotionPlan } from "./production.ts";
 import { ExportManifest, ExportPlan, ExportRecord } from "./export.ts";
+import { FamilyProfile } from "./families.ts";
 import { CleanupSidecar, OutputDetail, ProcessingPlan, RecipeRequest } from "./motion.ts";
 
 export { NextAction, RecoveryAction };
@@ -63,7 +65,8 @@ export type OperationResult<D = unknown> =
 
 // --------------------------------------------------------------------------- shared data shapes
 
-export const Problem = z.object({ file: z.string().optional(), line: z.number().optional(), column: z.number().optional(), field: z.string().optional(), message: z.string() });
+/** `severity` omitted means an error that makes the file invalid; `warning` is reported but never blocks (unfinished placeholders, missing production fields). */
+export const Problem = z.object({ file: z.string().optional(), line: z.number().optional(), column: z.number().optional(), field: z.string().optional(), message: z.string(), severity: z.enum(["error", "warning"]).optional() });
 export type Problem = z.infer<typeof Problem>;
 
 export const SpecFileInfo = z.object({
@@ -319,7 +322,7 @@ export const OPERATIONS = {
   },
   "candidate.inspect": {
     input: z.object({ candidateId: z.string() }).strict(),
-    data: z.object({ candidate: Candidate, annotations: z.array(Annotation), revisionRequests: z.array(RevisionRequest), lineage: z.array(z.object({ candidateId: z.string(), label: z.string() })), run: z.object({ runId: z.string(), workflowId: z.string(), workflowVersion: z.number().int(), graphHash: z.string(), specHashes: z.record(z.string(), z.string()), iterationInstructions: z.string().optional() }), visuals: z.array(Visual) }),
+    data: z.object({ candidate: Candidate, annotations: z.array(Annotation), revisionRequests: z.array(RevisionRequest), lineage: z.array(z.object({ candidateId: z.string(), label: z.string() })), run: z.object({ runId: z.string(), workflowId: z.string(), workflowVersion: z.number().int(), graphHash: z.string(), specHashes: z.record(z.string(), z.string()), iterationInstructions: z.string().optional(), inputMode: InputMode.optional() }), visuals: z.array(Visual) }),
     mutating: false, humanOnly: false, needsProject: true,
     summary: "One candidate with its exact prompt, run inputs, lineage, notes, revision requests and review images (matted and untouched outputs).",
   },
@@ -372,7 +375,7 @@ export const OPERATIONS = {
 
   // ---- M3: concept lock, branches, review decisions
   "concept.lock": {
-    input: z.object({ assetId: z.string(), candidateId: z.string(), outputId: z.string(), name: z.string().min(1).max(80).optional(), reason: z.string().max(2000).optional() }).strict(),
+    input: z.object({ assetId: z.string(), candidateId: z.string(), outputId: z.string(), name: z.string().min(1).max(80).optional(), reason: z.string().max(2000).optional(), inputMode: InputMode.default("current") }).strict(),
     data: z.object({ branch: Branch }),
     mutating: true, humanOnly: false, needsProject: true,
     summary: "Choose one exact concept output as the asset's direction and create a branch for production. Authority follows approval.conceptLock in the effective policy (human by default: an agent is refused with an instruction to ask the user). Pins the output hash and the requirements fingerprint. Not a production version. Locking again creates another branch; earlier branches keep their work.",
@@ -383,6 +386,30 @@ export const OPERATIONS = {
     mutating: false, humanOnly: false, needsProject: true,
     summary: "Branches of an asset with their locked concept output and per-deliverable selections.",
   },
+  "branch.plan": {
+    input: z.object({ candidateId: z.string(), outputId: z.string().optional(), inputMode: InputMode.default("saved"), name: z.string().min(1).max(80).optional() }).strict(),
+    data: z.object({ plan: BranchPlan }),
+    mutating: false, humanOnly: false, needsProject: true,
+    summary: "Read-only plan for continuing from any concept, reference or animation candidate: the two input bases (saved = the authored inputs the source was made with, default; current = the authored files now), per-field differences, which upstream selections are reused by exact dependency fingerprint, which downstream selections are cleared, affected selections to reassess, carried required feedback, and the authorization needed. A concept source can only go through concept.lock.",
+  },
+  "branch.create": {
+    input: z.object({ candidateId: z.string(), outputId: z.string().optional(), inputMode: InputMode.default("saved"), planHash: z.string(), name: z.string().min(1).max(80).optional(), reason: z.string().max(2000).optional() }).strict(),
+    data: z.object({ branch: Branch }),
+    mutating: true, humanOnly: false, needsProject: true,
+    summary: "Create a branch that continues from a reference/animation candidate inside an already locked branch (needs generation capability; it cannot replace the concept selection), or rebase a branch onto current inputs by presenting its selected downstream candidate with inputMode current. Present the planHash from branch.plan. Records the resolved input basis on the branch.",
+  },
+  "branch.compare": {
+    input: z.object({ assetId: z.string(), branchIds: z.array(z.string()).min(1).max(6).optional() }).strict(),
+    data: z.object({ comparison: BranchComparison }),
+    mutating: false, humanOnly: false, needsProject: true,
+    summary: "Side by side: each branch's selected candidates, approvals, reassessment needs, open feedback and the field-level differences between saved bases and current inputs.",
+  },
+  "branch.select": {
+    input: z.object({ assetId: z.string(), branchId: z.string(), reason: z.string().max(2000).optional() }).strict(),
+    data: z.object({ branches: z.array(Branch) }),
+    mutating: true, humanOnly: false, needsProject: true,
+    summary: "Make a branch the asset's current one (default for step views, promotion and export planning). Does not touch any other branch's work, approvals or versions.",
+  },
   "candidate.select": {
     input: z.object({ branchId: z.string(), deliverableId: StepId, candidateId: z.string(), outputId: z.string().optional() }).strict(),
     data: z.object({ branch: Branch }),
@@ -391,12 +418,12 @@ export const OPERATIONS = {
   },
   "step.list": {
     input: z.object({ assetId: z.string(), branchId: z.string().optional() }).strict(),
-    data: z.object({ steps: z.array(StepState) }),
+    data: z.object({ steps: z.array(StepState), /** Environment collections only: each member's production state. */ collection: CollectionState.optional() }),
     mutating: false, humanOnly: false, needsProject: true,
     summary: "The asset's pipeline in dependency order: the concept step, then one step per authored deliverable with state, blockers (which dependency is unmet), selection and approval. Independent deliverables are ready independently. Without a branch only the concept step can be ready.",
   },
   "review.material": {
-    input: z.object({ candidateId: z.string(), outputIds: z.array(z.string()).optional() }).strict(),
+    input: z.object({ candidateId: z.string(), outputIds: z.array(z.string()).optional(), branchId: z.string().optional() }).strict(),
     data: z.object({
       candidate: Candidate, stepId: StepId, branchId: z.string().optional(),
       /** Pass this back to review.decide / review.override; a changed requirement changes it. */
@@ -414,22 +441,22 @@ export const OPERATIONS = {
       visuals: z.array(Visual),
     }),
     mutating: false, humanOnly: false, needsProject: true,
-    summary: "Everything a reviewer needs for a candidate: the exact images (matted, untouched, sheet crops), prompt, deliverable description, locked references, requirements hash, who may decide under the effective policy, and the decision history.",
+    summary: "Everything a reviewer needs for a candidate: the exact images (matted, untouched, sheet crops), prompt, deliverable description, locked references, requirements hash, who may decide under the effective policy, and the decision history. A candidate a branch reused from another branch is judged against THAT branch's inputs: pass branchId (the step's branchId) so the requirements hash and the decision belong to it; other branches' decisions on the same output are unaffected.",
   },
   "review.decide": {
-    input: z.object({ candidateId: z.string(), outputIds: z.array(z.string()).min(1), requirementsHash: z.string(), decision: z.enum(["approve", "reject"]), reasons: z.array(z.string()).default([]) }).strict(),
+    input: z.object({ candidateId: z.string(), outputIds: z.array(z.string()).min(1), requirementsHash: z.string(), decision: z.enum(["approve", "reject"]), reasons: z.array(z.string()).default([]), branchId: z.string().optional() }).strict(),
     data: z.object({ decisions: z.array(Decision), approvals: z.array(OutputApproval) }),
     mutating: true, humanOnly: false, needsProject: true,
     summary: "Approve or reject exact outputs against a requirements hash. A human may always decide. An agent may decide only when approval.productionReview is agent or agent_with_escalation; otherwise it is refused with an instruction to ask the user. Rejecting needs at least one reason. Decisions pin the output bytes and stop applying when the requirements or bytes change.",
   },
   "review.escalate": {
-    input: z.object({ candidateId: z.string(), outputIds: z.array(z.string()).min(1), reason: z.string().min(1).max(2000) }).strict(),
+    input: z.object({ candidateId: z.string(), outputIds: z.array(z.string()).min(1), reason: z.string().min(1).max(2000), branchId: z.string().optional() }).strict(),
     data: z.object({ escalation: Escalation }),
     mutating: true, humanOnly: false, needsProject: true,
     summary: "Hand an uncertain output to the human reviewer (policy agent_with_escalation). The escalation waits for a human decision and is never approval.",
   },
   "review.override": {
-    input: z.object({ candidateId: z.string(), outputIds: z.array(z.string()).min(1), requirementsHash: z.string(), decision: z.enum(["approve", "reject"]), reasons: z.array(z.string()).min(1) }).strict(),
+    input: z.object({ candidateId: z.string(), outputIds: z.array(z.string()).min(1), requirementsHash: z.string(), decision: z.enum(["approve", "reject"]), reasons: z.array(z.string()).min(1), branchId: z.string().optional() }).strict(),
     data: z.object({ decisions: z.array(Decision), approvals: z.array(OutputApproval) }),
     mutating: true, humanOnly: true, needsProject: true,
     summary: "Human only. Replace the standing decision on outputs (including an agent's) with a new one; the earlier decision stays in history and is marked overridden. A reason is required.",
@@ -531,7 +558,12 @@ export const OPERATIONS = {
 
   // ---- M6/M7: promotion, versions, activation
   "promotion.plan": {
-    input: z.object({ assetId: z.string(), branchId: z.string().optional() }).strict(),
+    input: z.object({
+      assetId: z.string(),
+      branchId: z.string().optional(),
+      /** Environment aggregates only: pin a member asset to a specific version (default: required members' active versions; optional members only when named here). */
+      members: z.record(z.string(), z.string()).optional(),
+    }).strict(),
     data: z.object({ plan: PromotionPlan }),
     mutating: true, humanOnly: false, needsProject: true,
     summary: "Plan a coherent immutable version: every required deliverable with its selected processed output, applicable approval, unresolved feedback and dependency pins. A missing, unapproved, stale or changed deliverable blocks the whole bundle. Read-only toward the version store; returns planId and planHash for promotion.start.",
@@ -591,6 +623,20 @@ export const OPERATIONS = {
     data: z.object({ export: ExportRecord, manifest: ExportManifest.optional(), conflicts: z.array(z.object({ path: z.string(), reason: z.string() })) }),
     mutating: false, humanOnly: false, needsProject: true,
     summary: "One export: its manifest, and any externally modified owned files found on disk.",
+  },
+
+  // ---- M10-M12: asset families
+  "family.list": {
+    input: Empty,
+    data: z.object({ families: z.array(FamilyProfile) }),
+    mutating: false, humanOnly: false, needsProject: false,
+    summary: "The built-in asset family catalog: allowed deliverable kinds, alpha policy, motion expectation, required fields per kind, collection role, editor sections, export metadata and workflows. Read this before authoring an asset.",
+  },
+  "family.template": {
+    input: z.object({ family: AssetFamily, id: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/), name: z.string().min(1), description: z.string().min(1).optional() }).strict(),
+    data: z.object({ path: z.string(), text: z.string(), notes: z.array(z.string()) }),
+    mutating: false, humanOnly: false, needsProject: false,
+    summary: "A valid starter asset.yaml for a family (deliverables, dependsOn, required fields filled with clearly marked placeholders to replace). Write it with spec.write after editing.",
   },
 } as const satisfies Record<string, OperationDef>;
 

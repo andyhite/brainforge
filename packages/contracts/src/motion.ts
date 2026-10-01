@@ -23,7 +23,7 @@ export const AtlasPageInfo = z.object({ page: z.number().int().min(0), fileId: z
 export type AtlasPageInfo = z.infer<typeof AtlasPageInfo>;
 
 export const ProcessingWarning = z.object({
-  code: z.enum(["CLIPPED", "EMPTY_FRAME", "PIVOT_OUTSIDE", "SCALE_CHANGED", "LOOP_DISCONTINUITY", "ATLAS_PAGES", "OTHER"]),
+  code: z.enum(["CLIPPED", "EMPTY_FRAME", "PIVOT_OUTSIDE", "SCALE_CHANGED", "LOOP_DISCONTINUITY", "ATLAS_PAGES", "SYMMETRY", "OTHER"]),
   message: z.string(),
   /** Output frame indices concerned, when specific. */
   frames: z.array(z.number().int()).default([]),
@@ -71,6 +71,7 @@ export const RecipeRequest = ProcessingRecipe.partial().extend({
   packaging: ProcessingRecipe.shape.packaging.unwrap().optional(),
   atlas: ProcessingRecipe.shape.atlas.unwrap().optional(),
   tileRepeat: ProcessingRecipe.shape.tileRepeat.unwrap().optional(),
+  fit: ProcessingRecipe.shape.fit.unwrap().optional(),
   /** Re-anchor on another approved reference output; default is the branch's scale reference. */
   scaleReferenceOutputId: z.string().optional(),
 });

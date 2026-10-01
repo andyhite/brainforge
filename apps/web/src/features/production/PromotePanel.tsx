@@ -6,6 +6,8 @@ import { callOperation, newRequestId } from "../../api/client.ts";
 import { ActionLinks, Banner, ErrorBanner, Status, type Tone } from "../../components/ui.tsx";
 import { useProjectRoot } from "../../lib/project-context.tsx";
 import { DeliverableThumb } from "./DeliverableThumb.tsx";
+import { BasisMismatch } from "../branches/BasisMismatch.tsx";
+import { MemberPins } from "../families/MemberPins.tsx";
 
 const ROW_STATE: Record<PromotionDeliverableRow["state"], { tone: Tone; text: string }> = {
   ready: { tone: "ok", text: "Ready" },
@@ -33,16 +35,17 @@ export function PromotePanel({ assetId, branchId, base, activeVersionId, onActiv
   const [startError, setStartError] = useState<OperationError | undefined>(undefined);
   const [network, setNetwork] = useState<string | undefined>(undefined);
   const [promoted, setPromoted] = useState<AssetVersion | undefined>(undefined);
+  const [pins, setPins] = useState<Record<string, string>>({});
   // One request id per plan: a retry after a lost response must reuse it so only one version is created.
   const pending = useRef<{ planId: string; planHash: string; requestId: string } | undefined>(undefined);
 
-  const runPlan = async () => {
+  const runPlan = async (nextPins: Record<string, string> = pins) => {
     setPlanning(true);
     setPlanError(undefined);
     setStartError(undefined);
     setNetwork(undefined);
     try {
-      const result = await callOperation("promotion.plan", { project: root, input: { assetId, ...(branchId ? { branchId } : {}) } });
+      const result = await callOperation("promotion.plan", { project: root, input: { assetId, ...(branchId ? { branchId } : {}), ...(Object.keys(nextPins).length > 0 ? { members: nextPins } : {}) } });
       if (result.ok) {
         setPlan(result.data.plan);
         pending.current = undefined;
@@ -163,12 +166,25 @@ export function PromotePanel({ assetId, branchId, base, activeVersionId, onActiv
               </tbody>
             </table>
           </div>
+          <MemberPins
+            members={plan.members}
+            pins={pins}
+            busy={planning || starting}
+            onPin={(member, versionId) => {
+              const next = { ...pins };
+              if (versionId) next[member] = versionId;
+              else delete next[member];
+              setPins(next);
+              void runPlan(next);
+            }}
+          />
           {plan.blockers.length > 0 ? (
             <ul className="plain-list" aria-label="Promotion blockers" style={{ marginTop: 16 }}>
               {plan.blockers.map((blocker) => (
                 <li key={`${blocker.code}-${blocker.message}`}>
-                  <Banner tone="warn" title={blocker.code.replaceAll("-", " ").replaceAll("_", " ")} actions={<ActionLinks actions={blocker.recoveryActions} />}>
+                  <Banner tone="warn" title={blocker.code.replaceAll("-", " ").replaceAll("_", " ").toLowerCase()} actions={<ActionLinks actions={blocker.recoveryActions} />}>
                     {blocker.message}
+                    {blocker.code === "requirements-basis-mismatch" || blocker.message.includes("requirements-basis-mismatch") ? <BasisMismatch assetId={assetId} branchId={plan.branchId} /> : null}
                     {blocker.recoveryActions.filter((action) => !action.url && !(action.operation && action.input !== undefined)).map((action) => <div key={action.label} className="secondary">{action.label}</div>)}
                   </Banner>
                 </li>

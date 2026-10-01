@@ -1,6 +1,6 @@
 import type { AssetSpec, Deliverable } from "@brainforge/contracts";
 import type { AuthoredAsset, AuthoredSet } from "../authored.ts";
-import { STATIC_CAMERA_CLAUSE } from "./motion.ts";
+import { FLAT_FAMILIES, cameraFor, framingFor, resolveAlpha } from "../families/index.ts";
 import type { EffectiveSettings } from "../effective.ts";
 
 export interface PromptPart { label: string; source: string; text: string }
@@ -49,6 +49,7 @@ export function stylesFor(set: AuthoredSet, spec: AssetSpec) {
  */
 export function composePrompt(input: PromptInput): PromptPart[] {
   const { set, asset, spec, effective } = input;
+  const alpha = resolveAlpha(spec.family, input.deliverable?.spec);
   const parts: PromptPart[] = [];
   const iteration: PromptPart | undefined = input.iterationInstructions?.trim()
     ? { label: "Iteration instructions", source: "generation.plan iterationInstructions (this run only)", text: input.iterationInstructions.trim() }
@@ -75,8 +76,9 @@ export function composePrompt(input: PromptInput): PromptPart[] {
   for (const [key, value] of Object.entries(spec.identity)) {
     parts.push({ label: `Identity: ${key}`, source: `${asset.path}:identity.${key}`, text: value.trim() });
   }
-  // A reference sheet lays out several views itself; a single default viewpoint would contradict that.
-  for (const key of input.deliverable?.spec.kind === "reference-sheet" ? (["palette"] as const) : (["perspective", "palette"] as const)) {
+  // A reference sheet lays out several views itself, and flat families (tiles, UI) have no viewpoint; a default perspective would contradict both.
+  const viewpoint = input.deliverable?.spec.kind !== "reference-sheet" && !FLAT_FAMILIES.includes(spec.family);
+  for (const key of viewpoint ? (["perspective", "palette"] as const) : (["palette"] as const)) {
     const leaf = effective.effective[key];
     if (typeof leaf?.value === "string" && leaf.value.trim()) {
       parts.push({ label: key === "perspective" ? "Perspective" : "Palette", source: `${leaf.source.file}:${leaf.source.field}`, text: leaf.value.trim() });
@@ -96,11 +98,11 @@ export function composePrompt(input: PromptInput): PromptPart[] {
   if (regions && regions.length > 0) {
     parts.push({ label: "Sheet layout", source: `${asset.path}:deliverables[${input.deliverable?.index}].regions`, text: sheetLayout(spec.family, regions) });
   } else if (motion !== undefined) {
-    parts.push({ label: "Camera", source: `workflow:${input.workflow.id}@${input.workflow.version}`, text: STATIC_CAMERA_CLAUSE });
+    parts.push({ label: "Camera", source: `workflow:${input.workflow.id}@${input.workflow.version}`, text: cameraFor(spec.family, alpha) });
   } else {
     parts.push({
       label: "Framing", source: `workflow:${input.workflow.id}@${input.workflow.version}`,
-      text: `A single ${spec.family} alone in the frame, one figure only. The entire figure is fully visible with generous margin on every side. Flat plain light-grey background, no props, no text.`,
+      text: framingFor(spec.family, alpha),
     });
   }
   return parts;

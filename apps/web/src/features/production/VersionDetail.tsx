@@ -1,5 +1,6 @@
 import { useOperation } from "../../api/hooks.ts";
 import { Banner, ErrorBanner, NetworkProblem, Status, formatTime } from "../../components/ui.tsx";
+import { FamilyPreviews } from "../families/FamilyPreviews.tsx";
 import { MatchBadge, VersionStateBadge } from "./ProductionState.tsx";
 
 function show(value: unknown): string {
@@ -36,6 +37,31 @@ export function VersionDetail({ versionId }: { versionId: string }) {
           </li>
         ))}
       </ul>
+
+      <h4>Previews</h4>
+      <p className="secondary">Asset-viewer checks drawn from this version&rsquo;s exact files and the metadata the asset declares.</p>
+      {manifest.deliverables.map((item) => (
+        <details key={item.deliverableId}>
+          <summary>{item.deliverableId} · {item.kind}</summary>
+          <FamilyPreviews assetId={manifest.assetId} deliverableId={item.deliverableId} candidateId={item.candidateId} outputId={item.outputId} parts="deliverable" siblings={manifest.deliverables.map((d) => ({ deliverableId: d.deliverableId, candidateId: d.candidateId, outputId: d.outputId }))} />
+        </details>
+      ))}
+      {manifest.deliverables[0] ? <FamilyPreviews assetId={manifest.assetId} deliverableId={manifest.deliverables[0].deliverableId} candidateId={manifest.deliverables[0].candidateId} outputId={manifest.deliverables[0].outputId} parts="set" siblings={manifest.deliverables.map((d) => ({ deliverableId: d.deliverableId, candidateId: d.candidateId, outputId: d.outputId }))} /> : null}
+
+      {manifest.members && manifest.members.length > 0 ? (
+        <>
+          <h4>Pinned member versions</h4>
+          <div className="table-wrap">
+            <table>
+              <caption className="sr-only">Member versions pinned by this environment aggregate</caption>
+              <thead><tr><th scope="col">Member</th><th scope="col">Version</th><th scope="col">Source</th><th scope="col">Family</th><th scope="col">Required</th></tr></thead>
+              <tbody>
+                {manifest.members.map((m) => <tr key={m.assetId}><th scope="row">{m.assetId}</th><td>v{m.versionNumber} <span className="mono secondary">{m.versionId.slice(0, 8)}</span></td><td>{m.source}</td><td>{m.family}</td><td>{m.required ? "Required" : "Optional"}</td></tr>)}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : null}
 
       <h4>Differences against current requirements</h4>
       {differences.length === 0 ? <p className="secondary">No differences: this version matches the current requirements.</p> : (

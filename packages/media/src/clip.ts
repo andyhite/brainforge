@@ -3,6 +3,7 @@ import sharp from "sharp";
 import { buildAtlas, atlasLayout, type BuiltAtlas } from "./atlas.ts";
 import { decodeRgba, MediaError } from "./decode.ts";
 import { applyFraming, foregroundBounds, shiftCanvas, type Bounds } from "./frame.ts";
+import { fitFrame } from "./fit.ts";
 import { resample, type ResampledFrame } from "./resample.ts";
 
 export interface ProcessedFrame {
@@ -86,13 +87,20 @@ const touchesEdge = (b: Bounds, w: number, h: number): boolean => b.x <= 0 || b.
  */
 export async function processClip(sourceFrames: Uint8Array[], sourceFps: number, recipe: ProcessingRecipe, opts: ClipOptions = {}): Promise<ProcessedClip> {
   const anchor = recipe.scaleAnchor;
-  if (!anchor) throw new MediaError("invalid_input", "recipe.scaleAnchor is required");
-  if (recipe.tileRepeat !== "none") throw new MediaError("invalid_input", "tileRepeat is not supported for clips");
-  if (recipe.alpha !== "preserve") throw new MediaError("invalid_input", "alpha matting is not supported here; frames are already matted");
-  if (recipe.resizeFilter !== "lanczos3") throw new MediaError("invalid_input", "only lanczos3 resizing is supported yet");
+  // Without an anchor (or with an explicit canvas fit) there is no subject: stills, backgrounds, tiles, UI, icons, effects.
+  const fitted = recipe.fit !== "none" || !anchor;
+  if (!fitted) {
+    if (recipe.tileRepeat !== "none") throw new MediaError("invalid_input", "tileRepeat needs a canvas fit (crop, contain or stretch), not the anchored character path");
+    if (recipe.alpha !== "preserve") throw new MediaError("invalid_input", "alpha matting needs a canvas fit; anchored character frames are already matted");
+    if (recipe.resizeFilter !== "lanczos3") throw new MediaError("invalid_input", "the anchored character path only supports lanczos3 resizing");
+  }
   const { output, pivot, crop } = recipe;
   if (!(pivot.x >= 0 && pivot.x <= 1 && pivot.y >= 0 && pivot.y <= 1)) throw new MediaError("invalid_input", `pivot (${pivot.x}, ${pivot.y}) must be normalized to [0, 1]`);
   if (output.width < 1 || output.height < 1) throw new MediaError("invalid_input", `output canvas ${output.width}x${output.height} is invalid`);
+  const nine = recipe.nineSlice;
+  if (nine && (nine.left + nine.right >= output.width || nine.top + nine.bottom >= output.height)) {
+    throw new MediaError("invalid_input", `nine-slice margins ${JSON.stringify(nine)} leave no centre in the ${output.width}x${output.height} canvas`);
+  }
   if (sourceFrames.length === 0) throw new MediaError("empty", "no source frames");
 
   // Every source frame must decode and share one size, named by index so a corrupt file can be found.
@@ -120,23 +128,31 @@ export async function processClip(sourceFrames: Uint8Array[], sourceFps: number,
   const packing = recipe.packaging === "frames" || opts.pack === false ? undefined : recipe.atlas;
   if (packing) atlasLayout(output.width, output.height, schedule.length, packing);
 
-  const scale = anchor.targetStandingHeightPx / anchor.sourceStandingHeightPx;
-  const transform = {
+  const scale = anchor ? anchor.targetStandingHeightPx / anchor.sourceStandingHeightPx : output.width / crop.width;
+  const transform = anchor ? {
     scale,
     canvas: output,
     anchor: { x: pivot.x * output.width, y: pivot.y * output.height },
     sourceBounds: { x: anchor.sourceFeet.x - crop.x, y: anchor.sourceFeet.y - crop.y, width: 0, height: 0 },
     subjectHeightPx: anchor.targetStandingHeightPx,
-  };
+  } : undefined;
+  // Soft alpha (glow, smoke) counts as foreground down to alpha 1; the character path keeps its established threshold.
+  const boundsOf = (png: Uint8Array): Promise<Bounds | undefined> =>
+    foregroundBounds(png, fitted ? 0 : 16).catch((e: unknown) => { if (e instanceof MediaError && e.code === "empty") return undefined; throw e; });
 
   const framed = new Map<number, Promise<{ png: Uint8Array; bounds?: Bounds }>>();
   const frameOf = (source: number): Promise<{ png: Uint8Array; bounds?: Bounds }> => {
     let made = framed.get(source);
     if (!made) {
       made = (async () => {
-        const raw = fullFrame ? sourceFrames[source]! : new Uint8Array(await sharp(sourceFrames[source]!).extract({ left: crop.x, top: crop.y, width: crop.width, height: crop.height }).png().toBuffer());
-        const { png } = await applyFraming(raw, transform);
-        const bounds = await foregroundBounds(png).catch((e: unknown) => { if (e instanceof MediaError && e.code === "empty") return undefined; throw e; });
+        let png: Uint8Array;
+        if (fitted) {
+          png = await fitFrame(sourceFrames[source]!, recipe, first);
+        } else {
+          const raw = fullFrame ? sourceFrames[source]! : new Uint8Array(await sharp(sourceFrames[source]!).extract({ left: crop.x, top: crop.y, width: crop.width, height: crop.height }).png().toBuffer());
+          png = (await applyFraming(raw, transform!)).png;
+        }
+        const bounds = await boundsOf(png);
         return { png, ...(bounds ? { bounds } : {}) };
       })();
       framed.set(source, made);
@@ -156,11 +172,11 @@ export async function processClip(sourceFrames: Uint8Array[], sourceFps: number,
     if (off && bounds) {
       const moved = { x: bounds.x + off.dx, y: bounds.y + off.dy, width: bounds.width, height: bounds.height };
       png = await shiftCanvas(base.png, off.dx, off.dy);
-      if (touchesEdge(moved, output.width, output.height)) clippedFrames.push(s.index);
-      bounds = await foregroundBounds(png).catch((e: unknown) => { if (e instanceof MediaError && e.code === "empty") return undefined; throw e; });
+      if (!fitted && touchesEdge(moved, output.width, output.height)) clippedFrames.push(s.index);
+      bounds = await boundsOf(png);
     } else if (off) {
       png = await shiftCanvas(base.png, off.dx, off.dy);
-    } else if (bounds && touchesEdge(bounds, output.width, output.height)) {
+    } else if (!fitted && bounds && touchesEdge(bounds, output.width, output.height)) {
       clippedFrames.push(s.index);
     }
     if (bounds) unionBounds = union(unionBounds, bounds);

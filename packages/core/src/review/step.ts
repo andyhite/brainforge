@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { NextAction, PlanBlocker, StepState } from "@brainforge/contracts";
-import { readAuthoredFile, discoverAuthored } from "../authored.ts";
+import { discoverAuthored } from "../authored.ts";
+import { movedInputs, movedReasons } from "../branches/diff.ts";
 import { OperationFailure } from "../runtime.ts";
 
 const ACTIVE_JOB_STATES = "('queued','submitting','running','collecting')";
@@ -66,13 +67,8 @@ export async function inspectConceptStep(db: Database, root: string, assetId: st
       ORDER BY r.created_at DESC, r.rowid DESC LIMIT 1`,
   ).get(assetId);
   if (latest) {
-    const parsed: unknown = JSON.parse(latest.plan_json);
-    const hashes = specHashesOf(parsed);
-    for (const [path, hash] of Object.entries(hashes)) {
-      const current = await readAuthoredFile(root, path);
-      if (!current) reasons.push(`${path} no longer exists`);
-      else if (current.hash !== hash) reasons.push(`${path} changed since the newest candidates were generated`);
-    }
+    const moved = movedInputs({ db }, set, specHashesOf(JSON.parse(latest.plan_json)), assetId, "concept");
+    reasons.push(...movedReasons(moved, "the newest candidates were generated", { source: "", processed: "" }, false));
   }
 
   const unaddressed = unaddressedRequiredNotes(db, assetId);

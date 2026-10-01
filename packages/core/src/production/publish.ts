@@ -76,11 +76,16 @@ function buildManifest(e: Evaluation, versionId: string, actorId: string, create
   const manifest: ProductionManifest = {
     schema: "brainforge.production.v2", versionId, versionNumber: e.nextVersionNumber, assetId: e.assetId, branchId: e.branchId,
     requirementsHash: e.requirementsHash, specSnapshots: e.specSnapshots, stepRequirements: e.stepRequirements, deliverables, dependencyVersions: e.dependencyVersions,
+    ...(e.memberPins.length > 0 || e.collectionMembers.length > 0 ? { members: e.memberPins, collectionMembers: e.collectionMembers } : {}),
     references: [
       { role: "concept", candidateId: e.concept.candidateId, outputId: e.concept.outputId, outputHash: e.concept.outputHash, ...(e.concept.file ? { path: e.concept.file.dest } : {}) },
       ...e.rows.filter((r) => dependedOn.has(r.row.deliverableId)).map((r) => ({
         role: r.row.deliverableId, deliverableId: r.row.deliverableId, candidateId: r.row.candidateId!, outputId: r.row.outputId!, outputHash: r.row.outputHash!,
       })),
+      // The environment output each deliverable was generated against, so an aggregate can check the member against its own branch.
+      ...e.rows.flatMap((r) => (r.directions ?? []).map((d) => ({
+        role: `direction:${d.name}@${d.assetId}/${d.branchId}`, deliverableId: r.row.deliverableId, candidateId: d.candidateId, outputId: d.conceptOutputId, outputHash: d.outputHash,
+      }))),
     ],
     files: productionFiles, reviewDecisionIds: deliverables.map((d) => d.decisionId), createdBy: actorId, createdAt,
   };

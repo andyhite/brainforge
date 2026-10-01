@@ -15,6 +15,7 @@ const WARNING_LABEL: Record<ProcessingWarning["code"], string> = {
   SCALE_CHANGED: "Scale differs from the character anchor",
   LOOP_DISCONTINUITY: "The loop seam is visible",
   ATLAS_PAGES: "The atlas needs several pages",
+  SYMMETRY: "Mirror-repeat symmetry",
   OTHER: "Note",
 };
 const ms = (value: number) => `${Math.round(value * 10) / 10} ms`;

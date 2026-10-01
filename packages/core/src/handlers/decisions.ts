@@ -10,9 +10,10 @@ import { policyView } from "../policy.ts";
 import { canActorReview, decisionsFor, escalationsFor, pendingEscalation, standingApproval, toDecision, toEscalation, type DecisionRow, type EscalationRow } from "../review/authority.ts";
 import { candidateRow, outputRows, outputVisuals, requirementsResolver, toCandidate, type CandidateRow, type OutputRow, type RequirementsResolver } from "../review/records.ts";
 import { computeEffective } from "../effective.ts";
+import { authoredSetFor } from "../branches/basis.ts";
 import { confirmedPreferences, type ConfirmedPreference } from "../preferences/store.ts";
 import { unaddressedRequiredNotes } from "../review/step.ts";
-import { stepRequirementsHash } from "../review/requirements.ts";
+import { stepRequirementsHash, type FingerprintStage } from "../review/requirements.ts";
 import { OperationFailure, type HandlerMap } from "../runtime.ts";
 import { requireOpen } from "./common.ts";
 
@@ -45,9 +46,12 @@ function pickOutputs(db: Database, cand: CandidateRow, outputIds: readonly strin
   });
 }
 
-async function currentHash(open: OpenProject, cand: CandidateRow): Promise<string> {
+/** A candidate is judged at the stage of its outputs: processed export-rate material, else the generated source. */
+const stageOf = (outputs: readonly OutputRow[]): FingerprintStage => (outputs.some((o) => o.stage === "processed") ? "processed" : "source");
+
+async function currentHash(open: OpenProject, cand: CandidateRow, outputs: readonly OutputRow[]): Promise<string> {
   const set = await discoverAuthored(open.root);
-  return stepRequirementsHash(open, set, cand.asset_id, cand.step_id, cand.branch_id ?? undefined);
+  return stepRequirementsHash(open, set, cand.asset_id, cand.step_id, cand.branch_id ?? undefined, { stage: stageOf(outputs) });
 }
 
 /** A decision judges bytes; refuse when the file on disk is not the recorded output. */
@@ -74,8 +78,24 @@ function assertRequirementsCurrent(provided: string, current: string): void {
   ]);
 }
 
-function approvalsOf(db: Database, outputs: OutputRow[], requirementsHash: string): OutputApproval[] {
-  return outputs.map((o) => standingApproval(db, o.output_id, requirementsHash, o.sha256));
+async function approvalsOf(open: OpenProject, cand: CandidateRow, outputs: OutputRow[]): Promise<OutputApproval[]> {
+  const hashFor = await requirementsResolver(open, cand.asset_id);
+  return outputs.map((o) => standingApproval(open.db, o.output_id, hashFor(cand.step_id, cand.branch_id ?? undefined, o.stage), o.sha256, cand.branch_id));
+}
+
+/**
+ * The candidate as the judging branch sees it. A branch that reused a candidate from another branch judges it against
+ * its own inputs, so everything downstream (requirements hash, decision, selection) works on that branch.
+ */
+function inBranchContext(open: OpenProject, cand: CandidateRow, requested: string | undefined): CandidateRow {
+  if (requested === undefined || requested === cand.branch_id) return cand;
+  const branch = open.db.query<{ branch_id: string }, [string, string]>("SELECT branch_id FROM branches WHERE branch_id = ? AND asset_id = ?").get(requested, cand.asset_id);
+  if (!branch) throw new OperationFailure("NOT_FOUND", `Asset ${cand.asset_id} has no branch ${requested}`, undefined, [{ label: "List branches", operation: "branch.list", input: { assetId: cand.asset_id } }]);
+  const reuses = open.db.query("SELECT 1 FROM branch_selections WHERE branch_id = ? AND deliverable_id = ? AND candidate_id = ?").get(requested, cand.step_id, cand.candidate_id);
+  if (!reuses) {
+    throw new OperationFailure("INVALID_INPUT", `Branch ${requested} neither generated nor selected candidate ${cand.candidate_id}, so it cannot judge it`, undefined, [{ label: "See the branch's steps", operation: "step.list", input: { assetId: cand.asset_id, branchId: requested } }]);
+  }
+  return { ...cand, branch_id: requested };
 }
 
 /** Insert one decision row per output and close escalations whose outputs are now all judged. */
@@ -132,11 +152,12 @@ function requireReasons(decision: "approve" | "reject", reasons: string[]): stri
 export const decisionHandlers: HandlerMap = {
   "review.material": async ({ input, project, context }) => {
     const open = requireOpen(project);
-    const cand = candidateRow(open.db, input.candidateId);
+    const cand = inBranchContext(open, candidateRow(open.db, input.candidateId), input.branchId);
     assertReviewable(cand);
     const outputs = input.outputIds ? pickOutputs(open.db, cand, input.outputIds) : outputRows(open.db, cand.candidate_id);
-    const set = await discoverAuthored(open.root);
-    const requirementsHash = stepRequirementsHash(open, set, cand.asset_id, cand.step_id, cand.branch_id ?? undefined);
+    const live = await discoverAuthored(open.root);
+    const set = authoredSetFor(open.db, live, cand.branch_id ?? undefined);
+    const requirementsHash = stepRequirementsHash(open, live, cand.asset_id, cand.step_id, cand.branch_id ?? undefined, { stage: stageOf(outputs) });
     const spec = set.assets.find((a) => a.fileId === cand.asset_id)?.spec;
     const deliverable = spec?.deliverables.find((d) => d.id === cand.step_id);
 
@@ -186,7 +207,7 @@ export const decisionHandlers: HandlerMap = {
 
   "review.decide": async ({ input, project, context }) => {
     const open = requireOpen(project);
-    const cand = candidateRow(open.db, input.candidateId);
+    const cand = inBranchContext(open, candidateRow(open.db, input.candidateId), input.branchId);
     assertReviewable(cand);
     const outputs = pickOutputs(open.db, cand, input.outputIds);
     if (context.actorType !== "human") {
@@ -197,28 +218,28 @@ export const decisionHandlers: HandlerMap = {
       }
     }
     const reasons = requireReasons(input.decision, input.reasons);
-    assertRequirementsCurrent(input.requirementsHash, await currentHash(open, cand));
+    assertRequirementsCurrent(input.requirementsHash, await currentHash(open, cand, outputs));
     await assertBytesIntact(open, outputs);
     const { decisions, revision, warnings } = record(open, context, cand, outputs, input.requirementsHash, input.decision, "decide", reasons);
-    return { data: { decisions, approvals: approvalsOf(open.db, outputs, input.requirementsHash) }, revision, warnings };
+    return { data: { decisions, approvals: await approvalsOf(open, cand, outputs) }, revision, warnings };
   },
 
   "review.override": async ({ input, project, context }) => {
     const open = requireOpen(project);
-    const cand = candidateRow(open.db, input.candidateId);
+    const cand = inBranchContext(open, candidateRow(open.db, input.candidateId), input.branchId);
     assertReviewable(cand);
     const outputs = pickOutputs(open.db, cand, input.outputIds);
     const reasons = requireReasons(input.decision, input.reasons);
     if (reasons.length === 0) throw new OperationFailure("INVALID_INPUT", "An override needs a reason");
-    assertRequirementsCurrent(input.requirementsHash, await currentHash(open, cand));
+    assertRequirementsCurrent(input.requirementsHash, await currentHash(open, cand, outputs));
     await assertBytesIntact(open, outputs);
     const { decisions, revision, warnings } = record(open, context, cand, outputs, input.requirementsHash, input.decision, "override", reasons);
-    return { data: { decisions, approvals: approvalsOf(open.db, outputs, input.requirementsHash) }, revision, warnings };
+    return { data: { decisions, approvals: await approvalsOf(open, cand, outputs) }, revision, warnings };
   },
 
   "review.escalate": async ({ input, project, context }) => {
     const open = requireOpen(project);
-    const cand = candidateRow(open.db, input.candidateId);
+    const cand = inBranchContext(open, candidateRow(open.db, input.candidateId), input.branchId);
     assertReviewable(cand);
     const outputs = pickOutputs(open.db, cand, input.outputIds);
     const ability = canActorReview(await policyView(open), context.actorType, outputs.some((o) => pendingEscalation(open.db, cand.candidate_id, o.output_id)));

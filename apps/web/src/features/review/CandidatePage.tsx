@@ -1,6 +1,9 @@
 import { ProcessingSection } from "../processing/ProcessingSection.tsx";
+import { FamilyPreviews } from "../families/FamilyPreviews.tsx";
 import { Fragment, useEffect, useRef, useState } from "react";
-import { LockConceptButton } from "../pipeline/LockConceptButton.tsx";
+import { ContinueButton } from "../branches/ContinueDialog.tsx";
+import { ReassessmentReasons } from "../branches/shared.tsx";
+import { pickOutput } from "../generation/media.tsx";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import type { Annotation, Geometry, OperationData } from "@brainforge/contracts";
 import { fileUrl, useMutationOperation, useOperation } from "../../api/hooks.ts";
@@ -79,7 +82,7 @@ function CandidateDetail({ assetId, inspect, projectId }: { assetId: string; ins
         >
           {candidate.favorite ? "★ Favorite" : "☆ Mark favorite"}
         </button>
-        {candidate.stepId === "concept" ? <LockConceptButton assetId={assetId} candidate={candidate} /> : null}
+        {output ? <ContinueButton assetId={assetId} candidateId={candidate.candidateId} outputId={candidate.stepId === "concept" ? pickOutput(candidate, "matted")?.outputId : output.outputId} /> : null}
         <Link to={`/assets/${encodeURIComponent(assetId)}`}>← {assetId}</Link>
       </PageHeader>
       {favoriteError ? <Banner tone="bad" title="Could not change favorite">{favoriteError}</Banner> : null}
@@ -88,7 +91,7 @@ function CandidateDetail({ assetId, inspect, projectId }: { assetId: string; ins
       {stepState?.needsReassessment ? (
         <Banner tone="warn" title="Needs reassessment">
           The inputs behind this step changed after this candidate was made:
-          <ul>{stepState.reassessmentReasons.map((r) => <li key={r}>{r}</li>)}</ul>
+          <ReassessmentReasons reasons={stepState.reassessmentReasons} />
         </Banner>
       ) : null}
 
@@ -168,6 +171,7 @@ function CandidateDetail({ assetId, inspect, projectId }: { assetId: string; ins
       </div>
 
       {output?.mediaKind === "frames" && output.frameCount !== undefined && output.frameCount > 1 ? <LoopBoundary outputId={output.outputId} /> : null}
+      {output && output.mediaKind === "image" && candidate.stepId !== "concept" ? <FamilyPreviews assetId={candidate.assetId} deliverableId={candidate.stepId} candidateId={candidate.candidateId} outputId={output.outputId} /> : null}
       <ProcessingSection candidate={candidate} />
       <DecisionPanel candidateId={candidate.candidateId} stepId={candidate.stepId} />
       <section className="panel" aria-label="Provenance" style={{ marginTop: 16 }}>

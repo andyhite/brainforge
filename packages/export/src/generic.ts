@@ -1,14 +1,15 @@
 import { mkdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { ExportManifest, type ExportOwnedFile } from "@brainforge/contracts";
-import { animationDocument, serializeAnimation, type AnimationDocument } from "@brainforge/media";
+import { animationDocument, buildSpriteAtlas, serializeAnimation, type AnimationDocument, type SpriteRect } from "@brainforge/media";
 import {
   type AnimationDeliverable,
-  animationDir, animationJsonPath, assetJsonPath, atlasPagePath, framePath, isAnimation, isStill, sortedAssets,
+  animationDir, animationJsonPath, assetDir, assetJsonPath, atlasPagePath, framePath, isAnimation, isStill, sortedAssets,
   sortedDeliverables, sortedFrames, stillPath, usesAtlas, usesFrames,
 } from "./layout.ts";
 import { ExportError, InjectedFault, copyInto, fsyncPath, readPngSize, safeJoin, sha256Bytes, sha256File, writeSynced } from "./fs.ts";
 import { planGodotFiles, type GodotFile } from "./godot4.ts";
+import { SPRITE_ATLAS, planSprites, spriteAtlasPath, spriteRect, spritesDocument, spritesJsonPath, type SpritePlan, type SpritesDocument } from "./sprites.ts";
 import type { ExportAsset, ExportDeliverable, ExportFaults, ExportInput, ExportOutcome } from "./types.ts";
 
 const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -63,9 +64,11 @@ function validateAnimation(where: string, d: AnimationDeliverable): void {
 interface Planned {
   copies: { source: string; dest: string; expect?: { width: number; height: number } }[];
   texts: { path: string; text: string }[];
+  /** Assets whose stills pack into sprite atlas pages; built after the plain copies. */
+  spriteAtlases: { asset: ExportAsset; sprites: SpritePlan }[];
 }
 
-function deliverableEntry(asset: ExportAsset, d: ExportDeliverable, files: string[], godot: GodotFile[]): Record<string, unknown> {
+function deliverableEntry(asset: ExportAsset, d: ExportDeliverable, files: string[], godot: GodotFile[], sprite?: SpriteRect): Record<string, unknown> {
   const assetPrefix = `assets/${asset.assetId}/`;
   const resources = godot.filter((g) => g.deliverableIds.includes(d.deliverableId)).map((g) => g.path.slice(assetPrefix.length));
   return {
@@ -81,6 +84,8 @@ function deliverableEntry(asset: ExportAsset, d: ExportDeliverable, files: strin
     ...(d.displayScale !== undefined ? { displayScale: d.displayScale } : {}),
     ...(d.relativeScale !== undefined ? { relativeScale: d.relativeScale } : {}),
     ...(d.nineSlice ? { nineSlice: d.nineSlice } : {}),
+    ...(d.state ? { state: d.state } : {}),
+    ...(sprite ? { sprite: { file: spriteAtlasPath(asset.assetId, sprite.page).slice(assetPrefix.length), page: sprite.page, x: sprite.x, y: sprite.y, width: sprite.width, height: sprite.height } } : {}),
     ...(d.tile ? { tile: d.tile } : {}),
     ...(resources.length > 0 ? { resources } : {}),
     metadata: d.metadata,
@@ -122,29 +127,41 @@ function animationFile(asset: ExportAsset, d: AnimationDeliverable): { doc: Anim
 
 function planFiles(input: ExportInput): Planned & { assets: ExportManifest["assets"] } {
   const godot = input.preset === "godot4" ? planGodotFiles(input) : [];
-  const planned: Planned = { copies: [], texts: godot.map((g) => ({ path: g.path, text: g.text })) };
+  const planned: Planned = { copies: [], texts: godot.map((g) => ({ path: g.path, text: g.text })), spriteAtlases: [] };
   const manifestAssets: ExportManifest["assets"] = [];
   for (const asset of sortedAssets(input.assets)) {
     const entries: Record<string, unknown>[] = [];
+    const sprites = planSprites(asset);
+    if (sprites) {
+      planned.spriteAtlases.push({ asset, sprites });
+      planned.texts.push({ path: spritesJsonPath(asset.assetId), text: `${JSON.stringify(spritesDocument(asset, sprites), null, 2)}\n` });
+    }
     for (const d of sortedDeliverables(asset)) {
       let files: string[];
+      let sprite: SpriteRect | undefined;
       if (isAnimation(d)) {
         const plan = animationFile(asset, d);
         planned.copies.push(...plan.copies);
         planned.texts.push({ path: animationJsonPath(asset.assetId, d.deliverableId), text: serializeAnimation(plan.doc) });
         files = plan.files;
       } else if (isStill(d)) {
-        const dest = stillPath(asset.assetId, d.deliverableId);
-        planned.copies.push({ source: d.media.sourcePath, dest, expect: d.canvas });
-        files = [dest];
+        sprite = spriteRect(sprites, d.deliverableId);
+        files = [];
+        if (!sprite || sprites?.packaging === "both") {
+          const dest = stillPath(asset.assetId, d.deliverableId);
+          planned.copies.push({ source: d.media.sourcePath, dest, expect: d.canvas });
+          files.push(dest);
+        }
+        if (sprite) files.push(spriteAtlasPath(asset.assetId, sprite.page));
       } else {
         throw invalid(`${asset.assetId}/${d.deliverableId} has unknown media`, "media");
       }
-      entries.push(deliverableEntry(asset, d, files, godot.filter((g) => g.assetId === asset.assetId)));
+      entries.push(deliverableEntry(asset, d, files, godot.filter((g) => g.assetId === asset.assetId), sprite));
     }
     const assetJson = {
       schema: "brainforge.export-asset.v2",
       assetId: asset.assetId, family: asset.family, versionId: asset.versionId, requirementsHash: asset.requirementsHash,
+      ...(sprites ? { sprites: spritesJsonPath(asset.assetId).slice(assetDir(asset.assetId).length + 1) } : {}),
       deliverables: entries,
       dependencies: [...asset.dependencies].sort((a, b) => a.assetId.localeCompare(b.assetId) || a.versionId.localeCompare(b.versionId)),
       metadata: asset.metadata,
@@ -199,6 +216,25 @@ export async function buildSnapshot(input: ExportInput, root: string, faults: Ex
     await record(text.path, abs);
     written++;
   }
+  for (const { asset, sprites } of plan.spriteAtlases) {
+    if (faults.failDuringStaging && written === 1) throw new InjectedFault("failDuringStaging");
+    const sources: { id: string; png: Uint8Array }[] = [];
+    for (const d of sprites.members) {
+      const size = await readPngSize(d.media.sourcePath);
+      if (size.width !== d.canvas.width || size.height !== d.canvas.height) {
+        throw new ExportError("INVALID_INPUT", `${d.media.sourcePath} is ${size.width}x${size.height}, expected ${d.canvas.width}x${d.canvas.height} for sprite ${asset.assetId}/${d.deliverableId}`, { reason: "dimension-mismatch", path: d.media.sourcePath });
+      }
+      sources.push({ id: d.deliverableId, png: await readFile(d.media.sourcePath) });
+    }
+    const pages = await buildSpriteAtlas(sources, sprites.layout, SPRITE_ATLAS.extrude);
+    for (const [n, page] of pages.entries()) {
+      const rel = spriteAtlasPath(asset.assetId, n);
+      const abs = await place(rel);
+      await writeSynced(abs, page.png);
+      await record(rel, abs);
+      written++;
+    }
+  }
   if (faults.failDuringStaging) throw new InjectedFault("failDuringStaging");
 
   owned.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
@@ -229,13 +265,14 @@ export async function validateSnapshot(root: string, expectedManifestSha256?: st
   for (const asset of manifest.assets) {
     if (!known.has(asset.metadataPath)) throw new ExportError("EXPORT_CONFLICT", `${asset.metadataPath} is not an owned file`, { reason: "unlisted-metadata", path: asset.metadataPath });
     const assetDirRel = path.posix.dirname(asset.metadataPath);
-    const assetJson = JSON.parse(await readFile(safeJoin(root, asset.metadataPath), "utf8")) as { deliverables: { deliverableId: string; files: string[]; animation?: string; resources?: string[] }[] };
+    const assetJson = JSON.parse(await readFile(safeJoin(root, asset.metadataPath), "utf8")) as { sprites?: string; deliverables: { deliverableId: string; files: string[]; animation?: string; resources?: string[] }[] };
     for (const d of assetJson.deliverables) {
       for (const rel of [...d.files, ...(d.resources ?? [])]) {
         if (!known.has(`${assetDirRel}/${rel}`)) throw new ExportError("EXPORT_CONFLICT", `${asset.assetId}/${d.deliverableId} references missing file ${rel}`, { reason: "dangling-reference", path: rel });
       }
       if (d.animation) await validateAnimationFiles(root, `${assetDirRel}/${d.animation}`, known);
     }
+    if (assetJson.sprites) await validateSpritesFile(root, `${assetDirRel}/${assetJson.sprites}`, known);
   }
   return manifest;
 }
@@ -269,5 +306,25 @@ async function validateAnimationFiles(root: string, animationRel: string, known:
     if (!known.has(`${dir}/${page.file}`)) fail(`atlas page ${page.page} file ${page.file} does not exist`);
     const size = await readPngSize(safeJoin(root, `${dir}/${page.file}`));
     if (size.width !== page.width || size.height !== page.height) fail(`atlas page ${page.page} is ${size.width}x${size.height}, declared ${page.width}x${page.height}`);
+  }
+}
+
+/** sprites.json must point at existing atlas pages and keep every rectangle inside its page. */
+async function validateSpritesFile(root: string, spritesRel: string, known: Set<string>): Promise<void> {
+  const doc = JSON.parse(await readFile(safeJoin(root, spritesRel), "utf8")) as SpritesDocument;
+  const dir = path.posix.dirname(spritesRel);
+  const fail = (message: string): never => {
+    throw new ExportError("EXPORT_CONFLICT", `${spritesRel}: ${message}`, { reason: "sprites-mismatch", path: spritesRel });
+  };
+  if (doc.schema !== "brainforge.sprites.v2") fail(`unexpected schema ${String(doc.schema)}`);
+  for (const page of doc.atlasPages) {
+    if (!known.has(`${dir}/${page.file}`)) fail(`atlas page ${page.page} file ${page.file} does not exist`);
+    const size = await readPngSize(safeJoin(root, `${dir}/${page.file}`));
+    if (size.width !== page.width || size.height !== page.height) fail(`atlas page ${page.page} is ${size.width}x${size.height}, declared ${page.width}x${page.height}`);
+  }
+  for (const s of doc.sprites) {
+    const page = doc.atlasPages.find((p) => p.page === s.page);
+    if (!page) fail(`sprite ${s.id} uses missing atlas page ${s.page}`);
+    else if (s.x < 0 || s.y < 0 || s.x + s.width > page.width || s.y + s.height > page.height) fail(`sprite ${s.id} rectangle leaves page ${page.page}`);
   }
 }

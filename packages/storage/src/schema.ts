@@ -593,6 +593,29 @@ CREATE TABLE export_plans (
 );
 `,
   },
+  {
+    version: 10,
+    sql: `
+-- Continue/rebase branches. basis_json holds the per-step requirement fingerprints the branch consumes and
+-- spec_hashes_json the authored file hashes they were resolved from (the saved inputs). input_mode records
+-- whether the branch was created from saved or current inputs.
+ALTER TABLE branches ADD COLUMN parent_branch_id TEXT;
+ALTER TABLE branches ADD COLUMN source_candidate_id TEXT;
+ALTER TABLE branches ADD COLUMN source_output_id TEXT;
+ALTER TABLE branches ADD COLUMN input_mode TEXT NOT NULL DEFAULT 'current' CHECK (input_mode IN ('saved','current'));
+ALTER TABLE branches ADD COLUMN basis_json TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE branches ADD COLUMN spec_hashes_json TEXT NOT NULL DEFAULT '{}';
+
+-- One current branch per asset: the default for step views, promotion and export planning.
+CREATE TABLE current_branches (
+  asset_id TEXT PRIMARY KEY,
+  branch_id TEXT NOT NULL REFERENCES branches (branch_id),
+  selected_by TEXT NOT NULL,
+  selected_at TEXT NOT NULL,
+  reason TEXT
+);
+`,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

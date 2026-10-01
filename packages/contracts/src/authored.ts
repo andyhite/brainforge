@@ -155,6 +155,16 @@ export const Deliverable = z.object({
    * a turnaround from a three-quarter concept needs a lower value than a same-pose variation. Workflow default if omitted.
    */
   referenceStrength: z.number().min(0).max(20).optional(),
+  /**
+   * Output constraints. `alpha` overrides the family default (transparent cut-out or opaque full frame, for
+   * effects and UI panels). `width`/`height` fix this element's canvas in pixels (icons, UI elements, backgrounds);
+   * omit them to use the workflow default.
+   */
+  output: z.object({
+    alpha: z.enum(["transparent", "opaque"]).optional(),
+    width: z.number().int().positive().optional(),
+    height: z.number().int().positive().optional(),
+  }).strict().optional(),
 }).strict();
 export type Deliverable = z.infer<typeof Deliverable>;
 
@@ -176,6 +186,17 @@ export const AssetSpec = z.object({
     members: z.array(z.object({ assetId: KebabId, required: z.boolean().default(true) }).strict()),
     styleId: KebabId.optional(),
   }).strict().optional(),
+  /**
+   * Equipment (and props) only: named attachment points in pixels of the stated deliverable's canvas (origin
+   * top-left, x right, y down). Visual-art metadata for the game; Brainforge does not model inventory or sockets.
+   */
+  attachments: z.array(z.object({ name: KebabId, x: z.number(), y: z.number(), deliverable: KebabId.optional() }).strict()).default([]),
+  /**
+   * Export-time packaging of this asset's still deliverables (UI states, icons, variants; tiles stay individual).
+   * `individual` (default): one PNG each. `atlas`: states are packed into sprites/atlas-<n>.png + sprites/sprites.json.
+   * `both`: PNGs and atlas. Animations are packaged by their processing recipe, not by this field.
+   */
+  export: z.object({ sprites: z.enum(["individual", "atlas", "both"]).default("individual") }).strict().optional(),
 }).strict();
 export type AssetSpec = z.infer<typeof AssetSpec>;
 

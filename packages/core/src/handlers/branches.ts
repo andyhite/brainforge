@@ -1,38 +1,17 @@
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import type { Database } from "bun:sqlite";
-import type { Branch } from "@brainforge/contracts";
 import { resolveIn, sha256 } from "@brainforge/storage";
 import { discoverAuthored } from "../authored.ts";
+import { authoredSetFor } from "../branches/basis.ts";
+import { captureBasis, createBranch, lockInputs } from "../branches/create.ts";
+import { compareBranches } from "../branches/compare.ts";
+import { planBranch } from "../branches/plan.ts";
+import { branchRow, toBranch, type BranchRow } from "../branches/records.ts";
 import { policyView } from "../policy.ts";
 import { candidateRow, outputRows } from "../review/records.ts";
 import { stepRequirementsHash } from "../review/requirements.ts";
 import { OperationFailure, type HandlerMap } from "../runtime.ts";
 import { requireOpen } from "./common.ts";
-
-interface BranchRow {
-  branch_id: string; asset_id: string; name: string; concept_candidate_id: string; concept_output_id: string; concept_output_hash: string;
-  requirements_hash: string; locked_by: string; locked_by_type: "human" | "agent" | "system"; lock_reason: string | null; locked_at: string;
-}
-
-export function branchRow(db: Database, branchId: string): BranchRow {
-  const row = db.query<BranchRow, [string]>("SELECT * FROM branches WHERE branch_id = ?").get(branchId);
-  if (!row) throw new OperationFailure("NOT_FOUND", `No branch ${branchId}`, undefined, [{ label: "List branches", operation: "branch.list" }]);
-  return row;
-}
-
-export function toBranch(db: Database, r: BranchRow): Branch {
-  const selections = db.query<{ deliverable_id: string; candidate_id: string; output_id: string | null; selected_by: string; selected_at: string }, [string]>(
-    "SELECT * FROM branch_selections WHERE branch_id = ? ORDER BY selected_at, rowid",
-  ).all(r.branch_id);
-  return {
-    branchId: r.branch_id, assetId: r.asset_id, name: r.name, conceptCandidateId: r.concept_candidate_id, conceptOutputId: r.concept_output_id,
-    conceptOutputHash: r.concept_output_hash, requirementsHash: r.requirements_hash, lockedBy: r.locked_by, lockedByType: r.locked_by_type, lockedAt: r.locked_at,
-    selections: selections.map((s) => ({
-      deliverableId: s.deliverable_id, candidateId: s.candidate_id, ...(s.output_id === null ? {} : { outputId: s.output_id }), selectedBy: s.selected_by, selectedAt: s.selected_at,
-    })),
-  };
-}
 
 export const branchHandlers: HandlerMap = {
   "concept.lock": async ({ input, project, context }) => {
@@ -63,25 +42,30 @@ export const branchHandlers: HandlerMap = {
       throw new OperationFailure("OUTPUT_MISSING", `Output ${output.output_id} is missing or no longer matches its recorded hash, so it cannot be locked`, { outputId: output.output_id, path: output.path });
     }
 
-    const set = await discoverAuthored(open.root);
-    const asset = set.assets.find((a) => a.fileId === input.assetId);
+    const live = await discoverAuthored(open.root);
+    const asset = live.assets.find((a) => a.fileId === input.assetId);
     if (!asset?.valid) {
       throw new OperationFailure("STEP_BLOCKED", `${asset?.path ?? `brainforge/assets/${input.assetId}/asset.yaml`} is missing or invalid, so a concept cannot be locked against it`, { problems: asset?.problems ?? [] }, [
         { label: "Read the asset definition", operation: "spec.read", input: { path: asset?.path ?? `brainforge/assets/${input.assetId}/asset.yaml` } },
       ]);
     }
-    const requirementsHash = stepRequirementsHash(open, set, input.assetId, "concept");
+    // `saved` locks the concept against the authored versions it was generated from; `current` against the files now.
+    const inputs = lockInputs(open, live, cand, input.inputMode);
+    const requirementsHash = stepRequirementsHash(open, inputs.set, input.assetId, "concept");
     const now = new Date().toISOString();
     const branchId = `br_${randomBytes(6).toString("hex")}`;
     const { value: row, revision } = open.transact(() => {
       const n = open.db.query<{ n: number }, [string]>("SELECT COUNT(*) AS n FROM branches WHERE asset_id = ?").get(input.assetId)?.n ?? 0;
       const name = input.name ?? `Branch ${n + 1}`;
       open.db.query(
-        `INSERT INTO branches (branch_id, asset_id, name, concept_candidate_id, concept_output_id, concept_output_hash, requirements_hash, locked_by, locked_by_type, lock_reason, locked_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(branchId, input.assetId, name, cand.candidate_id, output.output_id, output.sha256, requirementsHash, context.actorId, context.actorType, input.reason ?? null, now);
+        `INSERT INTO branches (branch_id, asset_id, name, concept_candidate_id, concept_output_id, concept_output_hash, requirements_hash, locked_by, locked_by_type, lock_reason, locked_at,
+                               source_candidate_id, source_output_id, input_mode, spec_hashes_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(branchId, input.assetId, name, cand.candidate_id, output.output_id, output.sha256, requirementsHash, context.actorId, context.actorType, input.reason ?? null, now,
+        cand.candidate_id, output.output_id, input.inputMode, JSON.stringify(inputs.specHashes));
+      open.db.query("UPDATE branches SET basis_json = ? WHERE branch_id = ?").run(JSON.stringify(captureBasis(open, live, input.assetId, branchId)), branchId);
       return branchRow(open.db, branchId);
-    }, [{ type: "branch.created", data: { branchId, assetId: input.assetId, candidateId: cand.candidate_id, outputId: output.output_id, lockedByType: context.actorType }, actorId: context.actorId }]);
+    }, [{ type: "branch.created", data: { branchId, assetId: input.assetId, candidateId: cand.candidate_id, outputId: output.output_id, lockedByType: context.actorType, inputMode: input.inputMode }, actorId: context.actorId }]);
     return {
       data: { branch: toBranch(open.db, row) }, revision,
       nextActions: [{ label: "See the pipeline for this branch", operation: "step.list", input: { assetId: input.assetId, branchId } }],
@@ -94,13 +78,58 @@ export const branchHandlers: HandlerMap = {
     return { data: { branches: rows.map((r) => toBranch(db, r)) } };
   },
 
+  "branch.plan": async ({ input, project, context }) => {
+    const open = requireOpen(project);
+    const { plan } = await planBranch(open, context, input);
+    const blocked = plan.blockers.length > 0;
+    return {
+      data: { plan },
+      nextActions: blocked ? plan.blockers.flatMap((b) => b.recoveryActions)
+        : plan.authorization.operation === "concept.lock"
+          ? [{ label: `Lock this concept${plan.authorization.allowed ? "" : " (needs the user)"}`, operation: "concept.lock", input: { assetId: plan.assetId, candidateId: plan.source.candidateId, outputId: plan.source.outputId, inputMode: plan.inputMode } }]
+          : [{ label: plan.kind === "rebase" ? "Create the rebased branch" : "Create the branch", operation: "branch.create", input: { candidateId: plan.source.candidateId, outputId: plan.source.outputId, inputMode: plan.inputMode, planHash: plan.planHash } }],
+    };
+  },
+
+  "branch.create": async ({ input, project, context }) => {
+    const open = requireOpen(project);
+    const { branchId, revision } = await open.mutate(() => createBranch(open, context, input));
+    return {
+      data: { branch: toBranch(open.db, branchRow(open.db, branchId)) }, revision,
+      nextActions: [{ label: "See the pipeline for this branch", operation: "step.list", input: { assetId: branchRow(open.db, branchId).asset_id, branchId } }],
+    };
+  },
+
+  "branch.compare": async ({ input, project }) => {
+    const open = requireOpen(project);
+    return { data: { comparison: await compareBranches(open, input) } };
+  },
+
+  "branch.select": async ({ input, project, context }) => {
+    const open = requireOpen(project);
+    const branch = branchRow(open.db, input.branchId);
+    if (branch.asset_id !== input.assetId) throw new OperationFailure("INVALID_INPUT", `Branch ${branch.branch_id} belongs to ${branch.asset_id}, not ${input.assetId}`, undefined, [{ label: "List branches", operation: "branch.list", input: { assetId: input.assetId } }]);
+    const { revision } = open.transact(() => {
+      open.db.query(
+        `INSERT INTO current_branches (asset_id, branch_id, selected_by, selected_at, reason) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (asset_id) DO UPDATE SET branch_id = excluded.branch_id, selected_by = excluded.selected_by, selected_at = excluded.selected_at, reason = excluded.reason`,
+      ).run(input.assetId, branch.branch_id, context.actorId, new Date().toISOString(), input.reason ?? null);
+    }, [{ type: "branch.selected", data: { assetId: input.assetId, branchId: branch.branch_id }, actorId: context.actorId }]);
+    const rows = open.db.query<BranchRow, [string]>("SELECT * FROM branches WHERE asset_id = ? ORDER BY locked_at, rowid").all(input.assetId);
+    return {
+      data: { branches: rows.map((r) => toBranch(open.db, r)) }, revision,
+      nextActions: [{ label: "See the pipeline for the current branch", operation: "step.list", input: { assetId: input.assetId } }],
+    };
+  },
+
+
   "candidate.select": async ({ input, project, context }) => {
     const open = requireOpen(project);
     const branch = branchRow(open.db, input.branchId);
     if (input.deliverableId === "concept") {
       throw new OperationFailure("INVALID_INPUT", "The concept is chosen with concept.lock, not candidate.select", undefined, [{ label: "Lock a concept", operation: "concept.lock" }]);
     }
-    const set = await discoverAuthored(open.root);
+    const set = authoredSetFor(open.db, await discoverAuthored(open.root), branch.branch_id);
     const spec = set.assets.find((a) => a.fileId === branch.asset_id)?.spec;
     if (!spec?.deliverables.some((d) => d.id === input.deliverableId)) {
       throw new OperationFailure("INVALID_INPUT", `Asset ${branch.asset_id} has no deliverable ${input.deliverableId}`, { deliverables: spec?.deliverables.map((d) => d.id) ?? [] });

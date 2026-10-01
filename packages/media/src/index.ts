@@ -3,6 +3,7 @@ export * from "./frame.ts";
 export * from "./resample.ts";
 export * from "./atlas.ts";
 export * from "./clip.ts";
+export * from "./fit.ts";
 export * from "./animation.ts";
 export * from "./annotate.ts";
 export * from "./contact.ts";

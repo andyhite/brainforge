@@ -5,11 +5,13 @@ import { useProjectRoot } from "../../lib/project-context.tsx";
 import { DefinitionStep } from "./DefinitionStep.tsx";
 import { ReferencesStep } from "./ReferencesStep.tsx";
 import { ConceptStep } from "../generation/ConceptStep.tsx";
-import { BranchSwitcher } from "../pipeline/BranchSwitcher.tsx";
+import { BranchBar } from "../branches/BranchBar.tsx";
 import { PipelineView } from "../pipeline/PipelineView.tsx";
 import { StepDetail } from "../pipeline/StepDetail.tsx";
 import { ProductionState } from "../production/ProductionState.tsx";
 import { VersionsSection } from "../production/VersionsSection.tsx";
+import { CollectionView } from "../families/CollectionView.tsx";
+import { FamilyChip, splitProblems, useFamilies } from "../families/useFamilies.tsx";
 export function AssetPage() {
   const { assetId = "" } = useParams();
   const [params, setParams] = useSearchParams();
@@ -20,8 +22,9 @@ export function AssetPage() {
   const branches = useOperation("branch.list", { assetId }, { enabled });
   const branchList = branches.data?.ok ? branches.data.data.branches : [];
   const requestedBranch = params.get("branch");
-  const branchId = branchList.find((branch) => branch.branchId === requestedBranch)?.branchId ?? branchList[0]?.branchId;
+  const branchId = branchList.find((branch) => branch.branchId === requestedBranch)?.branchId ?? branchList.find((branch) => branch.isCurrent)?.branchId ?? branchList[0]?.branchId;
   const steps = useOperation("step.list", { assetId, ...(branchId ? { branchId } : {}) }, { enabled });
+  const families = useFamilies();
   const activeStep = steps.data?.ok ? steps.data.data.steps.find((candidate) => candidate.stepId === step) : undefined;
 
   if (root === undefined) {
@@ -48,10 +51,11 @@ export function AssetPage() {
   return (
     <>
       <PageHeader title={summary.name ?? summary.assetId}>
-        {summary.family ? <Status tone="info">{summary.family}</Status> : null}
+        {summary.family ? <FamilyChip family={summary.family} profile={families.profileOf(summary.family)} /> : null}
         <span className="mono">{summary.assetId}</span>
         {summary.required ? <Status tone="info">Required</Status> : <Status tone="idle">Optional</Status>}
-        {summary.valid ? <Status tone="ok">Valid</Status> : missing ? <Status tone="warn">Definition missing</Status> : <Status tone="bad">Invalid — {summary.problems.length} {summary.problems.length === 1 ? "problem" : "problems"}</Status>}
+        {summary.valid ? <Status tone="ok">Valid</Status> : missing ? <Status tone="warn">Definition missing</Status> : <Status tone="bad">Invalid — {splitProblems(summary.problems).errors.length} {splitProblems(summary.problems).errors.length === 1 ? "problem" : "problems"}</Status>}
+        {summary.valid && splitProblems(summary.problems).warnings.length > 0 ? <Status tone="warn">{splitProblems(summary.problems).warnings.length} {splitProblems(summary.problems).warnings.length === 1 ? "warning" : "warnings"}</Status> : null}
         <ProductionState assetId={assetId} />
       </PageHeader>
       <p><Link to="/assets">← All assets</Link></p>
@@ -73,10 +77,11 @@ export function AssetPage() {
       </nav>
       <section aria-labelledby="pipeline-title" className="panel">
         <h2 id="pipeline-title" style={{ marginTop: 0 }}>Pipeline</h2>
-        <BranchSwitcher branches={branchList} value={branchId} onChange={(next) => setParams((previous) => { const copy = new URLSearchParams(previous); copy.set("branch", next); return copy; })} />
+        <BranchBar assetId={assetId} branches={branchList} viewing={branchId} onView={(next) => setParams((previous) => { const copy = new URLSearchParams(previous); copy.set("branch", next); return copy; })} />
         <PipelineView assetId={assetId} branchId={branchId} activeStep={step} base={base} />
         <p style={{ marginBottom: 0 }}><Link className="button" to={`${base}?step=versions${branchId ? `&branch=${encodeURIComponent(branchId)}` : ""}`}>Promote…</Link></p>
       </section>
+      {summary.family === "environment" && step !== "definition" ? <CollectionView assetId={assetId} collection={steps.data?.ok ? steps.data.data.collection : undefined} branches={branchList} /> : null}
       {step === "versions" ? <VersionsSection assetId={assetId} branchId={branchId} base={base} /> : step === "concept" ? <ConceptStep assetId={assetId} /> : step === "references" ? <ReferencesStep assetId={assetId} inspect={inspect} /> : step === "definition" ? <DefinitionStep inspect={inspect} autoCreate={params.get("create") === "1"} /> : activeStep && branchId ? <StepDetail key={`${branchId}-${step}`} assetId={assetId} step={activeStep} branchId={branchId} /> : <Banner tone="info" title={branchId ? `No step named ${step}` : "Lock a concept first"}>{branchId ? "Pick a step from the pipeline above." : "Production steps need a locked concept branch."}</Banner>}
     </>
   );

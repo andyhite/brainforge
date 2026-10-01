@@ -42,6 +42,7 @@ Public paths are always `<destination>/current/assets/...`. Game references NEVE
 - Owned files modified on disk since export → `EXPORT_CONFLICT` (see `export_inspect` conflicts). Unowned `current` (directory or foreign symlink) or a pointer to an unknown release → `EXPORT_CONFLICT`; never adopted or deleted.
 - Explicit subset or preset switch: the next snapshot contains exactly the selection; `leaving` / `leavingResourceKinds` list what disappears. An empty selection needs `confirmEmpty:true`.
 - After success only unchanged files listed in the PREVIOUS manifest are removed; modified owned files stay with a warning.
+- Environment aggregates export the member versions they pinned; a member selected directly at another version → `EXPORT_CONFLICT` ([environments](environments.md)). Still packaging per asset: `asset.yaml` `export.sprites` (`individual|atlas|both`) writes `sprites/atlas-<n>.png` + `sprites/sprites.json` ([ui-vfx](ui-vfx.md)).
 
 ## Recovery
 

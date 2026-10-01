@@ -66,6 +66,7 @@ function Player({ details, projectId, annotations = [], selectedId, onSelect, dr
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [loop, setLoop] = useState(primary.loop ?? true);
+  const [finished, setFinished] = useState(false);
   const [mode, setMode] = useState<Source>("frames");
   const [background, setBackground] = useState<Background>("checker");
   const [zoom, setZoom] = useState<"fit" | "1:1">("fit");
@@ -104,6 +105,7 @@ function Player({ details, projectId, annotations = [], selectedId, onSelect, dr
         else {
           next = clockTotal - 1e-6;
           setPlaying(false);
+          setFinished(true);
         }
       }
       seek(next);
@@ -196,8 +198,14 @@ function Player({ details, projectId, annotations = [], selectedId, onSelect, dr
   return (
     <div className="clip-player" onKeyDown={onKeyDown} aria-label={compare ? "Clip comparison player" : "Clip player"} role="group">
       <div className="viewer-tools" role="toolbar" aria-label="Playback">
-        <button type="button" className="primary" aria-pressed={playing} onClick={() => setPlaying((p) => !p)}>{playing ? "Pause" : "Play"}</button>
-        <button type="button" aria-pressed={loop} onClick={() => setLoop((l) => !l)}>Loop</button>
+        <button type="button" className="primary" aria-pressed={playing} onClick={() => { if (finished) seek(0); setFinished(false); setPlaying((p) => !p); }}>{playing ? "Pause" : "Play"}</button>
+        <button type="button" onClick={() => { seek(0); setFinished(false); setPlaying(true); }}>Replay</button>
+        <button type="button" aria-pressed={loop} onClick={() => { setLoop((l) => !l); setFinished(false); }} title="Off plays the clip once and stops on its last frame">Loop</button>
+        <span className="status info" role="status" aria-live="polite">
+          <span aria-hidden="true">{loop ? "↻" : "①"}</span>
+          {loop ? "Loops" : finished ? "Played once — finished" : "Plays once"}
+          {primary.loop !== undefined && primary.loop !== loop ? <span className="secondary"> (authored: {primary.loop ? "loops" : "plays once"})</span> : null}
+        </span>
         <span role="group" aria-label="Speed" className="row" style={{ gap: 4 }}>
           {SPEEDS.map((s) => <button key={s} type="button" aria-pressed={speed === s} onClick={() => setSpeed(s)}>{s}×</button>)}
         </span>

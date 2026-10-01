@@ -3,11 +3,13 @@ import { useOperation } from "../../api/hooks.ts";
 import { EmptyState, ErrorBanner, NetworkProblem, PageHeader } from "../../components/ui.tsx";
 import { useProjectRoot } from "../../lib/project-context.tsx";
 import { ProductionState } from "../production/ProductionState.tsx";
+import { FamilyChip, familyHint, useFamilies } from "../families/useFamilies.tsx";
 
 /** Library: per-asset production state. Promotion and activation are separate actions on each asset's Versions tab; export arrives in M8. */
 export function LibraryPage() {
   const { root } = useProjectRoot();
   const list = useOperation("asset.list", {}, { enabled: root !== undefined });
+  const families = useFamilies();
   if (root === undefined) return <><PageHeader title="Library" /><EmptyState title="No project selected"><Link className="button primary" to="/projects/open">Open a project</Link></EmptyState></>;
   if (list.error) return <><PageHeader title="Library" /><NetworkProblem error={list.error} /></>;
   if (!list.data) return <><PageHeader title="Library" /><p className="secondary" role="status">Loading…</p></>;
@@ -15,14 +17,20 @@ export function LibraryPage() {
   const assets = list.data.data.assets;
   return (
     <div>
-      <PageHeader title="Library" />
+      <PageHeader title="Library">
+        <Link className="button primary" to="/assets/new">New asset</Link>
+      </PageHeader>
       <p className="secondary">Promoted versions are immutable; a version only becomes current when it is explicitly activated. Export is a separate step.</p>
       {assets.length === 0 ? <EmptyState title="No assets yet"><p>Define an asset first.</p></EmptyState> : (
         <ul className="plain-list" aria-label="Assets and their production versions">
           {assets.map((asset) => (
             <li key={asset.assetId} className="panel">
               <div className="row" style={{ justifyContent: "space-between" }}>
-                <Link to={`/assets/${encodeURIComponent(asset.assetId)}?step=versions`}>{asset.name ?? asset.assetId}</Link>
+                <span className="row" style={{ gap: 8 }}>
+                  <Link to={`/assets/${encodeURIComponent(asset.assetId)}?step=versions`}>{asset.name ?? asset.assetId}</Link>
+                  <FamilyChip family={asset.family} profile={families.profileOf(asset.family)} />
+                  <span className="secondary">{familyHint(families.profileOf(asset.family))}</span>
+                </span>
                 <ProductionState assetId={asset.assetId} />
               </div>
             </li>

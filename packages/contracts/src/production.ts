@@ -34,6 +34,21 @@ export const ProductionDeliverable = z.object({
 });
 export type ProductionDeliverable = z.infer<typeof ProductionDeliverable>;
 
+/** An environment aggregate's pin of one member version, with the structural metadata the child declared (never prompt text). */
+export const MemberPin = z.object({
+  assetId: z.string(),
+  required: z.boolean(),
+  versionId: z.string(),
+  versionNumber: z.number().int().positive(),
+  source: z.enum(["active", "explicit"]),
+  family: z.string(),
+  /** Locked concept output of the environment branch this member was checked against, and the direction output the member recorded. */
+  directionOutputHash: Sha256.optional(),
+  /** Per deliverable: layer, pivot, relativeScale, tileSize, connections, seamlessAxes, parallax as the child declared them. */
+  environment: z.array(z.object({ deliverableId: z.string(), environment: z.record(z.string(), z.unknown()) })),
+});
+export type MemberPin = z.infer<typeof MemberPin>;
+
 /** `brainforge/assets/<asset>/versions/<versionId>/manifest.json`. Written once, never edited. */
 export const ProductionManifest = z.object({
   schema: z.literal("brainforge.production.v2"),
@@ -47,8 +62,11 @@ export const ProductionManifest = z.object({
   /** Per-step requirement fingerprints (`concept` plus each included deliverable) this version was judged against; `requirementsHash` aggregates them. */
   stepRequirements: z.record(z.string(), Sha256),
   deliverables: z.array(ProductionDeliverable),
-  /** Versions of other assets this one depends on (cross-asset references), pinned. */
+  /** Versions of other assets this one depends on (cross-asset references, an environment's selected members), pinned. */
   dependencyVersions: z.array(z.object({ assetId: z.string(), versionId: z.string() })),
+  /** Environment aggregates only: the selected member versions with the metadata each child declared, and the membership declared at promotion. */
+  members: z.array(MemberPin).optional(),
+  collectionMembers: z.array(z.object({ assetId: z.string(), required: z.boolean() })).optional(),
   /** The selected reference outputs (concept, guides) and finished outputs, with context. */
   references: z.array(z.object({ role: z.string(), deliverableId: z.string().optional(), candidateId: z.string(), outputId: z.string(), outputHash: Sha256, path: z.string().optional() })),
   files: z.array(ProductionFile),
@@ -76,6 +94,21 @@ export const PromotionDeliverableRow = z.object({
 });
 export type PromotionDeliverableRow = z.infer<typeof PromotionDeliverableRow>;
 
+export const PromotionMemberRow = z.object({
+  assetId: z.string(),
+  required: z.boolean(),
+  versionId: z.string().optional(),
+  versionNumber: z.number().int().optional(),
+  /** `active` = the member's active version; `explicit` = the caller pinned it. */
+  source: z.enum(["active", "explicit"]).optional(),
+  /** Whether the member's recorded direction output is the environment branch's locked concept output (true when the member records none to compare). */
+  directionMatches: z.boolean(),
+  /** The member version no longer matches the member's own current requirements (shown, not blocking). */
+  obsolete: z.boolean().optional(),
+  message: z.string().optional(),
+});
+export type PromotionMemberRow = z.infer<typeof PromotionMemberRow>;
+
 export const PromotionPlan = z.object({
   planId: z.string(),
   /** Content hash of everything below that start must present back. */
@@ -86,6 +119,8 @@ export const PromotionPlan = z.object({
   nextVersionNumber: z.number().int().positive(),
   deliverables: z.array(PromotionDeliverableRow),
   dependencyVersions: z.array(z.object({ assetId: z.string(), versionId: z.string() })),
+  /** Environment aggregates: every collection member with the version this aggregate would pin. Empty for ordinary assets. */
+  members: z.array(PromotionMemberRow).default([]),
   blockers: z.array(PlanBlocker),
   /** Whether THIS actor may promote under the effective promotion policy (human / agent_with_escalation / agent). */
   capability: z.object({ policy: z.string(), allowed: z.boolean(), reason: z.string().optional() }),
@@ -94,6 +129,21 @@ export const PromotionPlan = z.object({
 export type PromotionPlan = z.infer<typeof PromotionPlan>;
 
 export const VersionState = z.enum(["active", "promoted", "superseded"]);
+
+/** One collection member's production state, as step.list and asset.inspect show it for an environment. */
+export const CollectionMemberState = z.object({
+  assetId: z.string(),
+  required: z.boolean(),
+  state: z.enum(["no-version", "promoted", "active"]),
+  activeVersionId: z.string().optional(),
+  latestVersionId: z.string().optional(),
+});
+export const CollectionState = z.object({
+  members: z.array(CollectionMemberState),
+  complete: z.boolean(),
+  blockers: z.array(PlanBlocker),
+});
+export type CollectionState = z.infer<typeof CollectionState>;
 
 export const AssetVersion = z.object({
   versionId: z.string(),

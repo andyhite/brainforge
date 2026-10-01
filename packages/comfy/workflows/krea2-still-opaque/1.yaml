@@ -1,0 +1,134 @@
+schema: brainforge.comfy-workflow.v2
+id: krea2-still-opaque
+version: 1
+description: Krea 2 Turbo text-to-image, 8 steps at cfg 1, saved as the untouched opaque RGB decode (no background removal), for backgrounds, tiles, environments and opaque UI.
+graph:
+  "1":
+    class_type: UNETLoader
+    inputs:
+      unet_name: krea2_turbo_fp8_scaled.safetensors
+      weight_dtype: default
+  "2":
+    class_type: CLIPLoader
+    inputs:
+      clip_name: qwen3vl_4b_fp8_scaled.safetensors
+      type: krea2
+  "3":
+    class_type: VAELoader
+    inputs:
+      vae_name: qwen_image_vae.safetensors
+  "4":
+    class_type: CLIPTextEncode
+    inputs:
+      text: ""
+      clip:
+        - "2"
+        - 0
+  "5":
+    class_type: ConditioningZeroOut
+    inputs:
+      conditioning:
+        - "4"
+        - 0
+  "6":
+    class_type: EmptyLatentImage
+    inputs:
+      width: 1024
+      height: 1024
+      batch_size: 1
+  "7":
+    class_type: KSampler
+    inputs:
+      seed: 0
+      steps: 8
+      cfg: 1
+      sampler_name: euler
+      scheduler: simple
+      denoise: 1
+      model:
+        - "1"
+        - 0
+      positive:
+        - "4"
+        - 0
+      negative:
+        - "5"
+        - 0
+      latent_image:
+        - "6"
+        - 0
+  "8":
+    class_type: VAEDecode
+    inputs:
+      samples:
+        - "7"
+        - 0
+      vae:
+        - "3"
+        - 0
+  "9":
+    class_type: SaveImage
+    inputs:
+      filename_prefix: brainforge/krea2-still-opaque/untouched
+      images:
+        - "8"
+        - 0
+inputBindings:
+  - name: prompt
+    nodeId: "4"
+    field: text
+    type: string
+    required: true
+  - name: width
+    nodeId: "6"
+    field: width
+    type: integer
+    required: true
+    min: 256
+    max: 2048
+    step: 16
+  - name: height
+    nodeId: "6"
+    field: height
+    type: integer
+    required: true
+    min: 256
+    max: 2048
+    step: 16
+  - name: seed
+    nodeId: "7"
+    field: seed
+    type: seed
+outputBindings:
+  - role: untouched
+    nodeId: "9"
+    kind: still
+requiredNodes:
+  - UNETLoader
+  - CLIPLoader
+  - VAELoader
+  - CLIPTextEncode
+  - ConditioningZeroOut
+  - EmptyLatentImage
+  - KSampler
+  - VAEDecode
+  - SaveImage
+requiredModels:
+  - nodeId: "1"
+    field: unet_name
+    filename: krea2_turbo_fp8_scaled.safetensors
+  - nodeId: "2"
+    field: clip_name
+    filename: qwen3vl_4b_fp8_scaled.safetensors
+  - nodeId: "3"
+    field: vae_name
+    filename: qwen_image_vae.safetensors
+execution:
+  computeLocation: Remote ComfyUI server at BF_COMFY_URL (reported by /system_stats; reachability does not imply the work runs on this machine)
+  externalServices: []
+  credentialKeys: []
+  costDescription: Uses the user's own ComfyUI GPU host; no per-run fee is reported by the server. Hosting or electricity cost is unknown to Brainforge.
+notes:
+  - Krea 2 Turbo runs at cfg 1, so a negative prompt would have no effect and is not exposed; negative conditioning is ConditioningZeroOut of the positive.
+  - Model file integrity, custom-node source revision and art quality are unverified.
+  - "Opaque variant: derived from the matting graph by removing LoadBackgroundRemovalModel, RemoveBackground, InvertMask and JoinImageWithAlpha, so the decoded RGB is saved directly as a full-frame image. Graph behaviour on a real ComfyUI and art quality are UNVERIFIED; the source graph models, pins and licences are unchanged."

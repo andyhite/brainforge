@@ -48,9 +48,14 @@ export const specHandlers: HandlerMap = {
   "spec.write": async ({ input, project, context }) => {
     const open = requireOpen(project);
     const result = await open.mutate(() => writeAuthored(open, { ...input, actorId: context.actorId }));
+    const errors = result.problems.filter((p) => p.severity !== "warning").length;
+    const advisories = result.problems.length - errors;
     return {
       data: result, revision: open.revision(),
-      warnings: result.problems.length > 0 ? [`Saved with ${result.problems.length} problem(s); work that depends on this file is blocked until they are fixed.`] : [],
+      warnings: [
+        ...(errors > 0 ? [`Saved with ${errors} problem(s); work that depends on this file is blocked until they are fixed.`] : []),
+        ...(advisories > 0 ? [`${advisories} warning(s): unfinished or missing production fields (see problems); they block only the steps that need them.`] : []),
+      ],
       nextActions: result.problems.length > 0 ? [{ label: "Review problems", operation: "spec.read", input: { path: result.path } }] : [],
     };
   },

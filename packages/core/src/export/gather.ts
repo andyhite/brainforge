@@ -55,6 +55,8 @@ export async function gatherVersion(
   for (const d of manifest.deliverables) {
     const authored = asset.deliverables.find((x) => x.id === d.deliverableId);
     const animationRel = d.files.find((f) => f.endsWith("/animation.json"));
+    // A non-animation deliverable that went through processing.plan is a one-frame clip, exported as a still.
+    const processedStill = animationRel !== undefined && authored !== undefined && authored.kind !== "animation";
     const base = {
       deliverableId: d.deliverableId, kind: d.kind, candidateId: d.candidateId, outputHash: d.outputHash,
       metadata: deliverableMetadata(authored, d.required),
@@ -63,7 +65,7 @@ export async function gatherVersion(
     const relativeScale = authored?.environment?.relativeScale;
     const scales = { ...(scale !== undefined ? { displayScale: scale } : {}), ...(relativeScale !== undefined ? { relativeScale } : {}) };
 
-    if (animationRel) {
+    if (animationRel && !processedStill) {
       const doc = AnimationDoc.safeParse(JSON.parse(await Bun.file(join(versionAbs, animationRel)).text()));
       if (!doc.success) throw new GatherProblem(`${row.asset_id}/${d.deliverableId}: animation.json is unreadable: ${doc.error.message}`);
       const a = doc.data;
@@ -98,22 +100,52 @@ export async function gatherVersion(
       continue;
     }
 
-    const stillRel = d.files.find((f) => !f.includes("/crops/") && manifest.files.find((m) => m.path === f)?.mediaType === "image/png");
-    if (!stillRel) throw new GatherProblem(`${row.asset_id}/${d.deliverableId}: the version holds no PNG for this deliverable`);
-    const size = open.db.query<{ width: number | null; height: number | null }, [string]>("SELECT width, height FROM candidate_outputs WHERE output_id = ?").get(d.outputId);
-    if (!size?.width || !size.height) throw new GatherProblem(`${row.asset_id}/${d.deliverableId}: the output's pixel size is not recorded`);
-    const canvas = { width: size.width, height: size.height };
-    // environment.pivot is in exported pixels; stills without one pivot at their centre.
-    const pivot = authored?.environment?.pivot ?? { x: canvas.width / 2, y: canvas.height / 2 };
+    let stillRel: string | undefined;
+    let canvas: { width: number; height: number };
+    let pivot: { x: number; y: number };
+    let recipeNine: { left: number; top: number; right: number; bottom: number } | undefined;
+    if (processedStill) {
+      // A processed still is a one-frame clip: the PNG is frame 0 and the canvas and pivot are the ones processing recorded.
+      const doc = AnimationDoc.safeParse(JSON.parse(await Bun.file(join(versionAbs, animationRel!)).text()));
+      if (!doc.success) throw new GatherProblem(`${row.asset_id}/${d.deliverableId}: animation.json is unreadable: ${doc.error.message}`);
+      stillRel = `${posix.dirname(animationRel!)}/frames/0000.png`;
+      if (!listed.has(stillRel)) throw new GatherProblem(`${row.asset_id}/${d.deliverableId}: processed still file ${stillRel} is not part of the version`);
+      canvas = doc.data.canvas;
+      pivot = doc.data.pivotPx;
+      const recipeJson = open.db.query<{ recipe_json: string | null }, [string]>("SELECT recipe_json FROM candidate_outputs WHERE output_id = ?").get(d.outputId)?.recipe_json;
+      const recipe = recipeJson ? ProcessingRecipe.safeParse(JSON.parse(recipeJson)) : undefined;
+      recipeNine = recipe?.success ? recipe.data.nineSlice : undefined;
+    } else {
+      stillRel = d.files.find((f) => !f.includes("/crops/") && manifest.files.find((m) => m.path === f)?.mediaType === "image/png");
+      if (!stillRel) throw new GatherProblem(`${row.asset_id}/${d.deliverableId}: the version holds no PNG for this deliverable`);
+      const size = open.db.query<{ width: number | null; height: number | null }, [string]>("SELECT width, height FROM candidate_outputs WHERE output_id = ?").get(d.outputId);
+      if (!size?.width || !size.height) throw new GatherProblem(`${row.asset_id}/${d.deliverableId}: the output's pixel size is not recorded`);
+      canvas = { width: size.width, height: size.height };
+      // environment.pivot is in exported pixels; stills without one pivot at their centre.
+      pivot = authored?.environment?.pivot ?? { x: canvas.width / 2, y: canvas.height / 2 };
+    }
     const tileSize = authored?.environment?.tileSize;
     const env = authored?.environment;
     const tile = tileSize
       ? { width: tileSize.width, height: tileSize.height, ...(env?.connections ? { connections: env.connections } : {}), ...(env?.seamlessAxes ? { seamlessAxes: [...env.seamlessAxes] } : {}) }
       : undefined;
+    // Margins pinned in the reviewed output's recipe win over the current authored ones.
+    const nineSlice = recipeNine ?? authored?.ui?.nineSlice;
     deliverables.push({
       ...base, media: { kind: "still", sourcePath: join(versionAbs, stillRel) }, canvas, pivot, ...scales,
-      ...(authored?.ui?.nineSlice ? { nineSlice: authored.ui.nineSlice } : {}), ...(tile ? { tile } : {}),
+      ...(nineSlice ? { nineSlice } : {}), ...(authored?.ui?.state ? { state: authored.ui.state } : {}), ...(tile ? { tile } : {}),
     });
+  }
+
+  // Attachment points are pixels of their deliverable's exported canvas; normalized values are against that canvas.
+  const normalized = (a: AssetSpec["attachments"][number]) => {
+    const canvas = deliverables.find((d) => d.deliverableId === a.deliverable)?.canvas;
+    return canvas ? { nx: a.x / canvas.width, ny: a.y / canvas.height } : {};
+  };
+  const attachments = asset.attachments.map((a) => ({ name: a.name, x: a.x, y: a.y, ...(a.deliverable ? { deliverable: a.deliverable } : {}), ...normalized(a) }));
+  for (const d of deliverables) {
+    const mine = asset.attachments.filter((a) => a.deliverable === d.deliverableId).map((a) => ({ name: a.name, x: a.x, y: a.y, ...normalized(a) }));
+    if (mine.length > 0) d.metadata.attachments = mine;
   }
 
   return {
@@ -121,8 +153,12 @@ export async function gatherVersion(
     dependencies: manifest.dependencyVersions,
     metadata: {
       name: asset.name, versionNumber: row.version_number,
-      ...(asset.collection ? { collection: { members: asset.collection.members, ...(asset.collection.styleId ? { styleId: asset.collection.styleId } : {}) } } : {}),
+      ...(attachments.length > 0 ? { attachments } : {}),
+      // An aggregate exports the membership it pinned at promotion, with each member's version and declared structural metadata.
+      ...(asset.collection ? { collection: { members: manifest.collectionMembers ?? asset.collection.members, ...(asset.collection.styleId ? { styleId: asset.collection.styleId } : {}) } } : {}),
+      ...(manifest.members ? { members: manifest.members.map((m) => ({ assetId: m.assetId, required: m.required, versionId: m.versionId, versionNumber: m.versionNumber, family: m.family, environment: m.environment })) } : {}),
     },
     deliverables,
+    ...(asset.export && asset.export.sprites !== "individual" ? { sprites: asset.export.sprites } : {}),
   };
 }

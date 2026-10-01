@@ -6,7 +6,7 @@ import { resolveIn } from "@brainforge/storage";
 import type { AuthoredSet } from "../authored.ts";
 import { buildPipeline } from "../pipeline.ts";
 import type { OpenProject } from "../project-runtime.ts";
-import { stepRequirementsHash } from "../review/requirements.ts";
+import { stepFingerprint, stepRequirementsHash } from "../review/requirements.ts";
 import { OperationFailure } from "../runtime.ts";
 import { aggregateRequirements } from "./plan.ts";
 import { verifyDirectory } from "./publish.ts";
@@ -84,9 +84,13 @@ export function compareToCurrent(open: OpenProject, set: AuthoredSet, manifest: 
   }
   const nodes = buildPipeline(spec).nodes.filter((n) => n.id !== "concept");
   const ids = new Set(nodes.map((n) => n.id));
+  // The stored hash was recorded at the deliverable's delivered stage (processed for animations); a version recorded
+  // before output stages existed holds the whole-step legacy hash and is still compared with that.
   const current: Record<string, string> = { concept: stepRequirementsHash(open, set, manifest.assetId, "concept") };
-  for (const id of Object.keys(manifest.stepRequirements)) {
-    if (id !== "concept" && ids.has(id)) current[id] = stepRequirementsHash(open, set, manifest.assetId, id, manifest.branchId);
+  for (const node of nodes) {
+    if (!(node.id in manifest.stepRequirements)) continue;
+    const fp = stepFingerprint(open, set, manifest.assetId, node.id, manifest.branchId, { stage: node.kind === "animation" ? "processed" : "source", basis: "current" });
+    current[node.id] = manifest.stepRequirements[node.id] === fp.legacy ? fp.legacy : fp.hash;
   }
 
   if (current.concept !== manifest.stepRequirements.concept) differences.push({ field: "stepRequirements.concept", version: manifest.stepRequirements.concept, current: current.concept });
@@ -102,6 +106,13 @@ export function compareToCurrent(open: OpenProject, set: AuthoredSet, manifest: 
     if (!open.db.query("SELECT 1 FROM asset_versions WHERE version_id = ? AND asset_id = ?").get(pin.versionId, pin.assetId)) {
       differences.push({ field: `dependencyVersions.${pin.assetId}`, version: pin.versionId, current: "no such version" });
     }
+  }
+  if (manifest.collectionMembers) {
+    // A membership change (member added, removed, or switched between required and optional) needs a new aggregate.
+    const norm = (list: readonly { assetId: string; required: boolean }[]): string[] => list.map((m) => `${m.assetId}:${m.required ? "required" : "optional"}`).sort();
+    const now = norm(spec.collection?.members ?? []);
+    const then = norm(manifest.collectionMembers);
+    if (JSON.stringify(now) !== JSON.stringify(then)) differences.push({ field: "collection.members", version: then, current: now });
   }
   const matchesCurrent = differences.length === 0;
   for (const [path, hash] of Object.entries(manifest.specSnapshots)) {

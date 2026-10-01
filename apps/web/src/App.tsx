@@ -2,6 +2,7 @@ import { Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout.tsx";
 import { AssetPage } from "./features/assets/AssetPage.tsx";
 import { AssetsPage } from "./features/assets/AssetsPage.tsx";
+import { NewAssetWizard } from "./features/families/NewAssetWizard.tsx";
 import { JobsPage } from "./features/jobs/JobsPage.tsx";
 import { OpenProjectPage } from "./features/projects/OpenProjectPage.tsx";
 import { OverviewPage } from "./features/projects/OverviewPage.tsx";
@@ -23,6 +24,7 @@ export function App() {
         <Route index element={<OverviewPage />} />
         <Route path="projects/open" element={<OpenProjectPage />} />
         <Route path="assets" element={<AssetsPage />} />
+        <Route path="assets/new" element={<NewAssetWizard />} />
         <Route path="assets/:assetId" element={<AssetPage />} />
         <Route path="assets/:assetId/candidates/:candidateId" element={<CandidatePage />} />
         <Route path="jobs" element={<JobsPage />} />

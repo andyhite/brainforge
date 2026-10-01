@@ -3,6 +3,7 @@ import { GenerationPlan, type Budget, type Job, type ParsedOperationInput, type 
 import { graphHash, preflight, type ComfyTransport } from "@brainforge/comfy";
 import { paths, resolveIn, writeJsonAtomic } from "@brainforge/storage";
 import { discoverAuthored } from "../authored.ts";
+import { authoredSetFor } from "../branches/basis.ts";
 import { computeEffective } from "../effective.ts";
 import { confirmedPreferences } from "../preferences/store.ts";
 import type { OpenProject } from "../project-runtime.ts";
@@ -21,7 +22,7 @@ const CONTENT_BLOCKERS = new Set([
   "PROJECT_INVALID", "ASSET_INVALID", "BATCH_TOO_LARGE", "WORKFLOW_UNAVAILABLE", "PARENT_REQUIRED", "PARENT_MISSING", "PARENT_UNEXPECTED",
   "OUTPUT_MISSING", "REFERENCE_UNSUPPORTED", "REFERENCE_CONFLICT", "REFERENCE_MISSING", "REFERENCE_REQUIRED", "ITERATION_REQUIRED",
   "STYLE_CONFLICT", "WORKFLOW_INPUT_MISSING", "STEP_UNKNOWN", "STEP_BLOCKED", "NO_BRANCH", "DEPENDENCY_NOT_APPROVED", "SIZE_UNSUPPORTED", "BRANCH_UNEXPECTED",
-  "GUIDE_MISSING", "GUIDE_NOT_APPROVED", "GUIDE_CLIPPED", "FRAME_COUNT_INVALID", "ANCHOR_MISSING", "MODE_UNSUPPORTED",
+  "GUIDE_MISSING", "GUIDE_NOT_APPROVED", "GUIDE_CLIPPED", "FRAME_COUNT_INVALID", "ANCHOR_MISSING", "MODE_UNSUPPORTED", "SAVED_INPUTS_UNAVAILABLE",
 ]);
 
 const askForBudget = (assetId: string, stepId: string): RecoveryAction => ({
@@ -61,7 +62,8 @@ export async function startGeneration(env: StartEnvironment, input: ParsedOperat
   }
 
   // --- inputs unchanged since the inspection
-  const set = await discoverAuthored(project.root);
+  // A saved-input branch generates from its recorded versions of the authored files, so those are what must be unchanged.
+  const set = authoredSetFor(project.db, await discoverAuthored(project.root), plan.branchId);
   const changed = changedSpecs(set, plan.inputs.specHashes);
   if (changed.length > 0) {
     throw new OperationFailure("REVISION_CONFLICT", `Authored files changed since the plan was inspected: ${changed.map((c) => c.path).join(", ")}. Plan again so the prompt reflects them.`, { changed }, [{ label: "Plan again", operation: "generation.plan" }]);

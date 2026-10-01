@@ -1,6 +1,6 @@
 # `brainforge/assets/<asset-id>/asset.yaml`
 
-Human-readable companion to `spec_schema {kind:"asset"}`; `spec_schema` wins on conflict.
+Human-readable companion to `spec_schema {kind:"asset"}`; `spec_schema` wins on conflict. Per-family kinds/required fields/templates: [families](families.md) (`family_list`, `family_template`); environments: [environments](environments.md); UI/icons/effects: [ui-vfx](ui-vfx.md).
 
 Schema `brainforge.asset.v2`. `.strict()` everywhere. `id` MUST equal the parent directory name (kebab-case, unique across the project). Create a new asset with `spec_write {path:"brainforge/assets/<id>/asset.yaml", expectedHash:null}`. Concept validity needs only `schema, id, name, family, description`; missing production fields only block the steps that need them. Display-name or family edits never move the directory.
 
@@ -19,7 +19,9 @@ Schema `brainforge.asset.v2`. `.strict()` everywhere. `id` MUST equal the parent
 |`references`|no|string[] reference ids, `[]`|
 |`overrides`|no|Defaults block (see project-yaml.md), `{}`|
 |`deliverables`|no|list of Deliverable, `[]`|
-|`collection`|no|`{members:[{assetId: kebab, required: bool=true}], styleId?: kebab}`; for `environment` collections|
+|`collection`|no|`{members:[{assetId: kebab, required: bool=true}], styleId?: kebab}`; ONLY on `environment` assets ([environments](environments.md))|
+|`attachments`|no|`[{name: kebab, x: number, y: number, deliverable?: kebab}]`, `[]`; ONLY `equipment`/`prop`; pixels of that deliverable's canvas, origin top-left; exported as `metadata.attachments` with normalized `nx`/`ny` ([families](families.md))|
+|`export`|no|`{sprites: individual\|atlas\|both = individual}`: packaging of still deliverables ([ui-vfx](ui-vfx.md))|
 
 ## Deliverable
 
@@ -30,14 +32,16 @@ Schema `brainforge.asset.v2`. `.strict()` everywhere. `id` MUST equal the parent
 |`required`|no|bool, `true`; optional experiments set `false`|
 |`description`|no|string|
 |`dependsOn`|no|deliverable ids in the same asset|
-|`referenceRoles`|no|map role-name -> `{deliverableId, outputRole}` where `deliverableId` is in `dependsOn` and `outputRole` is a region id of that reference-sheet (e.g. `identity: {deliverableId: construction-sheet, outputRole: profile}`). The first binding supplies the ONE reference image the deliverable is generated from (a hash-pinned crop of the approved sheet); without a binding the branch's locked concept output is the reference. The workflow takes a single reference, so further bindings are ignored and the plan's `notes` say so|
+|`referenceRoles`|no|map role-name -> EITHER `{deliverableId, outputRole}` (same asset: `deliverableId` is in `dependsOn`, `outputRole` is a region id of that reference-sheet, e.g. `identity: {deliverableId: construction-sheet, outputRole: profile}`) OR `{assetId, branchId, role: direction}` (cross-asset: the NAMED branch of an environment; see [environments](environments.md)). Anything else is an ERROR. Same-asset: the first binding supplies the ONE reference image (a hash-pinned crop of the approved sheet); without a binding the branch's locked concept output is the reference; further bindings are ignored and the plan's `notes` say so|
 |`overrides`|no|Defaults block, highest precedence|
 |`animation`|no|`{motion: string (required), loop: bool=true, sourceFps?, playbackFps?: number>0, sourceFrameCount?: int>0, startReference?, endReference?: string}`|
 |`environment`|no|`{layer?, pivot?{x,y}, relativeScale?>0, tileSize?{width,height ints>0}, connections?{north,east,south,west: label strings}, seamlessAxes?: [] \| ["x"] \| ["y"] \| ["x","y"], parallax?{x,y}}`|
 |`ui`|no|`{state?: string, nineSlice?{left,top,right,bottom: ints>=0}}`|
-|`regions`|no|only for `reference-sheet`: `[{id: kebab, x,y: int>=0, width,height: int>0}]` in source pixels|
+|`regions`|no|only for `reference-sheet`: `[{id: kebab, x,y: int>=0, width,height: int>0, view?: string}]` in source pixels; `view` is a concrete phrase sent to the model for that region|
+|`referenceStrength`|no|number 0..20: image-conditioning strength (workflow `ref_boost`); lower lets pose/state change more. Workflow default if omitted|
+|`output`|no|`{alpha?: transparent\|opaque, width?: int>0, height?: int>0}`: width and height together or neither, max 8192. `alpha` overrides the family default (opaque deliverables should say `alpha: opaque`; it also selects the opaque workflows and `fit: crop` processing). Not sent to the model|
 
-Animation timing: exact generation size, required images and `4n+1` frame counts come from the workflow; `sourceFrameCount` must be `4n+1` (5..81). `animation.startReference`/`endReference` name a POSE deliverable in `dependsOn` (e.g. `idle-rest`; default: the first approved pose dependency). `animation.motion` is prompt-bearing: one concrete positive sentence of what moves. `playbackFps` is the export rate (processing resamples, preserving duration). Full guide: [motion-processing](motion-processing.md).
+Animation timing: exact generation size, required images and `4n+1` frame counts come from the workflow; `sourceFrameCount` must be `4n+1` (5..81). `animation.startReference`/`endReference` name a deliverable in `dependsOn`: a POSE for `character`/`creature` (e.g. `idle-rest`; default: the first approved pose dependency), a `pose`, `still`, `view` or `variant` for every other family. `animation.motion` is prompt-bearing: one concrete positive sentence of what moves. `animation.loop` defaults to `true` but MUST be written explicitly for `ui` and `effect` animations. `playbackFps` is the export rate (processing resamples, preserving duration). Full guide: [motion-processing](motion-processing.md).
 
 Precedence for settings: project `defaults` → `familyDefaults` → asset `overrides` → deliverable `overrides`. Scalars/arrays replace, objects merge. Check with `settings_inspect {assetId, deliverableId}`.
 
@@ -137,5 +141,11 @@ deliverables:
 |wrong schema literal|`schema: Invalid input: expected "brainforge.asset.v2"`|
 |abstract or doc-style feature text ("large integrated eyes", "proposal needed")|valid, but sent verbatim to the model; rewrite concretely, move status to `notes`|
 |negation ("gray backdrop is not part of the character")|valid, but the named thing gets drawn; state only what to draw|
+|kind not allowed for the family (`kind: animation` on an `item`, `tile` on a `ui`)|`Deliverable kind "..." is not allowed for a item; allowed: ...` (ERROR; see [families](families.md))|
+|`collection` on a non-environment, `attachments` on a character|`Only environment assets form collections...` / `Attachment points are only for equipment and props...` (ERRORs)|
+|`output` with only `width`|`output needs both width and height, or neither.`|
+|nine-slice margins covering the canvas|`Nine-slice left (24) + right (24) must leave a stretchable centre inside output.width 48.`|
+|seamless tile with different edge labels|`A tile that is seamless on x repeats onto itself, so its west (...) and east (...) connection labels must match.`|
+|missing production field, leftover `REPLACE:` text|WARNING only (`... needs animation.motion before it can be produced`, `Unfinished placeholder`); blocks that deliverable's step, not the file|
 
 Never put URLs or absolute machine paths in asset YAML: they are non-portable. Use `spec_validate` to see these messages without writing.

@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import type { StepState } from "@brainforge/contracts";
 import { useOperation } from "../../api/hooks.ts";
 import { Banner, ErrorBanner, NetworkProblem, Status, type Tone } from "../../components/ui.tsx";
+import { ReassessmentReasons } from "../branches/shared.tsx";
 
 const STATE_TONE: Record<StepState["state"], Tone> = { blocked: "warn", ready: "info", running: "info", awaiting_review: "info", complete: "ok", failed: "bad" };
 const STATE_TEXT: Record<StepState["state"], string> = {
@@ -66,7 +67,7 @@ function StepCard({ step, href, active, stepNames }: { step: StepState; href: st
       <div className="secondary">
         {step.counts.candidates} candidates · {step.counts.activeJobs} running{step.counts.openRevisions > 0 ? ` · ${step.counts.openRevisions} open revisions` : ""}{step.counts.pendingEscalations > 0 ? ` · ${step.counts.pendingEscalations} escalated` : ""}
       </div>
-      {step.needsReassessment ? <div role="status"><Status tone="warn">Needs reassessment</Status> <span className="secondary">{step.reassessmentReasons.join("; ")}</span></div> : null}
+      {step.needsReassessment ? <div role="status"><Status tone="warn">Needs reassessment</Status><div className="secondary"><ReassessmentReasons reasons={step.reassessmentReasons} /></div></div> : null}
       {action ? <div style={{ marginTop: 6 }}><Link to={href} className="button primary">{action}</Link></div> : null}
     </li>
   );

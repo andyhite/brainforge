@@ -105,7 +105,7 @@ export function ProblemList({ problems, blocked, onOpenFile }: { problems: Probl
       <ul className="problem-list" aria-label="Problems">
         {problems.map((problem, index) => (
           <li key={`${problem.file ?? ""}-${problem.line ?? ""}-${problem.column ?? ""}-${index}`}>
-            <Status tone="bad">Problem</Status>
+            <Status tone={problem.severity === "warning" ? "warn" : "bad"}>{problem.severity === "warning" ? "Warning" : "Error"}</Status>
             <span>
               {problem.file ? (onOpenFile ? <Link to={onOpenFile(problem.file)} className="mono">{problem.file}</Link> : <code>{problem.file}</code>) : null}
               {problem.line !== undefined ? <span className="mono"> {problem.line}:{problem.column ?? 1}</span> : null}

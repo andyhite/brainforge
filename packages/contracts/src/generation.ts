@@ -186,6 +186,10 @@ export const BranchSelection = z.object({
 });
 export type BranchSelection = z.infer<typeof BranchSelection>;
 
+/** `saved` reuses the authored inputs the source work was made with; `current` uses the authored files as they are now. */
+export const InputMode = z.enum(["saved", "current"]);
+export type InputMode = z.infer<typeof InputMode>;
+
 /** A human-authorized concept choice. It is not a production version. */
 export const Branch = z.object({
   branchId: z.string(),
@@ -200,6 +204,19 @@ export const Branch = z.object({
   lockedByType: z.enum(["human", "agent", "system"]),
   lockedAt: z.string(),
   selections: z.array(BranchSelection),
+  /** Branch this one was continued or rebased from. */
+  parentBranchId: z.string().optional(),
+  /** The reference/animation (or, for a concept lock, concept) candidate this branch continues from. */
+  sourceCandidateId: z.string().optional(),
+  sourceOutputId: z.string().optional(),
+  /** The input basis chosen when the branch was created; recorded with the branch and every run in it. */
+  inputMode: InputMode.default("current"),
+  /** Per-step requirement fingerprints (`concept` plus each deliverable) of the inputs this branch consumes. */
+  basis: z.record(z.string(), Sha256).default({}),
+  /** Authored file path -> hash the basis was resolved from. */
+  specHashes: z.record(z.string(), z.string()).default({}),
+  /** The branch the asset's default views, promotion and review currently work on. */
+  isCurrent: z.boolean().default(false),
 });
 export type Branch = z.infer<typeof Branch>;
 
@@ -301,6 +318,10 @@ export const MotionPlan = z.object({
 });
 export type MotionPlan = z.infer<typeof MotionPlan>;
 
+/** An environment's locked concept output pinned as a child's direction: named branch, exact output id and hash (never "latest"). */
+export const DirectionPin = z.object({ name: z.string(), assetId: z.string(), branchId: z.string(), conceptOutputId: z.string(), outputHash: Sha256 });
+export type DirectionPin = z.infer<typeof DirectionPin>;
+
 export const GenerationPlan = z.object({
   planId: z.string(),
   /** Content hash of everything that defines the plan; start must present it back. */
@@ -309,6 +330,8 @@ export const GenerationPlan = z.object({
   stepId: StepId,
   /** Required for deliverable steps (anything but `concept`). */
   branchId: z.string().optional(),
+  /** Which authored inputs this plan resolved from: the branch's saved spec versions or the files as they are now. Omitted for concept plans (no branch). */
+  inputMode: InputMode.optional(),
   mode: z.enum(["fresh", "variation"]),
   count: z.number().int().min(1),
   parentCandidateId: z.string().optional(),
@@ -337,6 +360,8 @@ export const GenerationPlan = z.object({
   crops: z.array(z.object({ id: z.string(), x: z.number().int(), y: z.number().int(), width: z.number().int().positive(), height: z.number().int().positive() })).default([]),
   /** Present for animation steps: what Wan is asked to do and how the guide poses were normalized into its canvas. */
   motion: MotionPlan.optional(),
+  /** Cross-asset `direction` bindings resolved at plan time, pinned in the run and in the step fingerprint. */
+  directionPins: z.array(DirectionPin).default([]),
   createdAt: z.string(),
 });
 export type GenerationPlan = z.infer<typeof GenerationPlan>;

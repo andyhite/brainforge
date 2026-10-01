@@ -5,7 +5,7 @@ import { discoverAuthored } from "../authored.ts";
 import type { OpenProject } from "../project-runtime.ts";
 import { frameVisuals, outputRow as frameOutputRow } from "../outputs/frames.ts";
 import { standingApproval } from "./authority.ts";
-import { stepRequirementsHash } from "./requirements.ts";
+import { stepFingerprint, type Fingerprint, type FingerprintStage } from "./requirements.ts";
 
 export interface CandidateRow {
   candidate_id: string; asset_id: string; step_id: string; run_id: string; job_id: string; parent_candidate_id: string | null;
@@ -52,26 +52,26 @@ export function candidateRow(db: Database, candidateId: string): CandidateRow {
   return row;
 }
 
-/** Current requirements fingerprint of a step, resolved against the authored files as they are now. */
-export type RequirementsResolver = (stepId: string, branchId: string | undefined) => string;
+/** Current requirements fingerprint of a step at one output stage, resolved against the branch's input basis. */
+export type RequirementsResolver = (stepId: string, branchId: string | undefined, stage?: FingerprintStage) => Fingerprint;
 
 export async function requirementsResolver(open: OpenProject, assetId: string): Promise<RequirementsResolver> {
   const set = await discoverAuthored(open.root);
-  return (stepId, branchId) => stepRequirementsHash(open, set, assetId, stepId, branchId);
+  return (stepId, branchId, stage) => stepFingerprint(open, set, assetId, stepId, branchId, stage === undefined ? {} : { stage });
 }
 
 export function toCandidate(db: Database, r: CandidateRow, hashFor: RequirementsResolver): Candidate {
   const count = (sql: string): number => db.query<{ n: number }, [string]>(sql).get(r.candidate_id)?.n ?? 0;
   const branchId = r.branch_id ?? undefined;
   const outputs = outputRows(db, r.candidate_id);
-  const requirementsHash = r.step_id === "concept" ? "" : hashFor(r.step_id, branchId);
+  const hashOf = (stage: FingerprintStage): Fingerprint => hashFor(r.step_id, branchId, stage);
   return {
     candidateId: r.candidate_id, assetId: r.asset_id, stepId: r.step_id, runId: r.run_id, jobId: r.job_id,
     ...(r.parent_candidate_id === null ? {} : { parentCandidateId: r.parent_candidate_id }),
     ...(branchId === undefined ? {} : { branchId }),
     label: r.label, ...(r.seed === null ? {} : { seed: r.seed }), prompt: r.prompt, createdAt: r.created_at,
     favorite: r.favorite === 1, outputs: outputs.map(toOutput),
-    approvals: outputs.map((o) => standingApproval(db, o.output_id, requirementsHash, o.sha256)),
+    approvals: outputs.map((o) => standingApproval(db, o.output_id, r.step_id === "concept" ? hashOf("source") : hashOf(o.stage), o.sha256, branchId ?? null)),
     annotationCount: count("SELECT COUNT(*) AS n FROM annotations WHERE candidate_id = ? AND deleted = 0"),
     openRevisionCount: count("SELECT COUNT(*) AS n FROM revision_requests WHERE candidate_id = ? AND status IN ('open','responded')"),
   };

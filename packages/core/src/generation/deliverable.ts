@@ -1,4 +1,5 @@
-import type { Deliverable, MotionPlan, PlanBlocker } from "@brainforge/contracts";
+import type { Deliverable, DirectionPin, MotionPlan, PlanBlocker } from "@brainforge/contracts";
+import { asCrossAsset, directionBindings, resolveDirection, unresolvedBlocker } from "../environments/direction.ts";
 import type { AuthoredSet } from "../authored.ts";
 import { buildPipeline } from "../pipeline.ts";
 import { computeSteps } from "../pipeline/steps.ts";
@@ -8,10 +9,11 @@ import type { PinnedReference } from "./plan.ts";
 import { readPinnedReference } from "./references.ts";
 import { WAN_CANVAS, resolveMotion } from "./motion.ts";
 
-export const DELIVERABLE_WORKFLOW = "krea2-variation";
 /** Codes computeSteps reports that make a step unrunnable; they carry over to the plan unchanged. */
 const STEP_BLOCKERS = new Set(["STEP_BLOCKED", "NO_BRANCH", "DEPENDENCY_NOT_APPROVED"]);
 const STEP = 16;
+const MIN_SIDE = 256;
+const MAX_SIDE = 2048;
 
 /** What a deliverable step contributes to a generation plan. */
 export interface DeliverableInputs {
@@ -31,6 +33,8 @@ export interface DeliverableInputs {
   values?: Record<string, number>;
   /** Present for animations: guides, scale anchor and frame count. */
   motion?: MotionPlan;
+  /** Cross-asset `direction` bindings of this deliverable resolved to the named environment branch's locked concept output. */
+  directionPins: DirectionPin[];
 }
 
 interface CropRow { file_id: string; sha256: string; region_id: string }
@@ -52,7 +56,7 @@ function sheetSize(regions: readonly { x: number; y: number; width: number; heig
  * alone; otherwise it is conditioned on the branch's locked concept output alone.
  */
 export async function resolveDeliverable(project: OpenProject, set: AuthoredSet, assetId: string, stepId: string, branchId: string | undefined): Promise<DeliverableInputs> {
-  const out: DeliverableInputs = { blockers: [], notes: [], index: -1, crops: [], references: [] };
+  const out: DeliverableInputs = { blockers: [], notes: [], index: -1, crops: [], references: [], directionPins: [] };
   const spec = set.assets.find((a) => a.fileId === assetId)?.spec;
   const node = buildPipeline(spec).byId.get(stepId);
   const index = spec?.deliverables.findIndex((d) => d.id === stepId) ?? -1;
@@ -80,6 +84,22 @@ export async function resolveDeliverable(project: OpenProject, set: AuthoredSet,
   for (const b of steps.find((s) => s.stepId === stepId)?.blockers ?? []) if (STEP_BLOCKERS.has(b.code)) out.blockers.push(b);
   if (!branch || !branchId) return out;
 
+  // --- cross-asset direction: the NAMED environment branch's locked concept output, pinned by id and hash (never "latest")
+  const direction = resolveDirection(project.db, directionBindings(node.deliverable));
+  out.directionPins = direction.pins;
+  for (const u of direction.unresolved) out.blockers.push(unresolvedBlocker(u, assetId, stepId));
+  let directionUsable = true;
+  for (const pin of direction.pins) {
+    if (!(await readPinnedReference(project, { id: pin.conceptOutputId, sha256: pin.outputHash }))) {
+      directionUsable = false;
+      out.blockers.push({
+        code: "REFERENCE_MISSING",
+        message: `${assetId}/${stepId}: the locked concept output ${pin.conceptOutputId} of ${pin.assetId}/${pin.branchId} is missing on disk or no longer matches its recorded hash.`,
+        recoveryActions: [{ label: `Inspect the concept candidate of ${pin.assetId}`, operation: "branch.list", input: { assetId: pin.assetId } }],
+      });
+    }
+  }
+
   // --- motion: Wan takes two hash-pinned, normalized guide poses instead of a single reference
   if (node.deliverable.kind === "animation") {
     if (!node.deliverable.animation) {
@@ -87,6 +107,10 @@ export async function resolveDeliverable(project: OpenProject, set: AuthoredSet,
       return out;
     }
     out.size = { width: WAN_CANVAS, height: WAN_CANVAS };
+    const target = node.deliverable.output;
+    if (target?.width !== undefined && target.height !== undefined) {
+      out.notes.push(`Target output ${target.width}x${target.height}px. Wan renders ${WAN_CANVAS}x${WAN_CANVAS}px; processing fits the frames to the exact target and nothing is silently downscaled here.`);
+    }
     const motion = await resolveMotion(project, set, assetId, spec, { ...node.deliverable, animation: node.deliverable.animation }, branchId, { id: branch.concept_output_id, sha256: branch.concept_output_hash }, steps);
     out.blockers.push(...motion.blockers);
     out.notes.push(...motion.notes);
@@ -103,14 +127,27 @@ export async function resolveDeliverable(project: OpenProject, set: AuthoredSet,
   if (regions.length > 0) {
     out.size = sheetSize(regions);
     out.crops = regions.map((r) => ({ id: r.id, x: r.x, y: r.y, width: r.width, height: r.height }));
-    if (out.size.width > 2048 || out.size.height > 2048) {
-      out.blockers.push({ code: "SIZE_UNSUPPORTED", message: `The regions of ${stepId} need a ${out.size.width}x${out.size.height} canvas; the workflow generates at most 2048 on a side.`, recoveryActions: [{ label: "Shrink the regions in asset.yaml", operation: "spec.read", input: { path: `brainforge/assets/${assetId}/asset.yaml` } }] });
+    if (out.size.width > MAX_SIDE || out.size.height > MAX_SIDE) {
+      out.blockers.push({ code: "SIZE_UNSUPPORTED", message: `The regions of ${stepId} need a ${out.size.width}x${out.size.height} canvas; the workflow generates at most ${MAX_SIDE} on a side.`, recoveryActions: [{ label: "Shrink the regions in asset.yaml", operation: "spec.read", input: { path: `brainforge/assets/${assetId}/asset.yaml` } }] });
     }
   }
 
-  // --- reference: a bound crop of an approved sheet, else the locked concept output
+  const target = node.deliverable.output;
+  if (regions.length === 0 && target?.width !== undefined && target.height !== undefined) {
+    const fit = (n: number): number => Math.max(MIN_SIDE, Math.ceil(n / STEP) * STEP);
+    out.size = { width: fit(target.width), height: fit(target.height) };
+    out.notes.push(`Target output ${target.width}x${target.height}px; generating ${out.size.width}x${out.size.height}px (rounded up to a multiple of ${STEP}, at least ${MIN_SIDE}). The exact target is applied by processing; nothing is silently downscaled here.`);
+    if (out.size.width > MAX_SIDE || out.size.height > MAX_SIDE) {
+      out.blockers.push({ code: "SIZE_UNSUPPORTED", message: `${stepId} asks for ${target.width}x${target.height}px, which needs a ${out.size.width}x${out.size.height} canvas; the workflow generates at most ${MAX_SIDE} on a side.`, recoveryActions: [{ label: "Lower output.width/height in asset.yaml", operation: "spec.read", input: { path: `brainforge/assets/${assetId}/asset.yaml` } }] });
+    }
+  } else if (regions.length > 0 && target?.width !== undefined) {
+    out.notes.push(`output.width/height are ignored for a reference sheet: its canvas comes from its regions (${out.size?.width}x${out.size?.height}px).`);
+  }
+
+  // --- reference: a bound crop of an approved sheet, else the environment's pinned direction, else the locked concept output
   const bound: { role: string; crop: CropRow | undefined; label: string }[] = [];
   for (const [role, value] of Object.entries(node.deliverable.referenceRoles)) {
+    if (asCrossAsset(value)) continue; // resolved above as a direction pin
     const ref = value as { deliverableId?: unknown; outputRole?: unknown } | null;
     if (typeof ref !== "object" || ref === null || typeof ref.deliverableId !== "string" || typeof ref.outputRole !== "string") {
       out.notes.push(`referenceRoles.${role} is not a { deliverableId, outputRole } binding of this asset; it is ignored by generation.`);
@@ -134,6 +171,10 @@ export async function resolveDeliverable(project: OpenProject, set: AuthoredSet,
       out.notes.push(`Conditioned on the ${first.label} crop (sha256 ${first.crop.sha256.slice(0, 12)}) alone. krea2-variation takes a single reference image, so the locked concept output is not sent in this run; identity relies on the crop, which was derived from the approved sheet.`);
     }
     if (bound.length > 1) out.notes.push(`Only ${first.label} is sent: ${bound.slice(1).map((b) => b.label).join(", ")} cannot be used because the workflow takes one reference image.`);
+  } else if (out.directionPins[0] && directionUsable) {
+    const pin = out.directionPins[0];
+    out.reference = { role: "reference", id: pin.conceptOutputId, sha256: pin.outputHash };
+    out.notes.push(`Conditioned on the locked concept of ${pin.assetId}/${pin.branchId} (output ${pin.conceptOutputId}, sha256 ${pin.outputHash.slice(0, 12)}) as this step's direction, not on ${assetId}'s own concept. krea2-variation takes a single reference image.${out.directionPins.length > 1 ? ` Only ${pin.assetId}/${pin.branchId} is sent; the other direction bindings are pinned but not used as an image.` : ""}`);
   } else {
     out.reference = { role: "reference", id: branch.concept_output_id, sha256: branch.concept_output_hash };
     const sheets = node.dependsOn.flatMap((dep) => {

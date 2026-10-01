@@ -49,7 +49,7 @@ function assertNotTerminal(status: string, id: string): void {
   }
 }
 
-const RunInfo = GenerationPlan.pick({ workflow: true, inputs: true }).extend({ iterationInstructions: z.string().optional() });
+const RunInfo = GenerationPlan.pick({ workflow: true, inputs: true, inputMode: true }).extend({ iterationInstructions: z.string().optional() });
 
 export const reviewHandlers: HandlerMap = {
   "candidate.list": async ({ input, project }) => {
@@ -87,7 +87,7 @@ export const reviewHandlers: HandlerMap = {
         lineage,
         run: {
           runId: row.run_id, workflowId: plan.workflow.id, workflowVersion: plan.workflow.version, graphHash: plan.workflow.graphHash,
-          specHashes: plan.inputs.specHashes, ...(plan.iterationInstructions === undefined ? {} : { iterationInstructions: plan.iterationInstructions }),
+          specHashes: plan.inputs.specHashes, ...(plan.inputMode === undefined ? {} : { inputMode: plan.inputMode }), ...(plan.iterationInstructions === undefined ? {} : { iterationInstructions: plan.iterationInstructions }),
         },
         visuals: await outputVisuals(open, row.candidate_id),
       },

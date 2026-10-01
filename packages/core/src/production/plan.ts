@@ -1,15 +1,19 @@
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
-import type { ActorType, PlanBlocker, PolicyView, PromotionDeliverableRow, PromotionPlan, RecoveryAction } from "@brainforge/contracts";
+import type { ActorType, DirectionPin, FieldDifference, InputMode, MemberPin, PlanBlocker, PolicyView, PromotionDeliverableRow, PromotionMemberRow, PromotionPlan, RecoveryAction } from "@brainforge/contracts";
 import { paths, resolveIn, sha256 } from "@brainforge/storage";
-import { discoverAuthored } from "../authored.ts";
+import { discoverAuthored, type AuthoredSet } from "../authored.ts";
+import { branchSpecHashes, resolveDefaultBranchId, savedInputs } from "../branches/basis.ts";
+import { assetInputDifferences } from "../branches/diff.ts";
 import { stylesFor } from "../generation/prompt.ts";
 import { normalizedHash } from "../operations.ts";
 import { buildPipeline } from "../pipeline.ts";
 import { openFeedbackCount } from "../pipeline/steps.ts";
+import { recordedDirections } from "../environments/direction.ts";
+import { evaluateMembers } from "./members.ts";
 import type { OpenProject } from "../project-runtime.ts";
 import { standingApproval } from "../review/authority.ts";
-import { selectedOutput, stepRequirementsHash } from "../review/requirements.ts";
+import { selectedOutput, stepFingerprint, stepRequirementsHash } from "../review/requirements.ts";
 import { OperationFailure } from "../runtime.ts";
 import { outputRow, type FrameOutputRow } from "../outputs/frames.ts";
 
@@ -31,6 +35,8 @@ export interface EvalRow {
   sourceOutputId?: string;
   recipeHash?: string;
   files: SourceFile[];
+  /** Environment outputs the selected candidate was generated against (recorded in the version's references). */
+  directions?: (DirectionPin & { candidateId: string })[];
 }
 
 /** Everything a plan says, before it is given an id. Recomputed at start; its hash must match the presented plan. */
@@ -46,6 +52,10 @@ export interface Evaluation {
   specSnapshots: Record<string, string>;
   concept: { candidateId: string; outputId: string; outputHash: string; file?: SourceFile };
   dependencyVersions: { assetId: string; versionId: string }[];
+  /** Environment aggregates: each collection member, the pins that go into the manifest, and the membership declared now. Empty otherwise. */
+  memberRows: PromotionMemberRow[];
+  memberPins: MemberPin[];
+  collectionMembers: { assetId: string; required: boolean }[];
 }
 
 // --------------------------------------------------------------------------- capability
@@ -105,7 +115,7 @@ function outputFiles(open: OpenProject, out: FrameOutputRow, folder: string): So
   return files;
 }
 
-interface BranchRow { branch_id: string; asset_id: string; concept_candidate_id: string; concept_output_id: string; concept_output_hash: string; requirements_hash: string }
+interface BranchRow { branch_id: string; asset_id: string; concept_candidate_id: string; concept_output_id: string; concept_output_hash: string; requirements_hash: string; input_mode: InputMode; spec_hashes_json: string }
 
 export function resolveBranch(open: OpenProject, assetId: string, branchId: string | undefined): BranchRow {
   if (branchId !== undefined) {
@@ -113,20 +123,52 @@ export function resolveBranch(open: OpenProject, assetId: string, branchId: stri
     if (!row) throw new OperationFailure("NOT_FOUND", `Asset ${assetId} has no branch ${branchId}`, undefined, [action("List branches", "branch.list", { assetId })]);
     return row;
   }
-  const rows = open.db.query<BranchRow, [string]>("SELECT * FROM branches WHERE asset_id = ? ORDER BY locked_at, rowid").all(assetId);
-  if (rows.length === 0) {
+  // The current branch, else the only one; several with none current is ambiguous (resolveDefaultBranchId says so).
+  const defaultId = resolveDefaultBranchId(open.db, assetId);
+  if (defaultId === undefined) {
     throw new OperationFailure("STEP_BLOCKED", `${assetId} has no locked concept, so there is nothing to promote`, { code: "NO_BRANCH" }, [action("Lock a concept output to create a branch", "concept.lock", { assetId })]);
   }
-  if (rows.length > 1) {
-    throw new OperationFailure("INVALID_INPUT", `${assetId} has ${rows.length} branches (${rows.map((r) => r.branch_id).join(", ")}); name the one to promote with branchId`, { branchIds: rows.map((r) => r.branch_id) }, rows.map((r) => action(`Plan promotion of ${r.branch_id}`, "promotion.plan", { assetId, branchId: r.branch_id })));
-  }
-  return rows[0]!;
+  return resolveBranch(open, assetId, defaultId);
+}
+
+/**
+ * The authored files a branch's recorded inputs came from, set against the files now: what a promotion that
+ * always judges current requirements would see differently. Undefined when the branch recorded none (locked before M9).
+ */
+function basisAgainstCurrent(open: OpenProject, set: AuthoredSet, branch: BranchRow): { differences: FieldDifference[]; unavailable: { path: string; hash: string }[] } | undefined {
+  const hashes = branchSpecHashes(branch);
+  if (Object.keys(hashes).length === 0) return undefined;
+  const saved = savedInputs(open.db, set, hashes);
+  return { differences: assetInputDifferences(open, saved.set, set, branch.asset_id), unavailable: saved.unavailable };
+}
+
+const showValue = (v: unknown): string => JSON.stringify(v) ?? "unset";
+
+/** The step-blocking explanation of a branch whose inputs are not the current requirements, with the exact way to rebase. */
+function basisMismatchBlocker(open: OpenProject, branch: BranchRow, differences: readonly FieldDifference[], conceptDrifted: boolean, unavailable: readonly { path: string; hash: string }[]): PlanBlocker {
+  const selected = open.db.query<{ candidate_id: string; output_id: string | null }, [string]>("SELECT candidate_id, output_id FROM branch_selections WHERE branch_id = ? ORDER BY selected_at DESC, rowid DESC LIMIT 1").get(branch.branch_id);
+  const listed = differences.length === 0
+    ? (unavailable.length > 0 ? `the saved text of ${unavailable.map((u) => u.path).join(", ")} is not retained, so the fields cannot be listed` : "the recorded inputs no longer reproduce the requirements it was locked against")
+    : differences.map((d) => `${d.field} (saved ${showValue(d.saved)} → current ${showValue(d.current)}; affects ${d.affects.join(", ")})`).join("; ");
+  const recovery: RecoveryAction[] = selected
+    ? [
+      action("Plan a rebase of this branch onto the current requirements", "branch.plan", { candidateId: selected.candidate_id, ...(selected.output_id ? { outputId: selected.output_id } : {}), inputMode: "current" }),
+      action("Create the rebased branch (present the planHash from branch.plan)", "branch.create", { candidateId: selected.candidate_id, inputMode: "current" }),
+    ]
+    : [];
+  if (conceptDrifted) recovery.push(action("Lock a concept that satisfies the current requirements (the user decides)", "concept.lock", { assetId: branch.asset_id }));
+  recovery.push(action("Compare the authored files", "spec.list"));
+  return {
+    code: "STEP_BLOCKED",
+    message: `requirements-basis-mismatch: ${branch.branch_id} consumes ${branch.input_mode} inputs that differ from the current requirements: ${listed}. A new version is always judged against current requirements${conceptDrifted ? "; the concept it was locked on no longer satisfies them, so a renewed concept-lock review is needed" : ""}.`,
+    recoveryActions: recovery,
+  };
 }
 
 /** Aggregate requirements fingerprint over the concept and the named deliverables' step fingerprints. */
 export const aggregateRequirements = (steps: Record<string, string>): string => normalizedHash(Object.entries(steps).sort(([a], [b]) => (a < b ? -1 : 1)));
 
-export async function evaluatePromotion(open: OpenProject, assetId: string, requestedBranchId: string | undefined): Promise<Evaluation> {
+export async function evaluatePromotion(open: OpenProject, assetId: string, requestedBranchId: string | undefined, memberPins?: Readonly<Record<string, string>>): Promise<Evaluation> {
   const set = await discoverAuthored(open.root);
   const asset = set.assets.find((a) => a.fileId === assetId);
   if (!asset && !set.bareAssetDirs.includes(assetId)) throw new OperationFailure("NOT_FOUND", `No asset ${assetId}`, undefined, [action("List assets", "asset.list")]);
@@ -143,15 +185,14 @@ export async function evaluatePromotion(open: OpenProject, assetId: string, requ
     blockers.push({ code: "STEP_BLOCKED", message: "brainforge/project.yaml is missing or invalid", recoveryActions: [action("Read project.yaml", "spec.read", { path: paths.projectYaml() })] });
   }
 
-  // --- the concept this branch was locked on
-  const conceptHash = stepRequirementsHash(open, set, assetId, "concept");
+  // --- the concept this branch was locked on, and whether the inputs it consumed are still the requirements
+  const conceptHash = stepRequirementsHash(open, set, assetId, "concept", undefined, { basis: "current" });
   stepRequirements.concept = conceptHash;
-  if (spec && conceptHash !== branch.requirements_hash) {
-    blockers.push({
-      code: "STEP_BLOCKED",
-      message: `requirements-basis-mismatch: ${branch.branch_id} was locked against requirements ${branch.requirements_hash.slice(0, 12)}, but the current identity/direction hashes to ${conceptHash.slice(0, 12)}. A new version is always judged against current requirements.`,
-      recoveryActions: [action("Lock a concept that satisfies the current requirements (the user decides)", "concept.lock", { assetId }), action("Compare the authored files", "spec.list")],
-    });
+  const basis = basisAgainstCurrent(open, set, branch);
+  const conceptDrifted = spec !== undefined && conceptHash !== branch.requirements_hash;
+  const savedDiffers = branch.input_mode === "saved" && basis !== undefined && (basis.differences.length > 0 || basis.unavailable.length > 0);
+  if (spec && (conceptDrifted || savedDiffers)) {
+    blockers.push(basisMismatchBlocker(open, branch, basis?.differences ?? [], conceptDrifted, basis?.unavailable ?? []));
   }
   const conceptRow = db.query<FrameOutputRow | null, [string]>("SELECT * FROM candidate_outputs WHERE output_id = ?").get(branch.concept_output_id);
   const concept: Evaluation["concept"] = { candidateId: branch.concept_candidate_id, outputId: branch.concept_output_id, outputHash: branch.concept_output_hash };
@@ -173,14 +214,16 @@ export async function evaluatePromotion(open: OpenProject, assetId: string, requ
   const evaluated = new Map<string, EvalRow>();
   for (const node of pipeline.nodes) {
     if (node.id === "concept") continue;
-    const stepHash = stepRequirementsHash(open, set, assetId, node.id, branch.branch_id);
+    const selection = selectedOutput(db, branch.branch_id, node.id);
+    const out = selection ? outputRow(open, selection.outputId) : undefined;
+    // Always today's requirements, at the stage of the selected output (animations are delivered processed).
+    const fingerprint = stepFingerprint(open, set, assetId, node.id, branch.branch_id, { stage: out?.stage ?? (node.kind === "animation" ? "processed" : "source"), basis: "current" });
+    const stepHash = fingerprint.hash;
     const base = { deliverableId: node.id, kind: node.kind, required: node.required, unresolvedFeedback: openFeedbackCount(db, assetId, node.id, branch.branch_id) };
     const done = (r: Omit<EvalRow, "row" | "dependsOn"> & { row: Omit<PromotionDeliverableRow, keyof typeof base> }): void => {
       const full: EvalRow = { ...r, dependsOn: node.dependsOn, row: { ...base, ...r.row } };
       evaluated.set(node.id, full);
     };
-    const selection = selectedOutput(db, branch.branch_id, node.id);
-    const out = selection ? outputRow(open, selection.outputId) : undefined;
 
     if (node.problems.length > 0) {
       done({ files: [], row: { state: "blocked-dependency", message: node.problems.join(" ") } });
@@ -192,9 +235,9 @@ export async function evaluatePromotion(open: OpenProject, assetId: string, requ
       const files = outputFiles(open, out, `files/${node.id}`);
       const problem = await verifyFiles(open.root, files);
       const ids = { candidateId: selection.candidateId, outputId: selection.outputId, outputHash: out.sha256 };
-      const approval = standingApproval(db, out.output_id, stepHash, out.sha256);
+      const approval = standingApproval(db, out.output_id, fingerprint, out.sha256, branch.branch_id);
       const approvalLabel = approval.state === "none" ? "none" as const : approval.state;
-      const carry = { files, ...(approval.decisionId ? { decisionId: approval.decisionId } : {}), ...(out.parent_output_id ? { sourceOutputId: out.parent_output_id } : {}), ...(out.recipe_hash ? { recipeHash: out.recipe_hash } : {}) };
+      const carry = { files, directions: recordedDirections(db, selection.candidateId), ...(approval.decisionId ? { decisionId: approval.decisionId } : {}), ...(out.parent_output_id ? { sourceOutputId: out.parent_output_id } : {}), ...(out.recipe_hash ? { recipeHash: out.recipe_hash } : {}) };
       if (problem) done({ ...carry, row: { ...ids, state: "bytes-changed", approval: approvalLabel, message: problem } });
       else if (base.unresolvedFeedback > 0) done({ ...carry, row: { ...ids, state: "unresolved-feedback", approval: approvalLabel, message: `${base.unresolvedFeedback} required note(s) or revision request(s) are unresolved` } });
       else if (approval.state === "approved" && !approval.applicable) done({ ...carry, row: { ...ids, state: "stale-approval", approval: approvalLabel, message: approval.staleReason ?? "The approval no longer applies" } });
@@ -233,9 +276,13 @@ export async function evaluatePromotion(open: OpenProject, assetId: string, requ
     const file = set.all().find((f) => f.path === path);
     if (file) specSnapshots[path] = file.hash;
   }
+  const members = await evaluateMembers(open, set, assetId, spec, branch, memberPins);
+  blockers.push(...members.blockers);
   return {
     assetId, branchId: branch.branch_id, requirementsHash: aggregateRequirements(stepRequirements), stepRequirements, nextVersionNumber: last + 1,
-    rows, blockers, specSnapshots, concept, dependencyVersions: [],
+    rows, blockers, specSnapshots, concept,
+    dependencyVersions: members.pins.map((p) => ({ assetId: p.assetId, versionId: p.versionId })).sort((a, b) => (a.assetId < b.assetId ? -1 : 1)),
+    memberRows: members.rows, memberPins: members.pins, collectionMembers: members.collectionMembers,
   };
 }
 
@@ -262,13 +309,15 @@ export function evaluationHash(e: Evaluation): string {
     deliverables: e.rows.map((r) => ({ ...r.row, decisionId: r.decisionId ?? null, files: r.files.map((f) => [f.dest, f.sha256]) })),
     concept: { outputId: e.concept.outputId, outputHash: e.concept.outputHash },
     dependencyVersions: e.dependencyVersions, specSnapshots: e.specSnapshots, blockers: e.blockers.map((b) => [b.code, b.message]),
+    // Only aggregates add these, so every other asset keeps its plan hash derivation.
+    ...(e.memberRows.length > 0 ? { members: e.memberRows, collectionMembers: e.collectionMembers } : {}),
   });
 }
 
 export function toPlan(e: Evaluation, capability: Capability, planId: string, createdAt: string): PromotionPlan {
   return {
     planId, planHash: evaluationHash(e), assetId: e.assetId, branchId: e.branchId, requirementsHash: e.requirementsHash, nextVersionNumber: e.nextVersionNumber,
-    deliverables: e.rows.map((r) => r.row), dependencyVersions: e.dependencyVersions, blockers: e.blockers,
+    deliverables: e.rows.map((r) => r.row), dependencyVersions: e.dependencyVersions, members: e.memberRows, blockers: e.blockers,
     capability: { policy: capability.policy, allowed: capability.allowed, ...(capability.reason ? { reason: capability.reason } : {}) }, createdAt,
   };
 }
@@ -278,8 +327,11 @@ export function storePlan(open: OpenProject, plan: PromotionPlan, actorId: strin
     .run(plan.planId, plan.assetId, plan.branchId, plan.planHash, JSON.stringify(plan), actorId, plan.createdAt);
 }
 
-export function loadPlan(open: OpenProject, planId: string): { assetId: string; branchId: string; planHash: string } {
-  const row = open.db.query<{ asset_id: string; branch_id: string; plan_hash: string }, [string]>("SELECT asset_id, branch_id, plan_hash FROM promotion_plans WHERE plan_id = ?").get(planId);
+export function loadPlan(open: OpenProject, planId: string): { assetId: string; branchId: string; planHash: string; members: Record<string, string> } {
+  const row = open.db.query<{ asset_id: string; branch_id: string; plan_hash: string; plan_json: string }, [string]>("SELECT asset_id, branch_id, plan_hash, plan_json FROM promotion_plans WHERE plan_id = ?").get(planId);
   if (!row) throw new OperationFailure("NOT_FOUND", `No promotion plan ${planId}`, undefined, [action("Plan the promotion", "promotion.plan")]);
-  return { assetId: row.asset_id, branchId: row.branch_id, planHash: row.plan_hash };
+  // Start re-evaluates with exactly the explicit member pins the plan showed.
+  const stored: { members?: { assetId: string; versionId?: string; source?: string }[] } = JSON.parse(row.plan_json);
+  const members = Object.fromEntries((stored.members ?? []).flatMap((m) => (m.source === "explicit" && m.versionId ? [[m.assetId, m.versionId] as const] : [])));
+  return { assetId: row.asset_id, branchId: row.branch_id, planHash: row.plan_hash, members };
 }

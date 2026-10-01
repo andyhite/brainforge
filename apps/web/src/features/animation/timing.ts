@@ -47,6 +47,7 @@ const WARNING_TEXT: Record<ProcessingWarning["code"], string> = {
   SCALE_CHANGED: "The scale differs from the scale anchor this character was calibrated at.",
   LOOP_DISCONTINUITY: "The last played frame differs noticeably from the first, so the loop may pop.",
   ATLAS_PAGES: "The frames did not fit one atlas page; the clip uses several pages.",
+  SYMMETRY: "A mirror-repeat transform was applied: the picture is mirror-symmetric on that axis. This is not evidence that the original art tiles.",
   OTHER: "Processing reported a problem.",
 };
-export const warningText = (w: ProcessingWarning): string => WARNING_TEXT[w.code];
+export const warningText = (w: ProcessingWarning): string => (w.code === "SYMMETRY" && w.message ? w.message : WARNING_TEXT[w.code]);

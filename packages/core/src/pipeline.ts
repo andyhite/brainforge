@@ -1,4 +1,5 @@
 import type { AssetSpec, Deliverable } from "@brainforge/contracts";
+import { deliverableProblems } from "./families/validate.ts";
 
 export interface PipelineNode {
   /** `concept` or a deliverable id. */
@@ -61,6 +62,7 @@ export function buildPipeline(spec: AssetSpec | undefined): PipelinePlan {
     if (d.kind !== "reference-sheet" && d.regions !== undefined) {
       problems.push(`Only reference-sheet deliverables take regions; "${d.id}" is ${d.kind}.`);
     }
+    if (spec) problems.push(...deliverableProblems(spec, d));
     nodes.set(d.id, { id: d.id, kind: d.kind, required: d.required, dependsOn: [...new Set(d.dependsOn)], problems, deliverable: d });
   }
   for (const node of nodes.values()) {

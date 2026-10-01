@@ -253,6 +253,26 @@ describe("mcp stdio server", () => {
     for (const text of ["export_plan", "export_start", "ACTIVE version", "<destination>/current/assets", "export id", "godotProjectRoot", "project.godot", "EXPORT_CONFLICT", "never changes promotion or activation"]) expect(instructions).toContain(text);
   });
 
+  test("M9 branch tools exist with correct hints and instructions describe continue-from-here", async () => {
+    const { tools } = await client.listTools();
+    const byName = new Map(tools.map((t) => [t.name, t]));
+    for (const tool of ["branch_plan", "branch_compare", "branch_list"]) expect(byName.get(tool)?.annotations?.readOnlyHint).toBe(true);
+    for (const tool of ["branch_create", "branch_select", "concept_lock"]) expect(byName.get(tool)?.annotations?.readOnlyHint).toBe(false);
+    const lockProps = JSON.stringify(byName.get("concept_lock")?.inputSchema);
+    expect(lockProps).toContain("inputMode");
+    const instructions = client.getInstructions() ?? "";
+    for (const text of ["branch_plan", "branch_create", "branch_compare", "branch_select", "inputMode", "planHash", "requirements-basis-mismatch", "ask the user which candidate"]) expect(instructions).toContain(text);
+  });
+
+  test("M10-M12 family tools are read-only and instructions describe families, environments and UI/VFX", async () => {
+    const { tools } = await client.listTools();
+    const byName = new Map(tools.map((t) => [t.name, t]));
+    for (const tool of ["family_list", "family_template"]) expect(byName.get(tool)?.annotations?.readOnlyHint).toBe(true);
+    expect(JSON.stringify(byName.get("promotion_plan")?.inputSchema)).toContain("members");
+    const instructions = client.getInstructions() ?? "";
+    for (const text of ["family_list", "family_template", "REPLACE:", "role: direction", "COLLECTION_INCOMPLETE", "DIRECTION_MISMATCH", "EXPORT_CONFLICT", "SYMMETRY", "nineSlice", "export {sprites", "UNVERIFIED", "references/families.md", "references/environments.md", "references/ui-vfx.md"]) expect(instructions).toContain(text);
+  });
+
   test("history_examples example visuals become labelled image blocks", async () => {
     fileRequests.length = 0;
     const result = await client.callTool({ name: "history_examples", arguments: { assetId: "cortex" } });

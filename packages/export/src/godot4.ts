@@ -7,6 +7,8 @@ import {
 } from "./layout.ts";
 import { ExportError, isEnoent } from "./fs.ts";
 import type { ExportAsset, ExportDeliverable, ExportInput } from "./types.ts";
+import { planSprites, spriteAtlasPath, spriteRect } from "./sprites.ts";
+import type { SpriteRect } from "@brainforge/media";
 
 export interface GodotFile {
   assetId: string;
@@ -97,6 +99,7 @@ function deliverableMetadata(asset: ExportAsset, d: ExportDeliverable): [string,
     ["pivot_normalized", vec2(d.pivot.x / d.canvas.width, d.pivot.y / d.canvas.height)],
   ];
   if (d.relativeScale !== undefined) out.push(["relative_scale", d.relativeScale]);
+  if (d.state !== undefined) out.push(["state", d.state]);
   if (d.displayScale !== undefined) out.push(["display_scale", d.displayScale]);
   if (Object.keys(d.metadata).length > 0) out.push(["extra", d.metadata]);
   return out;
@@ -138,18 +141,31 @@ function animationsResource(prefix: string, asset: ExportAsset, animations: Anim
   return file.render();
 }
 
-function textureResource(prefix: string, asset: ExportAsset, d: StillDeliverable): string {
+/** The texture of a still: its slot in the asset's sprite atlas when it is packed, else its own PNG (full-image region). */
+function stillTexture(file: ResourceFile, prefix: string, asset: ExportAsset, d: StillDeliverable, rect: SpriteRect | undefined): { source: Raw; region: Raw } {
+  if (rect) {
+    return { source: file.extTexture(`sprites_${rect.page}`, res(prefix, spriteAtlasPath(asset.assetId, rect.page))), region: new Raw(`Rect2(${rect.x}, ${rect.y}, ${rect.width}, ${rect.height})`) };
+  }
+  return { source: file.extTexture(`tex_${slug(d.deliverableId)}`, res(prefix, stillPath(asset.assetId, d.deliverableId))), region: new Raw(`Rect2(0, 0, ${d.canvas.width}, ${d.canvas.height})`) };
+}
+
+function textureResource(prefix: string, asset: ExportAsset, d: StillDeliverable, rect: SpriteRect | undefined): string {
   const file = new ResourceFile("AtlasTexture");
-  const png = file.extTexture(`tex_${slug(d.deliverableId)}`, res(prefix, stillPath(asset.assetId, d.deliverableId)));
-  file.prop("atlas", png);
-  file.prop("region", new Raw(`Rect2(0, 0, ${d.canvas.width}, ${d.canvas.height})`));
+  const { source, region } = stillTexture(file, prefix, asset, d, rect);
+  file.prop("atlas", source);
+  file.prop("region", region);
   for (const [k, v] of deliverableMetadata(asset, d)) file.prop(`metadata/${k}`, v);
   return file.render();
 }
 
-function styleBoxResource(prefix: string, asset: ExportAsset, d: StillDeliverable, nine: NonNullable<ExportDeliverable["nineSlice"]>): string {
+function styleBoxResource(prefix: string, asset: ExportAsset, d: StillDeliverable, nine: NonNullable<ExportDeliverable["nineSlice"]>, rect: SpriteRect | undefined): string {
   const file = new ResourceFile("StyleBoxTexture");
-  file.prop("texture", file.extTexture(`tex_${slug(d.deliverableId)}`, res(prefix, stillPath(asset.assetId, d.deliverableId))));
+  if (rect) {
+    const { source, region } = stillTexture(file, prefix, asset, d, rect);
+    file.prop("texture", file.subResource("AtlasTexture", `AtlasTexture_${slug(d.deliverableId)}`, [["atlas", source], ["region", region]]));
+  } else {
+    file.prop("texture", file.extTexture(`tex_${slug(d.deliverableId)}`, res(prefix, stillPath(asset.assetId, d.deliverableId))));
+  }
   file.prop("texture_margin_left", new Raw(float(nine.left)));
   file.prop("texture_margin_top", new Raw(float(nine.top)));
   file.prop("texture_margin_right", new Raw(float(nine.right)));
@@ -187,10 +203,12 @@ export function planGodotFiles(input: ExportInput): GodotFile[] {
   for (const asset of sortedAssets(input.assets)) {
     const deliverables = sortedDeliverables(asset);
     const animations = deliverables.filter(isAnimation);
+    const sprites = planSprites(asset);
     if (animations.length > 0) files.push({ assetId: asset.assetId, deliverableIds: animations.map((a) => a.deliverableId), path: godotAnimationsPath(asset.assetId), text: animationsResource(prefix, asset, animations) });
     for (const d of deliverables.filter(isStill)) {
-      files.push({ assetId: asset.assetId, deliverableIds: [d.deliverableId], path: godotTexturePath(asset.assetId, d.deliverableId), text: textureResource(prefix, asset, d) });
-      if (d.nineSlice) files.push({ assetId: asset.assetId, deliverableIds: [d.deliverableId], path: godotStyleBoxPath(asset.assetId, d.deliverableId), text: styleBoxResource(prefix, asset, d, d.nineSlice) });
+      const rect = spriteRect(sprites, d.deliverableId);
+      files.push({ assetId: asset.assetId, deliverableIds: [d.deliverableId], path: godotTexturePath(asset.assetId, d.deliverableId), text: textureResource(prefix, asset, d, rect) });
+      if (d.nineSlice) files.push({ assetId: asset.assetId, deliverableIds: [d.deliverableId], path: godotStyleBoxPath(asset.assetId, d.deliverableId), text: styleBoxResource(prefix, asset, d, d.nineSlice, rect) });
       if (d.tile) files.push({ assetId: asset.assetId, deliverableIds: [d.deliverableId], path: godotTileSetPath(asset.assetId, d.deliverableId), text: tileSetResource(prefix, asset, d, d.tile) });
     }
   }

@@ -9,7 +9,7 @@ import { BudgetPanel } from "./BudgetPanel.tsx";
 import { OpenNotes } from "../review/OpenNotes.tsx";
 import { CompareView } from "./CompareView.tsx";
 import { GenerateDialog, type GenerateRequest } from "./GenerateDialog.tsx";
-import { LockConceptButton } from "../pipeline/LockConceptButton.tsx";
+import { ContinueButton } from "../branches/ContinueDialog.tsx";
 import { BackdropPicker, outputUrl, pickOutput, RolePicker, useBackdrop, type Backdrop, type OutputRole } from "./media.tsx";
 
 const STEP_TONE: Record<StepState["state"], Tone> = { blocked: "warn", ready: "info", running: "info", awaiting_review: "info", complete: "ok", failed: "bad" };
@@ -43,7 +43,7 @@ function Thumb({ candidate, role, backdrop, projectId, selected, canSelect, onTo
         {candidate.annotationCount} {candidate.annotationCount === 1 ? "note" : "notes"}
         {candidate.openRevisionCount > 0 ? <> · <strong>{candidate.openRevisionCount} open {candidate.openRevisionCount === 1 ? "revision" : "revisions"}</strong></> : null}
       </div>
-      <div style={{ marginTop: 4 }}><LockConceptButton assetId={assetId} candidate={candidate} /></div>
+      <div style={{ marginTop: 4 }}><ContinueButton assetId={assetId} candidateId={candidate.candidateId} outputId={pickOutput(candidate, "matted")?.outputId} label="Lock as concept" ariaLabel={`Lock ${candidate.label} as concept`} disabled={candidate.outputs.length === 0} /></div>
       <label className="check" style={{ minHeight: 32 }}>
         <input type="checkbox" checked={selected} disabled={!selected && !canSelect} onChange={onToggleSelect} />
         Compare{!selected && !canSelect ? ` (max ${MAX_COMPARE})` : ""}

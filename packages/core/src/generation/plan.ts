@@ -4,20 +4,19 @@ import { GenerationPlan, type ParsedOperationInput, type PlanBlocker, type Recov
 import { graphHash, preflight, type ComfyTransport } from "@brainforge/comfy";
 import { sha256, resolveIn } from "@brainforge/storage";
 import { discoverAuthored, observeAuthored, type AuthoredSet } from "../authored.ts";
+import { branchSpecHashes, savedInputs, type BranchBasisRow } from "../branches/basis.ts";
 import { computeEffective } from "../effective.ts";
 import { normalizedHash } from "../operations.ts";
 import type { OpenProject } from "../project-runtime.ts";
 import { OperationFailure } from "../runtime.ts";
 import { loadDescriptor } from "./descriptors.ts";
-import { DELIVERABLE_WORKFLOW, resolveDeliverable } from "./deliverable.ts";
-import { MOTION_WORKFLOW } from "./motion.ts";
+import { resolveAlpha, workflowFor, type WorkflowStage } from "../families/index.ts";
+import { resolveDeliverable } from "./deliverable.ts";
 import { composePrompt, stylesFor } from "./prompt.ts";
 import { attemptsInWindow, budgetStatus, newId, toBudget, type BudgetRow } from "./store.ts";
 
 /** A plan is a short-lived quote: start refuses one older than this and asks for a fresh inspection. */
 export const PLAN_TTL_MS = 2 * 60 * 60 * 1000;
-
-export const WORKFLOW_FOR_MODE = { fresh: "krea2-still", variation: "krea2-variation" } as const;
 
 export interface PlanEnvironment {
   project: OpenProject;
@@ -55,14 +54,23 @@ const grantAction = (assetId: string, stepId: string, count: number): RecoveryAc
  */
 export async function createPlan(env: PlanEnvironment, input: ParsedOperationInput<"generation.plan">): Promise<GenerationPlan> {
   const { project } = env;
-  const set = await discoverAuthored(project.root);
-  observeAuthored(project, set.all(), env.actorId);
+  const live = await discoverAuthored(project.root);
+  observeAuthored(project, live.all(), env.actorId);
+  // A saved-input branch plans from the versions of the authored files it recorded, not the files as they are now.
+  const branchRow = input.branchId ? project.db.query<BranchBasisRow, [string]>("SELECT branch_id, asset_id, input_mode, basis_json, spec_hashes_json FROM branches WHERE branch_id = ?").get(input.branchId) ?? undefined : undefined;
+  const saved = branchRow?.input_mode === "saved" ? savedInputs(project.db, live, branchSpecHashes(branchRow)) : undefined;
+  const set = saved?.set ?? live;
   const asset = set.assets.find((a) => a.fileId === input.assetId);
   if (!asset && !set.bareAssetDirs.includes(input.assetId)) {
     throw new OperationFailure("NOT_FOUND", `Asset ${input.assetId} does not exist`, undefined, [{ label: "List assets", operation: "asset.list" }]);
   }
   const blockers: PlanBlocker[] = [];
   const block = (code: string, message: string, recoveryActions: RecoveryAction[] = []): void => { blockers.push({ code, message, recoveryActions }); };
+  for (const u of saved?.unavailable ?? []) {
+    block("SAVED_INPUTS_UNAVAILABLE", `Branch ${branchRow?.branch_id} resolves its inputs from ${u.path} at ${u.hash.slice(0, 12)}, but that text is not retained. Rebase the branch onto the current files to continue.`, [
+      { label: "Plan a rebase onto the current authored files", operation: "branch.plan", input: { inputMode: "current" } },
+    ]);
+  }
 
   const automation = set.project?.spec?.automation ?? { maxAttemptsPerStep: 3, maxConcurrentGenerations: 1, maxBatchCandidates: 4, autoRegenerate: false };
   if (!set.project?.spec) {
@@ -92,7 +100,11 @@ export async function createPlan(env: PlanEnvironment, input: ParsedOperationInp
   // --- workflow
   let wf: WorkflowDescriptor | undefined;
   const isMotion = deliverable?.deliverable?.kind === "animation";
-  const workflowId = input.stepId === "concept" ? WORKFLOW_FOR_MODE[input.mode] : isMotion ? MOTION_WORKFLOW : DELIVERABLE_WORKFLOW;
+  // Matte (transparent) or opaque comes from the deliverable, else the family default; an unreadable asset is already blocked above.
+  const stage: WorkflowStage = input.stepId === "concept" ? (input.mode === "fresh" ? "still" : "variation") : isMotion ? "motion" : "variation";
+  const family = spec?.family ?? "character";
+  const alpha = resolveAlpha(family, deliverable?.deliverable);
+  const workflowId = workflowFor(family, stage, alpha) ?? "unavailable";
   try {
     wf = await loadDescriptor(env.workflowsDir, workflowId);
   } catch (e) {
@@ -240,6 +252,7 @@ export async function createPlan(env: PlanEnvironment, input: ParsedOperationInp
     assetId: input.assetId, stepId: input.stepId, mode: input.mode, count: input.count,
     ...(parent ? { parentCandidateId: parent.candidateId, parentOutputId: parent.outputId } : {}),
     ...(input.branchId ? { branchId: input.branchId } : {}),
+    ...(branchRow ? { inputMode: branchRow.input_mode } : {}),
     workflow: wf ? { id: wf.id, version: wf.version, graphHash: graphHash(wf.graph) } : { id: workflowId, version: 0, graphHash: "" },
     prompt, promptSources,
     ...(input.iterationInstructions?.trim() ? { iterationInstructions: input.iterationInstructions.trim() } : {}),
@@ -247,6 +260,7 @@ export async function createPlan(env: PlanEnvironment, input: ParsedOperationInp
     submissions,
     crops: deliverable?.crops ?? [],
     ...(deliverable?.motion ? { motion: deliverable.motion } : {}),
+    ...(deliverable && deliverable.directionPins.length > 0 ? { directionPins: deliverable.directionPins } : {}),
     execution: { computeLocation: execution.computeLocation, externalServices: execution.externalServices, credentialKeys: execution.credentialKeys, costDescription: execution.costDescription },
     limits: { maxBatchCandidates: automation.maxBatchCandidates, maxConcurrentGenerations: automation.maxConcurrentGenerations, maxAttemptsPerStep: automation.maxAttemptsPerStep },
   };

@@ -9,6 +9,8 @@ import { BudgetPanel } from "../generation/BudgetPanel.tsx";
 import { GenerateDialog } from "../generation/GenerateDialog.tsx";
 import { BackdropPicker, outputUrl, pickOutput, useBackdrop } from "../generation/media.tsx";
 import { OpenNotes } from "../review/OpenNotes.tsx";
+import { ContinueButton } from "../branches/ContinueDialog.tsx";
+import { ReassessmentReasons } from "../branches/shared.tsx";
 import { formatMs, outputLabel } from "../animation/timing.ts";
 
 const REGION_ORDER = ["front", "profile", "rear"];
@@ -75,6 +77,7 @@ function CandidateRow({ candidate, step, branchId, projectId, assetId }: { candi
               {isSelected ? "In use" : "Use this one"}
             </button>
             <Link to={candidateLink} className="button">{needsProcessing ? "Process and review" : "Review"}</Link>
+            {output ? <ContinueButton assetId={assetId} candidateId={candidate.candidateId} outputId={output.outputId} ariaLabel={`Continue from here: ${candidate.label}`} /> : null}
           </div>
           {animation
             ? <p className="secondary" style={{ margin: 0 }}>{needsProcessing ? "Raw frames cannot complete this step. Process them into an export clip first." : `Showing the latest of ${processed.length} processed ${processed.length === 1 ? "clip" : "clips"}.`} Using a clip is not approval.</p>
@@ -107,7 +110,7 @@ export function StepDetail({ assetId, step, branchId }: { assetId: string; step:
         {step.blockers.filter((blocker) => blocker.code !== "REVISION_OPEN").map((blocker) => <Banner key={blocker.code + blocker.message} tone="warn" title={blocker.message} />)}
         {step.counts.openRevisions > 0 || step.blockers.some((blocker) => blocker.code === "REVISION_OPEN") ? <OpenNotes assetId={assetId} stepId={step.stepId} /> : null}
         {step.kind === "animation" && step.state === "ready" ? <p className="secondary">Ready by its dependencies. Generating makes raw frames; you then process them into an export clip, and only a reviewed processed clip completes this step.</p> : null}
-        {step.needsReassessment ? <Banner tone="warn" title="Needs reassessment"><ul style={{ margin: 0, paddingLeft: 20 }}>{step.reassessmentReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></Banner> : null}
+        {step.needsReassessment ? <Banner tone="warn" title="Needs reassessment"><ReassessmentReasons reasons={step.reassessmentReasons} /></Banner> : null}
       </section>
 
       <ActiveJobsStrip assetId={assetId} />

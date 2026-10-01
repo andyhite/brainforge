@@ -10,6 +10,7 @@ Bare operation names below. Host forms: oh-my-pi writes JSON to `xd://mcp__brain
 - Only lock what the user chose, and only if policy lets you.
 - `branch_list {assetId}`: branches with locked concept output and per-deliverable selections.
 - `candidate_select {branchId, deliverableId, candidateId, outputId?}` picks a branch's output for a deliverable. Selection is NOT approval.
+- Continue from any candidate (`branch_plan` → `branch_create`, `branch_compare`, `branch_select`, saved vs current inputs, rebase): [branches-continue](branches-continue.md). `concept_lock` also takes `inputMode`.
 
 ## Step states (`step_list {assetId, branchId?}`)
 

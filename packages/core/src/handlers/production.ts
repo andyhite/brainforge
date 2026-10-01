@@ -11,7 +11,11 @@ import { requireOpen } from "./common.ts";
 export const productionHandlers: HandlerMap = {
   "promotion.plan": async ({ input, project, context }) => {
     const open = requireOpen(project);
-    const evaluation = await evaluatePromotion(open, input.assetId, input.branchId);
+    const memberPins = input.members && Object.keys(input.members).length > 0 ? input.members : undefined;
+    if (memberPins && !(await discoverAuthored(open.root)).assets.find((a) => a.fileId === input.assetId)?.spec?.collection) {
+      throw new OperationFailure("INVALID_INPUT", `members applies to an environment with collection.members; ${input.assetId} has none`, undefined, [{ label: "Read the asset definition", operation: "spec.read", input: { path: `brainforge/assets/${input.assetId}/asset.yaml` } }]);
+    }
+    const evaluation = await evaluatePromotion(open, input.assetId, input.branchId, memberPins);
     const capability = capabilityFor(await policyView(open), "promotion", context.actorType);
     const plan = toPlan(evaluation, capability, newId("pplan"), new Date().toISOString());
     storePlan(open, plan, context.actorId);
@@ -43,7 +47,7 @@ export const productionHandlers: HandlerMap = {
       const capability = capabilityFor(await policyView(open), "promotion", context.actorType);
       if (!capability.allowed && capability.denial) throw new OperationFailure(capability.denial.code, capability.denial.message);
 
-      const evaluation = await evaluatePromotion(open, stored.assetId, stored.branchId);
+      const evaluation = await evaluatePromotion(open, stored.assetId, stored.branchId, stored.members);
       if (evaluationHash(evaluation) !== stored.planHash) {
         throw new OperationFailure("REVISION_CONFLICT", "The asset changed since this plan was made (a decision, an output, a note, an authored file or another version). Plan again.", undefined, [{ label: "Plan the promotion again", operation: "promotion.plan", input: { assetId: stored.assetId, branchId: stored.branchId } }]);
       }

@@ -4,6 +4,8 @@ import { LineCounter, isScalar, parseDocument, type Document } from "yaml";
 import type { z } from "zod";
 import { AssetSpec, KebabId, ProjectSpec, StyleSpec, type AuthoredKind, type Problem, type SpecFileInfo } from "@brainforge/contracts";
 import { assertRelative, paths, resolveIn, sha256, writeFileAtomic } from "@brainforge/storage";
+import { bindingMembershipWarnings, bindingShapeProblems } from "./environments/validate.ts";
+import { validateFamily } from "./families/validate.ts";
 import { OperationFailure } from "./runtime.ts";
 import type { OpenProject } from "./project-runtime.ts";
 
@@ -104,14 +106,19 @@ export function parseAuthored(kind: AuthoredKind, path: string, fileId: string, 
   if (doc.errors.length === 0) {
     raw = doc.toJS();
     const parsed = SCHEMAS[kind].safeParse(raw);
-    if (parsed.success) spec = parsed.data;
-    else problems.push(...zodProblems(path, doc, lc, parsed.error));
+    if (parsed.success) {
+      spec = parsed.data;
+      if (kind === "asset") {
+        const asset = AssetSpec.parse(parsed.data);
+        problems.push(...bindingShapeProblems(path, asset), ...validateFamily(path, asset, raw, (p) => locate(doc, lc, p)));
+      }
+    } else problems.push(...zodProblems(path, doc, lc, parsed.error));
     if (kind !== "project" && raw && typeof raw === "object" && "id" in raw && typeof raw.id === "string" && raw.id !== fileId) {
       problems.push({ file: path, ...locate(doc, lc, ["id"]), field: "id", message: `id "${raw.id}" must equal the ${kind === "asset" ? "directory" : "file"} name "${fileId}"` });
       spec = undefined;
     }
   }
-  const base = { path, fileId, hash, text, problems, valid: problems.length === 0 && spec !== undefined, raw };
+  const base = { path, fileId, hash, text, problems, valid: problems.every((p) => p.severity === "warning") && spec !== undefined, raw };
   if (kind === "project") return { ...base, kind, spec: ProjectSpec.safeParse(spec).data };
   if (kind === "style") return { ...base, kind, spec: StyleSpec.safeParse(spec).data };
   return { ...base, kind, spec: AssetSpec.safeParse(spec).data };
@@ -182,6 +189,12 @@ export async function discoverAuthored(root: string): Promise<AuthoredSet> {
     }
     const parsed = nonKebab(parseAuthored("asset", rel, e.name, text));
     if (parsed.kind === "asset") assets.push(parsed);
+  }
+  // A binding to an environment that does not list the child is only a warning, and needs every asset to judge.
+  const specs = new Map<string, AssetSpec | undefined>([...assets.map((a) => [a.fileId, a.spec] as const), ...bareAssetDirs.map((id) => [id, undefined] as const)]);
+  for (const a of assets) {
+    const warnings = a.spec ? bindingMembershipWarnings(a.path, a.spec, specs) : [];
+    if (warnings.length > 0) a.problems = [...a.problems, ...warnings];
   }
   const project = projectFile?.kind === "project" ? projectFile : undefined;
   return { project, styles, assets, bareAssetDirs, all: () => [...(project ? [project] : []), ...styles, ...assets] };

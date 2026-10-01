@@ -1,3 +1,4 @@
+import type { Fingerprint } from "./requirements.ts";
 import type { Database } from "bun:sqlite";
 import type { Decision, ErrorCode, Escalation, OutputApproval, PolicyView } from "@brainforge/contracts";
 
@@ -51,20 +52,38 @@ function confirmedSince(db: Database, decidedAt: string): string {
 }
 
 /**
- * What is currently true of one output. The standing decision is the latest row; it only applies while both the
- * requirements it was made against and the output bytes still match. A pending escalation is never approval.
+ * What is currently true of one output in one branch's context. The standing decision is the latest row that
+ * concerns this branch: made in it, or made against exactly the fingerprint this branch now has (so an unchanged
+ * output carries its approval into a branch that reused it, while a judgement another branch made under different
+ * inputs never touches this branch). It only applies while both the requirements it was made against and the
+ * output bytes still match. A pending escalation is never approval.
+ * `current` is the stage fingerprint of the output; a decision recorded before output stages existed holds the
+ * whole-step `legacy` hash and is compared with that instead (so it behaves exactly as it did).
  */
-export function standingApproval(db: Database, outputId: string, currentRequirementsHash: string, currentOutputHash: string): OutputApproval {
+export function standingApproval(db: Database, outputId: string, current: string | Fingerprint, currentOutputHash: string, branchId: string | null = null): OutputApproval {
+  const currentRequirementsHash = typeof current === "string" ? current : current.hash;
   const candidateId = db.query<{ candidate_id: string }, [string]>("SELECT candidate_id FROM candidate_outputs WHERE output_id = ?").get(outputId)?.candidate_id;
   const escalation = candidateId === undefined ? undefined : pendingEscalation(db, candidateId, outputId);
-  const row = db.query<DecisionRow, [string]>("SELECT * FROM review_decisions WHERE output_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1").get(outputId);
+  const row = db.query<DecisionRow, [string, string | null, string, string]>(
+    "SELECT * FROM review_decisions WHERE output_id = ?1 AND (branch_id IS ?2 OR requirements_hash IN (?3, ?4)) ORDER BY created_at DESC, rowid DESC LIMIT 1",
+  ).get(outputId, branchId, currentRequirementsHash, typeof current === "string" ? currentRequirementsHash : current.legacy);
   if (escalation) {
     return { outputId, state: "escalated", overridden: false, applicable: true, ...(row ? { decisionId: row.decision_id } : {}) };
   }
-  if (!row) return { outputId, state: "none", overridden: false, applicable: true };
+  if (!row) {
+    // An output reused from another branch whose judgement was made under different inputs: not approval here,
+    // but worth a second look, so it reports that judgement as no longer applying.
+    const elsewhere = branchId === null ? undefined : db.query<DecisionRow, [string]>("SELECT * FROM review_decisions WHERE output_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1").get(outputId);
+    if (!elsewhere) return { outputId, state: "none", overridden: false, applicable: true };
+    return {
+      outputId, state: elsewhere.decision === "approve" ? "approved" : "rejected", decisionId: elsewhere.decision_id,
+      decidedBy: elsewhere.actor_id, decidedByType: elsewhere.actor_type, overridden: elsewhere.kind === "override",
+      applicable: false, staleReason: "The requirements this output was judged against (in another branch) differ from this branch's inputs.",
+    };
+  }
   const staleReason = row.output_hash !== currentOutputHash
     ? "The output bytes changed since the decision."
-    : row.requirements_hash !== currentRequirementsHash
+    : row.requirements_hash !== currentRequirementsHash && (typeof current === "string" || row.requirements_hash !== current.legacy)
       ? `The requirements this output was judged against have changed since the decision${confirmedSince(db, row.created_at)}.`
       : undefined;
   return {

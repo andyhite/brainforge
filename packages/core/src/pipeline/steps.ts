@@ -1,11 +1,15 @@
 import type { Database } from "bun:sqlite";
 import { readFile } from "node:fs/promises";
-import type { NextAction, OutputApproval, PlanBlocker, StepState } from "@brainforge/contracts";
+import type { DirectionPin, NextAction, OutputApproval, PlanBlocker, StepState } from "@brainforge/contracts";
 import { resolveIn, sha256 } from "@brainforge/storage";
 import { discoverAuthored, type AuthoredSet } from "../authored.ts";
+import { feedbackCandidateIds } from "../branches/feedback.ts";
+import { movedInputs, movedReasons } from "../branches/diff.ts";
+import { directionReasons } from "../environments/direction.ts";
+import { authoredSetFor, resolveDefaultBranchId } from "../branches/basis.ts";
 import { buildPipeline, type PipelineNode, type PipelinePlan } from "../pipeline.ts";
 import { standingApproval } from "../review/authority.ts";
-import { stepRequirementsHash, selectedOutput, type SelectedOutput } from "../review/requirements.ts";
+import { stepFingerprint, stepRequirementsHash, selectedOutput, type SelectedOutput } from "../review/requirements.ts";
 import { onDiskManifestHash } from "../outputs/frames.ts";
 import { inspectConceptStep, specHashesOf, unaddressedRequiredNotes } from "../review/step.ts";
 import { OperationFailure } from "../runtime.ts";
@@ -23,7 +27,7 @@ interface Standing { selection: SelectedOutput; approval: OutputApproval; stage:
 
 const scalar = (db: Database, sql: string, ...args: string[]): number => db.query<{ n: number }, string[]>(sql).get(...args)?.n ?? 0;
 
-async function standingFor(ctx: StepContext, set: AuthoredSet, assetId: string, branchId: string, stepId: string): Promise<Standing | undefined> {
+async function standingFor(ctx: StepContext, current: AuthoredSet, assetId: string, branchId: string, stepId: string): Promise<Standing | undefined> {
   const selection = selectedOutput(ctx.db, branchId, stepId);
   if (!selection) return undefined;
   const row = ctx.db.query<{ path: string; media_kind: string; stage: "source" | "processed" }, [string]>("SELECT path, media_kind, stage FROM candidate_outputs WHERE output_id = ?").get(selection.outputId);
@@ -34,7 +38,8 @@ async function standingFor(ctx: StepContext, set: AuthoredSet, assetId: string, 
     const bytes = await readFile(await resolveIn(ctx.root, row.path)).catch(() => undefined);
     if (bytes) onDisk = sha256(bytes);
   }
-  return { selection, stage: row?.stage ?? "source", approval: standingApproval(ctx.db, selection.outputId, stepRequirementsHash(ctx, set, assetId, stepId, branchId), onDisk) };
+  const stage = row?.stage ?? "source";
+  return { selection, stage, approval: standingApproval(ctx.db, selection.outputId, stepFingerprint(ctx, current, assetId, stepId, branchId, { stage }), onDisk, branchId) };
 }
 
 const isApproved = (s: Standing | undefined): s is Standing => s !== undefined && s.approval.state === "approved" && s.approval.applicable;
@@ -48,19 +53,28 @@ function whyNotApproved(dep: string, s: Standing | undefined): string {
   return `${dep}'s selected output has not been approved`;
 }
 
-/** Required notes plus open revision requests on any candidate of this step in this branch that nobody has resolved or waived. */
+/** Open revision requests that hold a step of a branch (its own candidates' and those of the lineage it reused). */
+function openRevisionIds(db: Database, assetId: string, stepId: string, branchId: string): string[] {
+  return db.query<{ revision_request_id: string }, [string, string, string]>(
+    "SELECT q.revision_request_id FROM revision_requests q WHERE q.asset_id = ? AND q.step_id = ? AND q.status IN ('open','responded') AND q.candidate_id IN (SELECT value FROM json_each(?)) ORDER BY q.created_at, q.rowid",
+  ).all(assetId, stepId, JSON.stringify(feedbackCandidateIds(db, assetId, stepId, branchId))).map((r) => r.revision_request_id);
+}
+
+/** Required notes nobody has resolved or waived on this step's candidates in the branch (and on a reused lineage). */
+export function unaddressedOnStep(db: Database, assetId: string, stepId: string, branchId: string): { annotationId: string; candidateId: string }[] {
+  const inScope = new Set(feedbackCandidateIds(db, assetId, stepId, branchId));
+  return unaddressedRequiredNotes(db, assetId).filter((n) => inScope.has(n.candidateId));
+}
+
+/** Required notes plus open revision requests on this step in this branch that nobody has resolved or waived. */
 export function openFeedbackCount(db: Database, assetId: string, stepId: string, branchId: string): number {
-  const onStep = (candidateId: string): boolean => {
-    const c = db.query<{ step_id: string; branch_id: string | null }, [string]>("SELECT step_id, branch_id FROM candidates WHERE candidate_id = ?").get(candidateId);
-    return c?.step_id === stepId && c.branch_id === branchId;
-  };
-  const notes = unaddressedRequiredNotes(db, assetId).filter((n) => onStep(n.candidateId)).length;
-  return notes + scalar(db, "SELECT COUNT(*) AS n FROM revision_requests q JOIN candidates c ON c.candidate_id = q.candidate_id WHERE q.asset_id = ? AND q.step_id = ? AND c.branch_id = ? AND q.status IN ('open','responded')", assetId, stepId, branchId);
+  return unaddressedOnStep(db, assetId, stepId, branchId).length + openRevisionIds(db, assetId, stepId, branchId).length;
 }
 
 const hasOpenFeedback = (db: Database, assetId: string, stepId: string, branchId: string): boolean => openFeedbackCount(db, assetId, stepId, branchId) > 0;
 
-async function deliverableStep(ctx: StepContext, set: AuthoredSet, assetId: string, pipeline: PipelinePlan, node: PipelineNode, branch: BranchRow | undefined, memo: Map<string, Promise<Standing | undefined>>): Promise<StepState> {
+/** `current` = the authored files now (fingerprints resolve a branch's own basis from it); `set` = what this branch's inputs are. */
+async function deliverableStep(ctx: StepContext, current: AuthoredSet, set: AuthoredSet, assetId: string, pipeline: PipelinePlan, node: PipelineNode, branch: BranchRow | undefined, memo: Map<string, Promise<Standing | undefined>>): Promise<StepState> {
   const { db } = ctx;
   const stepId = node.id;
   const branchId = branch?.branch_id;
@@ -68,7 +82,7 @@ async function deliverableStep(ctx: StepContext, set: AuthoredSet, assetId: stri
     if (!branchId) return Promise.resolve(undefined);
     const known = memo.get(id);
     if (known) return known;
-    const made = standingFor(ctx, set, assetId, branchId, id);
+    const made = standingFor(ctx, current, assetId, branchId, id);
     memo.set(id, made);
     return made;
   };
@@ -116,20 +130,25 @@ async function deliverableStep(ctx: StepContext, set: AuthoredSet, assetId: stri
       activeJobs: scalar(db, `SELECT COUNT(*) AS n FROM generation_jobs j JOIN generation_runs r ON r.run_id = j.run_id WHERE j.asset_id = ? AND j.step_id = ? AND r.branch_id = ? AND j.state IN ${ACTIVE_JOB_STATES}`, ...where),
       unresolvedJobs: scalar(db, "SELECT COUNT(*) AS n FROM generation_jobs j JOIN generation_runs r ON r.run_id = j.run_id WHERE j.asset_id = ? AND j.step_id = ? AND r.branch_id = ? AND j.state = 'unresolved'", ...where),
       favorites: scalar(db, "SELECT COUNT(*) AS n FROM candidates WHERE asset_id = ? AND step_id = ? AND branch_id = ? AND favorite = 1", ...where),
-      openRevisions: scalar(db, "SELECT COUNT(*) AS n FROM revision_requests q JOIN candidates c ON c.candidate_id = q.candidate_id WHERE q.asset_id = ? AND q.step_id = ? AND c.branch_id = ? AND q.status IN ('open','responded')", ...where),
+      openRevisions: openRevisionIds(db, assetId, stepId, branchId).length,
       pendingEscalations: scalar(db, "SELECT COUNT(*) AS n FROM review_escalations WHERE asset_id = ? AND step_id = ? AND branch_id = ? AND status = 'pending'", ...where),
     };
     failedJobs = scalar(db, "SELECT COUNT(*) AS n FROM generation_jobs j JOIN generation_runs r ON r.run_id = j.run_id WHERE j.asset_id = ? AND j.step_id = ? AND r.branch_id = ? AND j.state = 'failed'", ...where);
     newest = db.query<{ candidate_id: string }, string[]>("SELECT candidate_id FROM candidates WHERE asset_id = ? AND step_id = ? AND branch_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1").get(...where)?.candidate_id;
     own = await standing(stepId);
 
-    unaddressed = unaddressedRequiredNotes(db, assetId).filter((n) => {
-      const c = db.query<{ step_id: string; branch_id: string | null }, [string]>("SELECT step_id, branch_id FROM candidates WHERE candidate_id = ?").get(n.candidateId);
-      return c?.step_id === stepId && c.branch_id === branchId;
-    });
+    unaddressed = unaddressedOnStep(db, assetId, stepId, branchId);
 
+    const stagePrefix = node.kind === "animation" ? (own?.stage === "processed" ? "processed: " : "raw: ") : "";
     if (own && (own.approval.state === "approved" || own.approval.state === "rejected") && !own.approval.applicable) {
-      reasons.push(`${stepId}: ${own.approval.staleReason ?? "the decision no longer applies"}`);
+      reasons.push(`${stagePrefix}${stepId}: ${own.approval.staleReason ?? "the decision no longer applies"}`);
+    }
+    // An approved dependency that went stale makes everything built on it worth a second look.
+    for (const dep of node.dependsOn) {
+      const up = dep === "concept" ? undefined : await standing(dep);
+      if (up && (up.approval.state === "approved" || up.approval.state === "rejected") && !up.approval.applicable) {
+        reasons.push(`upstream ${dep} changed: ${up.approval.staleReason ?? "its decision no longer applies"}`);
+      }
     }
     const latest = db.query<{ plan_json: string }, string[]>(
       `SELECT r.plan_json FROM generation_runs r WHERE r.asset_id = ? AND r.step_id = ? AND r.branch_id = ?
@@ -137,11 +156,11 @@ async function deliverableStep(ctx: StepContext, set: AuthoredSet, assetId: stri
         ORDER BY r.created_at DESC, r.rowid DESC LIMIT 1`,
     ).get(...where);
     if (latest) {
-      for (const [path, hash] of Object.entries(specHashesOf(JSON.parse(latest.plan_json)))) {
-        const current = set.all().find((f) => f.path === path);
-        if (!current) reasons.push(`${path} no longer exists`);
-        else if (current.hash !== hash) reasons.push(`${path} changed since the newest candidates of ${stepId} were generated`);
-      }
+      const plan: { directionPins?: DirectionPin[] } = JSON.parse(latest.plan_json);
+      const moved = movedInputs(ctx, set, specHashesOf(JSON.parse(latest.plan_json)), assetId, stepId);
+      const processedStale = own?.stage === "processed" && !own.approval.applicable;
+      reasons.push(...movedReasons(moved, `the newest candidates of ${stepId} were generated`, { source: node.kind === "animation" ? "raw: " : "", processed: "processed: " }, processedStale));
+      reasons.push(...directionReasons(db, node.deliverable, plan.directionPins ?? [], stepId));
     }
   }
   if (counts.unresolvedJobs > 0) {
@@ -153,9 +172,7 @@ async function deliverableStep(ctx: StepContext, set: AuthoredSet, assetId: stri
   }
   // Required feedback stays with the step and branch until an authorized reviewer resolves or waives it, however many newer candidates exist.
   if (unaddressed.length > 0 || counts.openRevisions > 0) {
-    const openRevisions = db.query<{ revision_request_id: string }, string[]>(
-      "SELECT q.revision_request_id FROM revision_requests q JOIN candidates c ON c.candidate_id = q.candidate_id WHERE q.asset_id = ? AND q.step_id = ? AND c.branch_id = ? AND q.status IN ('open','responded') ORDER BY q.created_at",
-    ).all(assetId, stepId, branchId ?? "");
+    const openRevisions = openRevisionIds(db, assetId, stepId, branchId ?? "").map((revision_request_id) => ({ revision_request_id }));
     blockers.push({
       code: "REVISION_OPEN",
       message: `${stepId} has unresolved required feedback (${[...new Set(unaddressed.map((n) => n.candidateId))].join(", ") || openRevisions.map((r) => r.revision_request_id).join(", ")}); it stays open on every candidate of this step until revision.resolve or revision.waive`,
@@ -201,16 +218,16 @@ async function deliverableStep(ctx: StepContext, set: AuthoredSet, assetId: stri
         else if (source) next.push({ label: "Process the newest source frames into an export-rate clip", operation: "processing.plan", input: { candidateId: source.candidate_id, outputId: source.output_id } });
       }
     } else if (!own) next.push({ label: "Select a candidate for this step", operation: "candidate.select", input: { branchId, deliverableId: stepId, candidateId: newest } });
-    next.push({ label: "Review the candidate material", operation: "review.material", input: { candidateId: own?.selection.candidateId ?? newest } });
+    next.push({ label: "Review the candidate material", operation: "review.material", input: { candidateId: own?.selection.candidateId ?? newest, branchId } });
   }
   if (branchId && counts.candidates > 0) {
-    const requirementsHash = stepRequirementsHash(ctx, set, assetId, stepId, branchId);
+    const requirementsHash = (stage: "source" | "processed") => stepFingerprint(ctx, current, assetId, stepId, branchId, { stage });
     if (!own) {
-      const approved = db.query<{ candidate_id: string; output_id: string; sha256: string }, string[]>(
-        `SELECT c.candidate_id, o.output_id, o.sha256 FROM candidates c JOIN candidate_outputs o ON o.candidate_id = c.candidate_id
+      const approved = db.query<{ candidate_id: string; output_id: string; sha256: string; stage: "source" | "processed" }, string[]>(
+        `SELECT c.candidate_id, o.output_id, o.sha256, o.stage FROM candidates c JOIN candidate_outputs o ON o.candidate_id = c.candidate_id
           WHERE c.asset_id = ? AND c.step_id = ? AND c.branch_id = ?${node.kind === "animation" ? " AND o.stage = 'processed'" : ""} ORDER BY c.created_at DESC, c.rowid DESC`,
       ).all(assetId, stepId, branchId).find((o) => {
-        const a = standingApproval(db, o.output_id, requirementsHash, o.sha256);
+        const a = standingApproval(db, o.output_id, requirementsHash(o.stage), o.sha256, branchId);
         return a.state === "approved" && a.applicable;
       });
       if (approved) {
@@ -235,25 +252,31 @@ async function deliverableStep(ctx: StepContext, set: AuthoredSet, assetId: stri
   };
 }
 
-/** Every step of an asset's pipeline for one branch (or, with none, the concept step alone being able to be ready). */
-export async function computeSteps(ctx: StepContext, assetId: string, branchId?: string): Promise<StepState[]> {
+/** Every step of an asset's pipeline for one branch (default: the current branch; with no branches, the concept step alone being able to be ready). */
+export async function computeSteps(ctx: StepContext, assetId: string, requestedBranchId?: string): Promise<StepState[]> {
   const concept = await inspectConceptStep(ctx.db, ctx.root, assetId);
-  const set = await discoverAuthored(ctx.root);
-  const spec = set.assets.find((a) => a.fileId === assetId)?.spec;
-  const pipeline = buildPipeline(spec);
+  const current = await discoverAuthored(ctx.root);
+  const branchId = requestedBranchId ?? resolveDefaultBranchId(ctx.db, assetId);
 
-  let branch: BranchRow | undefined;
+  let branch: (BranchRow & { requirements_hash: string }) | undefined;
   if (branchId) {
-    branch = ctx.db.query<BranchRow, [string, string]>("SELECT branch_id, concept_candidate_id, concept_output_id FROM branches WHERE branch_id = ? AND asset_id = ?").get(branchId, assetId) ?? undefined;
+    branch = ctx.db.query<BranchRow & { requirements_hash: string }, [string, string]>("SELECT branch_id, concept_candidate_id, concept_output_id, requirements_hash FROM branches WHERE branch_id = ? AND asset_id = ?").get(branchId, assetId) ?? undefined;
     if (!branch) throw new OperationFailure("NOT_FOUND", `Asset ${assetId} has no branch ${branchId}`, undefined, [{ label: "List branches", operation: "branch.list", input: { assetId } }]);
   }
+  const set = authoredSetFor(ctx.db, current, branchId);
+  const spec = set.assets.find((a) => a.fileId === assetId)?.spec;
+  const pipeline = buildPipeline(spec);
   const steps: StepState[] = [];
   const memo = new Map<string, Promise<Standing | undefined>>();
   for (const node of pipeline.nodes) {
     if (node.id === "concept") {
       const note = pipeline.reserved.map((message): PlanBlocker => ({ code: "DELIVERABLE_IGNORED", message, recoveryActions: [{ label: "Read the asset definition", operation: "spec.read", input: { path: `brainforge/assets/${assetId}/asset.yaml` } }] }));
+      // The concept a branch was locked on is judged against the requirements the branch consumes.
+      const drifted = branch && stepRequirementsHash(ctx, current, assetId, "concept", branch.branch_id) !== branch.requirements_hash
+        ? ["concept: identity or direction changed since this concept was locked; production needs a renewed concept-lock review"] : [];
       steps.push({
         ...concept, blockers: [...concept.blockers, ...note],
+        ...(drifted.length > 0 ? { needsReassessment: true, reassessmentReasons: [...concept.reassessmentReasons, ...drifted] } : {}),
         ...(branch ? {
           branchId: branch.branch_id,
           state: concept.state === "running" || concept.state === "blocked" ? concept.state : "complete",
@@ -261,7 +284,7 @@ export async function computeSteps(ctx: StepContext, assetId: string, branchId?:
         } : {}),
       });
     } else {
-      steps.push(await deliverableStep(ctx, set, assetId, pipeline, node, branch, memo));
+      steps.push(await deliverableStep(ctx, current, set, assetId, pipeline, node, branch, memo));
     }
   }
   return steps;

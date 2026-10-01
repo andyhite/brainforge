@@ -4,18 +4,16 @@ import type { AuthoredSet } from "../authored.ts";
 import { computeEffective } from "../effective.ts";
 import type { OpenProject } from "../project-runtime.ts";
 import { selectedOutput } from "../review/requirements.ts";
+import { guideKindsFor, resolveAlpha } from "../families/index.ts";
 import type { PinnedReference } from "./plan.ts";
 import { readPinnedReference } from "./references.ts";
 
-export const MOTION_WORKFLOW = "wan22-motion";
 /** The canvas Wan renders in and the guides are normalized into. */
 export const WAN_CANVAS = 768;
 /** Bottom-centre of every normalized guide's foreground: the shared feet baseline inside the Wan canvas. */
 export const WAN_FEET = { x: WAN_CANVAS / 2, y: WAN_CANVAS - 40 };
 export const DEFAULT_FRAME_COUNT = 33;
 export const DEFAULT_SOURCE_FPS = 16;
-/** Positive camera/background clause appended to every motion prompt. */
-export const STATIC_CAMERA_CLAUSE = "Static camera, flat plain light-grey background, the character stays in place.";
 
 const WAN_MIN_LENGTH = 5;
 const WAN_MAX_LENGTH = 81;
@@ -48,6 +46,15 @@ async function measure(bytes: Uint8Array, label: string): Promise<Bounds> {
   if (!decoded.hasAlpha) throw new MediaError("invalid_input", `${label} has no alpha channel, so the figure cannot be measured`);
   return foregroundBounds(bytes);
 }
+
+/** Whole-frame bounds, for guides that are not cut-out subjects (opaque art, or families without a standing height). */
+async function fullFrame(bytes: Uint8Array, label: string): Promise<Bounds> {
+  const decoded = await decodeImage(bytes, label);
+  return { x: 0, y: 0, width: decoded.width, height: decoded.height };
+}
+
+/** Empty space kept around a whole-frame guide so it never touches the Wan canvas edge. */
+const FIT_MARGIN = 8;
 
 /** Where the scaled foreground of a guide sits so its bottom-centre lands on the shared feet baseline. */
 export function guideTransform(scale: number, bounds: Bounds): MotionGuide["transform"] {
@@ -98,7 +105,8 @@ export async function resolveMotion(
     const a = stepOf(id)?.selected?.approval;
     return a?.state === "approved" && a.applicable;
   };
-  const poseDeps = deliverable.dependsOn.filter((id) => spec.deliverables.find((d) => d.id === id)?.kind === "pose");
+  const guideKinds = guideKindsFor(spec.family);
+  const poseDeps = deliverable.dependsOn.filter((id) => guideKinds.includes(spec.deliverables.find((d) => d.id === id)?.kind ?? ""));
   const fallback = poseDeps.find(approvedOf) ?? poseDeps[0];
   const startId = anim.startReference ?? fallback;
   const endId = anim.endReference ?? fallback;
@@ -110,10 +118,12 @@ export async function resolveMotion(
   }
 
   // --- the scale anchor: measured once per branch, not per clip or pose
+  // Cut-out characters and creatures are calibrated to a standing height; any other subject keeps one whole-frame scale per branch.
+  const calibrated = (spec.family === "character" || spec.family === "creature") && resolveAlpha(spec.family, deliverable) === "transparent";
   const effective = computeEffective(set, { assetId }).effective;
   const subjectHeightPx = effective["sizing.subjectHeightPx"]?.value;
   const canvasHeight = effective["sizing.height"]?.value;
-  if (typeof subjectHeightPx !== "number" || typeof canvasHeight !== "number") {
+  if (calibrated && (typeof subjectHeightPx !== "number" || typeof canvasHeight !== "number")) {
     out.blockers.push(blocker("ANCHOR_MISSING", "Motion needs sizing.subjectHeightPx and sizing.height (for example familyDefaults.character.sizing in project.yaml) to calibrate one scale for the branch.", [
       { label: "Read project.yaml", operation: "spec.read", input: { path: "brainforge/project.yaml" } },
     ]));
@@ -125,16 +135,28 @@ export async function resolveMotion(
     out.blockers.push(blocker("OUTPUT_MISSING", `The scale-anchor reference ${anchor.id} (${anchor.label}) is missing on disk or no longer matches its recorded hash.`, stepAction(deliverable.id)));
     return out;
   }
+  const boundsOf = calibrated ? measure : fullFrame;
   let anchorBounds: Bounds;
   try {
-    anchorBounds = await measure(anchorBytes, `scale-anchor reference ${anchor.id}`);
+    anchorBounds = await boundsOf(anchorBytes, `scale-anchor reference ${anchor.id}`);
   } catch (e) {
-    out.blockers.push(blocker("ANCHOR_MISSING", `The standing height cannot be measured on ${anchor.label}: ${e instanceof Error ? e.message : String(e)}. Select a matted (transparent-background) reference.`, stepAction(deliverable.id)));
+    out.blockers.push(blocker("ANCHOR_MISSING", `The ${calibrated ? "standing height" : "frame size"} cannot be measured on ${anchor.label}: ${e instanceof Error ? e.message : String(e)}.${calibrated ? " Select a matted (transparent-background) reference." : ""}`, stepAction(deliverable.id)));
     return out;
   }
-  const subjectInWan = (subjectHeightPx * WAN_CANVAS) / canvasHeight;
-  const scale = subjectInWan / anchorBounds.height;
-  out.notes.push(`Scale anchor: ${anchor.label} stands ${anchorBounds.height}px; guides are scaled by ${scale.toFixed(4)} so a standing figure is ${Math.round(subjectInWan)}px tall in the ${WAN_CANVAS}px Wan canvas (${subjectHeightPx}px on the ${canvasHeight}px export canvas). The same scale applies to every clip of this branch.`);
+  let scale: number;
+  let subjectInWan: number;
+  let targetStandingHeightPx: number;
+  if (typeof subjectHeightPx === "number" && typeof canvasHeight === "number" && calibrated) {
+    subjectInWan = (subjectHeightPx * WAN_CANVAS) / canvasHeight;
+    scale = subjectInWan / anchorBounds.height;
+    targetStandingHeightPx = subjectHeightPx;
+  } else {
+    scale = Math.min((WAN_CANVAS - 2 * FIT_MARGIN) / anchorBounds.width, (WAN_FEET.y - FIT_MARGIN) / anchorBounds.height);
+    subjectInWan = anchorBounds.height * scale;
+    targetStandingHeightPx = subjectInWan;
+    out.notes.push(`Whole-frame scale: ${anchor.label} (${anchorBounds.width}x${anchorBounds.height}px) is scaled by ${scale.toFixed(4)} to fit the ${WAN_CANVAS}px Wan canvas with a margin; every clip of this branch uses the same scale. No standing height applies to a ${spec.family} treated this way.`);
+  }
+  if (calibrated) out.notes.push(`Scale anchor: ${anchor.label} stands ${anchorBounds.height}px; guides are scaled by ${scale.toFixed(4)} so a standing figure is ${Math.round(subjectInWan)}px tall in the ${WAN_CANVAS}px Wan canvas (${subjectHeightPx}px on the ${canvasHeight}px export canvas). The same scale applies to every clip of this branch.`);
 
   // --- each distinct guide, pinned and normalized
   const guides: MotionGuide[] = [];
@@ -168,7 +190,7 @@ export async function resolveMotion(
     let transform = hit;
     if (!transform && bytes) {
       try {
-        const bounds = await measure(bytes, `${role} guide ${sel.outputId}`);
+        const bounds = await boundsOf(bytes, `${role} guide ${sel.outputId}`);
         const t = guideTransform(scale, bounds);
         const framing: FramingTransform = { scale, canvas: { width: WAN_CANVAS, height: WAN_CANVAS }, anchor: WAN_FEET, sourceBounds: bounds, subjectHeightPx: subjectInWan };
         const { clipped } = await applyFraming(bytes, framing);
@@ -177,7 +199,7 @@ export async function resolveMotion(
           continue;
         }
         const ratio = bounds.height / anchorBounds.height;
-        if (ratio < 0.75 || ratio > 1.33) out.notes.push(`The ${role} guide ${id} stands ${bounds.height}px against the anchor's ${anchorBounds.height}px (ratio ${ratio.toFixed(2)}); a different pixel scale or pose than the reference would change the character's apparent height. Review the normalized guide before approving the run.`);
+        if (calibrated && (ratio < 0.75 || ratio > 1.33)) out.notes.push(`The ${role} guide ${id} stands ${bounds.height}px against the anchor's ${anchorBounds.height}px (ratio ${ratio.toFixed(2)}); a different pixel scale or pose than the reference would change the character's apparent height. Review the normalized guide before approving the run.`);
         transform = { ...t, outputId: sel.outputId, sha256: sel.sha256 };
         cache.set(sel.outputId, transform);
       } catch (e) {
@@ -204,7 +226,7 @@ export async function resolveMotion(
     guideNormalization: {
       scale, feet: WAN_FEET, canvas: { width: WAN_CANVAS, height: WAN_CANVAS },
       referenceOutputId: anchor.id, referenceHash: anchor.sha256,
-      sourceStandingHeightPx: anchorBounds.height, targetStandingHeightPx: subjectHeightPx, subjectHeightPx: subjectInWan,
+      sourceStandingHeightPx: anchorBounds.height, targetStandingHeightPx, subjectHeightPx: subjectInWan,
     },
     guides,
   };

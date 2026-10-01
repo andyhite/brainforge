@@ -44,6 +44,15 @@ export const ProcessingRecipe = z.object({
     extrude: z.number().int().min(0).default(1),
   }).default({ maxSize: 4096, padding: 2, extrude: 1 }),
   tileRepeat: z.enum(["none", "mirror-x", "mirror-y", "mirror-xy"]).default("none"),
+  /**
+   * How the cropped source reaches `output`. `none`: the character path (scale anchor + feet placement; without an
+   * anchor the source must already be `output`-sized). `crop`: uniform scale to cover, centre-cut the overflow.
+   * `contain`: uniform scale to fit inside, centred on transparency (or `matteColor`). `stretch`: non-uniform resize.
+   * `crop`/`contain`/`stretch` never look for a subject: no framing, margin or clipping checks, edge contact is fine.
+   */
+  fit: z.enum(["none", "crop", "contain", "stretch"]).default("none"),
+  /** Nine-slice margins in OUTPUT pixels; they must leave a positive centre. Carried to the export. */
+  nineSlice: z.object({ left: z.number().int().min(0), top: z.number().int().min(0), right: z.number().int().min(0), bottom: z.number().int().min(0) }).optional(),
 });
 export type ProcessingRecipe = z.infer<typeof ProcessingRecipe>;
 export type ProcessingRecipeInput = z.input<typeof ProcessingRecipe>;
