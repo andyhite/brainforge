@@ -50,6 +50,7 @@
         "@brainforge/media": "workspace:*",
         "@brainforge/storage": "workspace:*",
         "hono": "^4.7.0",
+        "sharp": "^0.34.0",
       },
     },
     "apps/web": {

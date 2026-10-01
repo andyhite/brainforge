@@ -1,7 +1,7 @@
 import type { CandidateOutput } from "@brainforge/contracts";
 import { useOperation } from "../../api/hooks.ts";
 import { Status } from "../../components/ui.tsx";
-import { formatFps, formatMs, outputLabel, warningText } from "./timing.ts";
+import { formatFps, formatMs, isSingleImage, outputLabel, warningText } from "./timing.ts";
 
 interface Props {
   outputs: CandidateOutput[];
@@ -37,15 +37,16 @@ function OutputRow({ output, selectedId, compareId, onSelect, onCompare }: { out
   const frames = output.mediaKind === "frames";
   const detail = useOperation("output.inspect", { outputId: output.outputId }, { enabled: frames });
   const warnings = detail.data?.ok ? detail.data.data.output.warnings : [];
-  const fps = output.stage === "processed" ? output.playbackFps : output.sourceFps;
+  const still = isSingleImage(output);
+  const fps = still ? undefined : output.stage === "processed" ? output.playbackFps : output.sourceFps;
   return (
     <div className={`output-row${output.outputId === selectedId ? " selected" : ""}`}>
       <div className="row" style={{ flexWrap: "wrap" }}>
         <button type="button" aria-pressed={output.outputId === selectedId} onClick={() => onSelect(output.outputId)}>{outputLabel(output)}</button>
         <span className="badge">{output.stage}</span>
         {fps ? <span className="badge">{formatFps(fps)}</span> : null}
-        {output.frameCount !== undefined ? <span className="badge">{output.frameCount} frames</span> : null}
-        {output.totalDurationMs !== undefined ? <span className="badge">{formatMs(output.totalDurationMs)}</span> : null}
+        {output.frameCount !== undefined && !still ? <span className="badge">{output.frameCount} frames</span> : null}
+        {output.totalDurationMs !== undefined && !still ? <span className="badge">{formatMs(output.totalDurationMs)}</span> : null}
         {frames && output.outputId !== selectedId ? (
           <button type="button" aria-pressed={output.outputId === compareId} onClick={() => onCompare(output.outputId)}>Compare with selected</button>
         ) : null}

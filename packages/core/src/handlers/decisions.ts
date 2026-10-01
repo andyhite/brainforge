@@ -291,11 +291,22 @@ export const decisionHandlers: HandlerMap = {
         resolvers.set(row.asset_id, hashFor);
       }
       const candidate = toCandidate(db, row, hashFor);
+      // Live-candidate rule: a candidate whose branch has selected a different candidate of the same step, and that
+      // selection carries an applicable approval, is superseded. It leaves every queue except `all` (and `decided`).
+      const chosenId = row.branch_id === null ? undefined : db.query<{ candidate_id: string }, [string, string]>("SELECT candidate_id FROM branch_selections WHERE branch_id = ? AND deliverable_id = ?").get(row.branch_id, row.step_id)?.candidate_id;
+      let superseded = false;
+      if (chosenId !== undefined && chosenId !== row.candidate_id) {
+        const chosenRow = db.query<CandidateRow, [string]>("SELECT * FROM candidates WHERE candidate_id = ?").get(chosenId);
+        superseded = chosenRow !== null && toCandidate(db, chosenRow, hashFor).approvals.some((a) => a.state === "approved" && a.applicable);
+      }
       const escalation = escalationsFor(db, row.candidate_id).find((e) => e.status === "pending");
-      const undecided = candidate.approvals.some((a) => a.state === "none" || !a.applicable);
+      // A candidate is judged through the outputs reviewers decide on (the matted still, processed frames); the
+      // untouched decode and crops stay at "none" forever, so only a stale decision, or none at all, means undecided.
+      const decidedApplicably = candidate.approvals.some((a) => a.state !== "none" && a.applicable) && !candidate.approvals.some((a) => a.state !== "none" && !a.applicable);
+      const undecided = !superseded && !decidedApplicably;
       const flags: Record<ReviewKind, boolean> = {
         escalated: escalation !== undefined, "needs-revision": needsRevision.has(row.candidate_id), overridden: overridden.has(row.candidate_id),
-        "awaiting-review": undecided, decided: !undecided && escalation === undefined,
+        "awaiting-review": undecided, decided: decidedApplicably && escalation === undefined,
       };
       const wanted: ReviewKind | undefined = input.filter === "escalated" || input.filter === "needs-revision" || input.filter === "overridden" || input.filter === "decided" ? input.filter : undefined;
       if (input.filter === "awaiting" ? !flags["awaiting-review"] && !flags.escalated : wanted !== undefined && !flags[wanted]) continue;

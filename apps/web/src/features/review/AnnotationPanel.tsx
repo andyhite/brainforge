@@ -32,7 +32,7 @@ export function AnnotationPanel({ candidateId, output, annotations, selectedId, 
       {draft ? <DraftForm candidateId={candidateId} output={output} draft={draft} onDraftChange={onDraftChange} formRef={formRef} onCreated={onSelect} frame={frame} /> : (
         <p className="secondary">Choose Pin or Rectangle and click or drag on the image, use “Note on whole image”, or focus the image and press Enter to place a pin at the centre.</p>
       )}
-      <h3>Notes on this {output.role === "matted" ? "matted" : "untouched"} output ({annotations.length})</h3>
+      <h3>Notes on this {output.stage === "processed" ? "processed" : output.role === "matted" ? "matted" : "untouched"} output ({annotations.length})</h3>
       {annotations.length === 0 ? <p className="secondary">No notes on this output. Notes never carry over to a different output.</p> : (
         <ol className="plain stack" aria-label="Notes">
           {annotations.map((a, i) => <NoteItem key={a.annotationId} annotation={a} index={i + 1} selected={a.annotationId === selectedId} onSelect={onSelect} />)}

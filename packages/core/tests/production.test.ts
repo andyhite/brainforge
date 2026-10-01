@@ -463,3 +463,22 @@ describe("version.activate", () => {
     expect((await list(w)).active.versionId).toBeNull();
   });
 });
+
+describe("a still approved in processed form", () => {
+  test("a freshly promoted version matches current requirements and can be activated without acknowledgement", async () => {
+    const w = await world();
+    await seedStill(w, "cand_sheet", "construction-sheet", w.branchId);
+    w.open.db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, budget_id, started_by, created_at) VALUES ('run_idle', 'cortex', 'idle-rest', 'p', '{}', 'b', 'human:local', ?)").run(NOW);
+    w.open.db.query("INSERT INTO generation_jobs (job_id, run_id, asset_id, step_id, slot, label, identity, state, submission_json, created_at, updated_at) VALUES ('job_idle', 'run_idle', 'cortex', 'idle-rest', 0, 'A', 'identity-idle', 'succeeded', '{}', ?, ?)").run(NOW, NOW);
+    await publishFrameSequence(w.open, {
+      assetId: "cortex", candidateId: "cand_idle", actorId: "system", purpose: "test",
+      candidate: { candidateId: "cand_idle", runId: "run_idle", jobId: "job_idle", branchId: w.branchId, label: "Idle", prompt: "p" },
+      outputs: [{ outputId: "out_cand_idle", role: "matted", stage: "processed", sourceFps: 1, playbackFps: 1, totalDurationMs: 1000, frames: [{ png: makePng(16, 16, [shade++, 40, 40]), sourceFrame: 0, durationMs: 1000 }] }],
+    });
+    await seedClip(w, "cand_walk");
+    for (const id of ["cand_sheet", "cand_idle", "cand_walk"]) await approve(w, id);
+    const version = await promote(w);
+    expect(version.matchesCurrent).toBe(true);
+    expectOk(await activateAt(w, version.versionId));
+  });
+});

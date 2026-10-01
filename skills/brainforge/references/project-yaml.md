@@ -25,7 +25,7 @@ Path: `<game root>/brainforge/project.yaml`. Exactly one per project. Schema `br
 
 Families: `character creature item equipment prop environment background tile ui icon effect`.
 
-Defaults block (used by `defaults`, each `familyDefaults.<family>`, asset `overrides`, deliverable `overrides`; all optional): `perspective` string (SENT; one short phrase); `palette` string (SENT; visual phrase); `sizing {width:int>0, height:int>0, subjectHeightPx?:number>0, displayScale?:number>0}`; `animation {playbackFps:number>0}`; `processing` free map; `workflows` map string->string (workflow ids). Only `artDirection`, `perspective`, `palette` reach the model; everything else in this file does not.
+Defaults block (used by `defaults`, each `familyDefaults.<family>`, asset `overrides`, deliverable `overrides`; all optional): `perspective` string (SENT; one short phrase); `palette` string (SENT; visual phrase); `sizing {width:int>0, height:int>0, subjectHeightPx?:number>0, displayScale?:number>0}`; `animation {playbackFps:number>0}` (omit for static projects; stills need no frame rate); `processing {resizeFilter?: "nearest"|"lanczos3"}` (the default resize filter of `processing_plan`; set `nearest` for pixel art so hard edges stay hard, otherwise `lanczos3` smooths; a request's `recipe.resizeFilter` still wins; no other key is read); `workflows` map string->string (workflow ids). Only `artDirection`, `perspective`, `palette` reach the model; everything else in this file does not.
 
 `approval` is a REQUEST. Effective authority is the last human-confirmed snapshot; `settings_inspect` shows requested vs effective. Relaxing a policy in YAML does not take effect until the human confirms it in the UI.
 

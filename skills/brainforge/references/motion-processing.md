@@ -62,7 +62,8 @@ Processing never edits a source. Every run creates a NEW processed output (`pare
 |`output {width,height}`|Exported canvas (e.g. 256x256)|
 |`scaleAnchor`|One uniform scale from the branch's approved reference (see below); persisted with the hash|
 |`resizeFilter`|`lanczos3` (smooth) or `nearest` (pixel art)|
-|`alpha`, `matteColor`|`preserve` keeps transparency; `matte` flattens onto `matteColor` (explicit only)|
+|`alpha`, `matteColor`|`preserve` keeps transparency as is; `snap-near-opaque` also sets alpha >= 254 to 255 in the PROCESSED frames only (in-graph BiRefNet leaves foreground at 254; soft edges below 254 and all originals stay untouched). It is the default for matted families (character, creature, item, equipment, prop, icon) whose deliverable is transparent, and `preserve` for opaque or effect/UI art; `matte` flattens onto `matteColor` (explicit only)|
+|Scale anchor|The standing height is measured on the branch's selected neutral `pose` output (first `pose` deliverable, e.g. `idle-rest`), the same kind of image Wan is conditioned on, else the construction sheet's front crop, else the locked concept. Every guide of the branch is scaled by that one factor; the plan notes list the anchor image, its height and each guide's height. A guide that is simply larger is scaled consistently, never blocked unless it truly clips the Wan canvas. Processed standing height therefore equals `sizing.subjectHeightPx`.|
 |`pivot {x,y}`|Normalized 0..1, origin top-left; feet usually `x:0.5`|
 |`frameOffsets [{index,dx,dy}]`|Explicit per-frame pixel corrections; never automatic|
 |`playbackFps`|Exported rate|

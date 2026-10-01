@@ -6,18 +6,18 @@ import { OperationFailure } from "../runtime.ts";
 
 const ACTIVE_JOB_STATES = "('queued','submitting','running','collecting')";
 
-/** Required notes that no resolved/waived revision has covered since the note was last edited. */
-export function unaddressedRequiredNotes(db: Database, assetId: string): { annotationId: string; candidateId: string }[] {
-  return db.query<{ annotation_id: string; candidate_id: string }, [string]>(
+/** Required notes that no resolved/waived revision has covered since the note was last edited; `stepId` limits them to that step's candidates. */
+export function unaddressedRequiredNotes(db: Database, assetId: string, stepId?: string): { annotationId: string; candidateId: string }[] {
+  return db.query<{ annotation_id: string; candidate_id: string }, [string, string | null]>(
     `SELECT a.annotation_id, a.candidate_id FROM annotations a
        JOIN candidates c ON c.candidate_id = a.candidate_id
-      WHERE c.asset_id = ? AND a.deleted = 0 AND a.requires_revision = 1
+      WHERE c.asset_id = ? AND a.deleted = 0 AND a.requires_revision = 1 AND (?2 IS NULL OR c.step_id = ?2)
         AND NOT EXISTS (
           SELECT 1 FROM revision_requests r
            WHERE r.status IN ('resolved','waived') AND r.resolved_at >= a.updated_at
              AND EXISTS (SELECT 1 FROM json_each(r.annotation_ids_json) j WHERE j.value = a.annotation_id))
       ORDER BY a.created_at`,
-  ).all(assetId).map((r) => ({ annotationId: r.annotation_id, candidateId: r.candidate_id }));
+  ).all(assetId, stepId ?? null).map((r) => ({ annotationId: r.annotation_id, candidateId: r.candidate_id }));
 }
 
 const count = (db: Database, sql: string, assetId: string): number => db.query<{ n: number }, [string]>(sql).get(assetId)?.n ?? 0;
@@ -71,7 +71,7 @@ export async function inspectConceptStep(db: Database, root: string, assetId: st
     reasons.push(...movedReasons(moved, "the newest candidates were generated", { source: "", processed: "" }, false));
   }
 
-  const unaddressed = unaddressedRequiredNotes(db, assetId);
+  const unaddressed = unaddressedRequiredNotes(db, assetId, "concept");
   if (unaddressed.length > 0 || counts.openRevisions > 0) {
     blockers.push({
       code: "REVISION_OPEN",

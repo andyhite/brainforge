@@ -55,6 +55,8 @@ Same rule as every asset: the YAML is the prompt (SKILL.md "Writing prompt-beari
 
 `ui.state`, `environment.*`, `attachments`, `output` are structural metadata: NEVER sent. Put what a state looks like into the deliverable `description` (only the deliverable being generated is sent).
 
+Canvas and conditioning facts for every family: (1) a deliverable whose canvas (`output`) has a longer side under 256 px is still GENERATED at 1024x1024 and fitted down by processing; larger canvases generate at their own size (up to 2048). (2) Every deliverable is conditioned on the branch's locked concept alone (or on the one sheet region bound through `referenceRoles`); a `dependsOn` state or variant orders review but its pixels are NOT fed to the model. (3) The effective `palette`, every style `palette` entry and every `identity.*` value go into EVERY deliverable prompt, so a state that must look different must not contradict them. Style palette entries are joined with ", "; when any entry itself contains a comma they are joined with "; " so each entry stays one phrase. (4) Opaque rounded panels get light-grey corners: see [ui-vfx](ui-vfx.md).
+
 ## Writing rules per family
 
 - character / creature: the Cortex rules in SKILL.md. A creature `identity` lists body plan, surface, head with shape + colour + position; no human anatomy unless it has it.

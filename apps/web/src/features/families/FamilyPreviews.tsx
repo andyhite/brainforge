@@ -4,6 +4,7 @@ import { callOperation } from "../../api/client.ts";
 import { fileUrl, useOperation } from "../../api/hooks.ts";
 import { useProjectRoot } from "../../lib/project-context.tsx";
 import { useProject } from "../../lib/use-project.ts";
+import { isSingleImage } from "../animation/timing.ts";
 import { outputUrl } from "../generation/media.tsx";
 import { AttachmentMarkers, BackgroundPreview, NineSlicePreview, StateCompare, TilePreview, VariantsGallery, type PreviewImage, type StateEntry } from "./previews.tsx";
 
@@ -42,7 +43,7 @@ export function FamilyPreviews({ assetId, deliverableId, candidateId, outputId, 
   });
 
   const parsed = inspect.data?.ok ? AssetSpec.safeParse(inspect.data.data.spec) : undefined;
-  if (!parsed?.success || !projectId || !output || output.mediaKind !== "image") return null;
+  if (!parsed?.success || !projectId || !output || !(output.mediaKind === "image" || isSingleImage(output))) return null;
   const spec = parsed.data;
   const deliverable: Deliverable | undefined = spec.deliverables.find((d) => d.id === deliverableId);
   if (!deliverable) return null;
@@ -79,7 +80,13 @@ export function FamilyPreviews({ assetId, deliverableId, candidateId, outputId, 
     <>
       {own && isTile ? <TilePreview image={image} tileSize={env?.tileSize} seamlessAxes={env?.seamlessAxes ? [...env.seamlessAxes] : undefined} connections={env?.connections} symmetry={symmetry} /> : null}
       {own && isBackground ? <BackgroundPreview image={image} seamlessAxes={env?.seamlessAxes ? [...env.seamlessAxes] : undefined} parallax={env?.parallax} relativeScale={env?.relativeScale} layer={env?.layer} /> : null}
-      {own && deliverable.ui?.nineSlice ? <NineSlicePreview image={image} slice={deliverable.ui.nineSlice} declared={{ width: deliverable.output?.width, height: deliverable.output?.height }} /> : null}
+      {own && deliverable.ui?.nineSlice ? (
+        output.stage === "source" && deliverable.output?.width !== undefined && deliverable.output.width !== output.width ? (
+          <p className="secondary">Nine-slice margins are in exported pixels. Select the processed image to preview them at the exported {deliverable.output.width}×{deliverable.output.height ?? output.height} size.</p>
+        ) : (
+          <NineSlicePreview image={image} slice={deliverable.ui.nineSlice} declared={{ width: deliverable.output?.width, height: deliverable.output?.height }} />
+        )
+      ) : null}
       {set && stateful >= 2 && stills.length >= 2 ? <StateCompare entries={stills.filter((e) => spec.deliverables.find((d) => d.id === e.deliverableId)?.ui?.state !== undefined)} /> : null}
       {set && stateful < 2 && !isTile && !isBackground && ["icon", "item", "equipment", "prop", "ui"].includes(family) && stills.length >= 2 ? <VariantsGallery entries={stills} title={family === "icon" ? "Icon variants and states" : "Variants and states"} /> : null}
       {own && (family === "equipment" || family === "prop") && spec.attachments.length > 0 ? (

@@ -176,7 +176,7 @@ th { font-weight: 650; color: var(--text-muted); }
 
 /* viewer */
 .viewer-tools { display: flex; gap: calc(var(--u) * 2); flex-wrap: wrap; margin-bottom: calc(var(--u) * 3); }
-.viewer-tools button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 650; }
+.viewer-tools button[aria-pressed="true"]:not(.primary) { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 650; }
 .viewer-stage { border: 1px solid var(--border); border-radius: var(--radius); min-height: 280px; max-height: 70vh; overflow: auto; display: grid; place-items: center; padding: calc(var(--u) * 4); }
 .viewer-stage.light { background: #f2f2f2; }
 .viewer-stage.dark { background: #161616; }

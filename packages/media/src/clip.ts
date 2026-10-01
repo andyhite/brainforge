@@ -2,7 +2,7 @@ import type { ProcessingRecipe } from "@brainforge/contracts";
 import sharp from "sharp";
 import { buildAtlas, atlasLayout, type BuiltAtlas } from "./atlas.ts";
 import { decodeRgba, MediaError } from "./decode.ts";
-import { applyFraming, foregroundBounds, shiftCanvas, type Bounds } from "./frame.ts";
+import { applyFraming, foregroundBounds, shiftCanvas, snapNearOpaque, type Bounds } from "./frame.ts";
 import { fitFrame } from "./fit.ts";
 import { resample, type ResampledFrame } from "./resample.ts";
 
@@ -91,7 +91,7 @@ export async function processClip(sourceFrames: Uint8Array[], sourceFps: number,
   const fitted = recipe.fit !== "none" || !anchor;
   if (!fitted) {
     if (recipe.tileRepeat !== "none") throw new MediaError("invalid_input", "tileRepeat needs a canvas fit (crop, contain or stretch), not the anchored character path");
-    if (recipe.alpha !== "preserve") throw new MediaError("invalid_input", "alpha matting needs a canvas fit; anchored character frames are already matted");
+    if (recipe.alpha === "matte") throw new MediaError("invalid_input", "alpha matting needs a canvas fit; anchored character frames are already matted");
     if (recipe.resizeFilter !== "lanczos3") throw new MediaError("invalid_input", "the anchored character path only supports lanczos3 resizing");
   }
   const { output, pivot, crop } = recipe;
@@ -152,6 +152,7 @@ export async function processClip(sourceFrames: Uint8Array[], sourceFps: number,
           const raw = fullFrame ? sourceFrames[source]! : new Uint8Array(await sharp(sourceFrames[source]!).extract({ left: crop.x, top: crop.y, width: crop.width, height: crop.height }).png().toBuffer());
           png = (await applyFraming(raw, transform!)).png;
         }
+        if (recipe.alpha === "snap-near-opaque") png = await snapNearOpaque(png);
         const bounds = await boundsOf(png);
         return { png, ...(bounds ? { bounds } : {}) };
       })();

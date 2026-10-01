@@ -394,3 +394,61 @@ describe("what leaves current", () => {
     expect(await exists(join(dest(w), "current/assets/cortex"))).toBe(false);
   });
 });
+
+describe("project.completeness", () => {
+  test("a required asset is complete only with an active version that satisfies current requirements; export status is separate", async () => {
+    const w = await world({ requireCortex: true });
+    const entry = async () => {
+      const data = expectOk(await w.call("project.completeness", {}));
+      return { data, asset: data.requiredAssets.find((a) => a.assetId === "cortex")! };
+    };
+
+    let now = await entry();
+    expect(now.asset.state).toBe("no-promoted-version");
+    expect(now.data).toMatchObject({ complete: false, export: { status: "not-exported" }, counts: { required: 1, complete: 0 } });
+
+    const versionId = await promote(w);
+    now = await entry();
+    expect(now.asset.state).toBe("not-activated");
+
+    await activate(w, versionId);
+    now = await entry();
+    expect(now.asset).toMatchObject({ state: "complete", activeVersionId: versionId, activeVersionNumber: 1 });
+    expect(now.data).toMatchObject({ complete: true, export: { status: "not-exported" } });
+
+    expectOk(await startExport(w, await planExport(w)));
+    expect((await entry()).data.export).toMatchObject({ status: "current" });
+
+    await put(w.root, "brainforge/assets/cortex/asset.yaml", ASSET.replace("A guarded teenager with an exposed brain.", "A relaxed adult with a bandaged brain."));
+    now = await entry();
+    expect(now.data.complete).toBe(false);
+    expect(now.asset.state).toBe("obsolete-version");
+    expect(now.asset.reasons.length).toBeGreaterThan(0);
+    expect(now.data.export.status).toBe("current");
+  });
+
+  test("a required asset without a definition names the missing file and nothing else is counted complete", async () => {
+    const w = await world({ requireCortex: true });
+    await put(w.root, "brainforge/project.yaml", (await readFile(join(w.root, "brainforge/project.yaml"), "utf8")).replace("assets: [cortex]", "assets: [cortex, ghost]"));
+    const data = expectOk(await w.call("project.completeness", {}));
+    expect(data.requiredAssets.find((a) => a.assetId === "ghost")).toMatchObject({ state: "no-definition" });
+    expect(data.complete).toBe(false);
+  });
+});
+
+describe("asset.impact", () => {
+  test("names the steps an edit affects per branch, and nothing when no input changed", async () => {
+    const w = await world();
+    const quiet = expectOk(await w.call("asset.impact", { assetId: "cortex" }));
+    expect(quiet.affectedSteps).toBe(0);
+    expect(quiet.branches.map((b) => b.branchId)).toEqual([w.branchId]);
+
+    await put(w.root, "brainforge/assets/cortex/asset.yaml", ASSET.replace("A guarded teenager with an exposed brain.", "A relaxed adult with a bandaged brain."));
+    const changed = expectOk(await w.call("asset.impact", { assetId: "cortex" }));
+    expect(changed.affectedSteps).toBeGreaterThan(0);
+    expect(changed.branches[0]!.steps.every((s) => s.reasons.length > 0)).toBe(true);
+
+    const missing = await w.call("asset.impact", { assetId: "ghost" });
+    expect(!missing.ok && missing.error.code).toBe("NOT_FOUND");
+  });
+});

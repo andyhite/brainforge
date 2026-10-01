@@ -9,6 +9,7 @@
   "scripts": {
     "feasibility": "bun scripts/feasibility.ts",
     "recovery-smoke": "bun scripts/recovery-smoke.ts",
+    "audit": "bun scripts/audit-operations.ts",
     "bf": "bun apps/cli/src/main.ts",
     "server": "bun apps/server/src/index.ts",
     "mcp": "bun apps/mcp/src/main.ts",

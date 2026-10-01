@@ -174,8 +174,9 @@ export function ProcessPanel({ candidate, sources, projectId }: { candidate: Can
             <RecipeGroup title="Transparency">
               <div className="field compact">
                 <label htmlFor="alpha">Background</label>
-                <select id="alpha" value={recipe.alpha} onChange={(event) => change({ alpha: event.target.value === "matte" ? "matte" : "preserve" })}>
-                  <option value="preserve">Keep transparency</option>
+                <select id="alpha" value={recipe.alpha} onChange={(event) => change({ alpha: event.target.value === "matte" ? "matte" : event.target.value === "snap-near-opaque" ? "snap-near-opaque" : "preserve" })}>
+                  <option value="preserve">Keep transparency as is</option>
+                  <option value="snap-near-opaque">Keep transparency, make alpha 254+ fully opaque</option>
                   <option value="matte">Flatten onto a matte colour</option>
                 </select>
                 <FieldSource edited={isEdited("alpha")} source={sourceOf("alpha")} onReset={() => reset("alpha")} />

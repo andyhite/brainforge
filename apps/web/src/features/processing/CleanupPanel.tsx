@@ -6,7 +6,7 @@ import { Banner, ErrorBanner, NetworkProblem } from "../../components/ui.tsx";
 
 type Exported = OperationData<"candidate.export-cleanup">;
 
-const label = (output: CandidateOutput) => `${output.stage === "source" ? "Source" : "Processed"} · ${output.role === "matted" ? "matted" : "untouched"} · ${output.frameCount ?? "?"} frames${output.playbackFps ? ` at ${output.playbackFps} fps` : ""}`;
+const label = (output: CandidateOutput) => `${output.stage === "source" ? "Source" : "Processed"} · ${output.role === "matted" ? "matted" : "untouched"} · ${output.frameCount === 1 ? "image" : `${output.frameCount ?? "?"} frames${output.playbackFps ? ` at ${output.playbackFps} fps` : ""}`}`;
 
 /** Parses "1, 4-6" (1-based, as shown in the player) into sorted unique zero-based indices. Throws a message naming the bad token. */
 function parseFrames(text: string, count: number): number[] {

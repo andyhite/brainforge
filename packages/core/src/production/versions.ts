@@ -84,13 +84,17 @@ export function compareToCurrent(open: OpenProject, set: AuthoredSet, manifest: 
   }
   const nodes = buildPipeline(spec).nodes.filter((n) => n.id !== "concept");
   const ids = new Set(nodes.map((n) => n.id));
-  // The stored hash was recorded at the deliverable's delivered stage (processed for animations); a version recorded
-  // before output stages existed holds the whole-step legacy hash and is still compared with that.
+  // The stored hash was recorded at the stage of the delivered output: processed for animations and for stills approved
+  // in processed form, source for a raw still. A version recorded before output stages existed holds the whole-step
+  // legacy hash and is still compared with that.
   const current: Record<string, string> = { concept: stepRequirementsHash(open, set, manifest.assetId, "concept") };
   for (const node of nodes) {
     if (!(node.id in manifest.stepRequirements)) continue;
-    const fp = stepFingerprint(open, set, manifest.assetId, node.id, manifest.branchId, { stage: node.kind === "animation" ? "processed" : "source", basis: "current" });
-    current[node.id] = manifest.stepRequirements[node.id] === fp.legacy ? fp.legacy : fp.hash;
+    const recorded = manifest.stepRequirements[node.id];
+    const source = stepFingerprint(open, set, manifest.assetId, node.id, manifest.branchId, { stage: "source", basis: "current" });
+    const processed = stepFingerprint(open, set, manifest.assetId, node.id, manifest.branchId, { stage: "processed", basis: "current" });
+    const preferred = node.kind === "animation" ? processed : source;
+    current[node.id] = recorded === source.legacy ? source.legacy : recorded === processed.hash ? processed.hash : preferred.hash;
   }
 
   if (current.concept !== manifest.stepRequirements.concept) differences.push({ field: "stepRequirements.concept", version: manifest.stepRequirements.concept, current: current.concept });

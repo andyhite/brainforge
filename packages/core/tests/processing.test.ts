@@ -129,6 +129,8 @@ describe("processing.plan", () => {
     expect(p12.sources.loop).toContain("deliverables[walk].animation.loop");
     expect(p12.sources.scaleAnchor).toStartWith("derived:");
     expect(p12.recipe.scaleAnchor).toMatchObject({ referenceOutputId: "cand-c-matted", sourceStandingHeightPx: 30, targetStandingHeightPx: 24, sourceFeet: { x: 24, y: 44 } });
+    expect(p12.recipe.alpha).toBe("snap-near-opaque"); // character family: matted, so near-opaque alpha is snapped in the processed stage
+    expect(p12.sources.alpha).toContain("matted");
     expect(p12.pivotPx).toEqual({ x: 20, y: 38 });
     expect(p12.canvas).toEqual({ width: 40, height: 40 });
     // The figure stands 24px tall at the calibrated scale, feet on the pivot line.

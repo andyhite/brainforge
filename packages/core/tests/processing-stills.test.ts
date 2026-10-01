@@ -109,6 +109,23 @@ describe("processing stills, opaque art and effects", () => {
     expect(r.ok).toBe(false);
   });
 
+  test("defaults.processing.resizeFilter: nearest makes pixel art shrink without inventing blended colours", async () => {
+    const w = await world();
+    expect((await plan(w, "cand-panel")).recipe.resizeFilter).toBe("lanczos3");
+    await put(w.root, "brainforge/project.yaml", PROJECT.replace("export:", "  processing: { resizeFilter: nearest }\nexport:"));
+    const p = await plan(w, "cand-panel");
+    expect(p.recipe.resizeFilter).toBe("nearest");
+    expect(p.sources.resizeFilter).toContain("project.yaml");
+    const out = expectOk(await w.call("processing.start", { planId: p.planId, planHash: p.planHash })).output;
+    const srcRow = w.open.db.query<{ path: string }, []>("SELECT path FROM candidate_outputs WHERE output_id = 'cand-panel-untouched'").get()!;
+    const file = w.open.db.query<{ path: string }, [string]>("SELECT path FROM output_frames WHERE output_id = ?").get(out.outputId)!;
+    const src = await decodeRgba(await readFile(join(w.root, srcRow.path)));
+    const dst = await decodeRgba(await readFile(join(w.root, file.path)));
+    const colours = new Set<string>();
+    for (let i = 0; i < src.data.length; i += 4) colours.add(src.data.subarray(i, i + 4).join(","));
+    for (let i = 0; i < dst.data.length; i += 4) expect(colours.has(dst.data.subarray(i, i + 4).join(","))).toBe(true);
+  });
+
   test("mirror-repeat is planned with a visible SYMMETRY warning and produces mirrored pixels", async () => {
     const w = await world();
     const p = await plan(w, "cand-panel", { tileRepeat: "mirror-x" });

@@ -9,7 +9,7 @@ Schema `brainforge.style.v2`. `.strict()`. The `id` MUST equal the file name wit
 |`schema`|yes|literal `brainforge.style.v2`|
 |`id`|yes|kebab-case, equals file name|
 |`description`|no|string, `""`. Documentation only: NEVER sent to the model|
-|`palette`|no|string[] (ordered, one per entry), `[]`. EVERY entry is SENT to the model: one visual phrase each (colour, line, rendering), positive wording only|
+|`palette`|no|string[] (ordered, one per entry), `[]`. EVERY entry is SENT to the model: one visual phrase each (colour, line, rendering), positive wording only. Entries are joined with ", "; if any entry contains a comma the entries are joined with "; " instead, so a comma inside an entry stays inside one phrase|
 |`references`|no|string[] imported reference ids, `[]`|
 |`preferences`|no|string[] confirmed preference ids, `[]`; humans confirm, agents do not invent|
 

@@ -7,7 +7,7 @@ import { JobsPage } from "./features/jobs/JobsPage.tsx";
 import { OpenProjectPage } from "./features/projects/OpenProjectPage.tsx";
 import { OverviewPage } from "./features/projects/OverviewPage.tsx";
 import { CandidatePage } from "./features/review/CandidatePage.tsx";
-import { LibraryPage } from "./features/review/Placeholders.tsx";
+import { LibraryPage } from "./features/library/LibraryPage.tsx";
 import { ReviewPage } from "./features/review/ReviewPage.tsx";
 import { ExportPage } from "./features/export/ExportPage.tsx";
 import { HistoryPage } from "./features/history/HistoryPage.tsx";

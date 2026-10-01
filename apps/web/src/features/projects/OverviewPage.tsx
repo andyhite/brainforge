@@ -30,6 +30,7 @@ export function OverviewPage() {
   const project = useProject();
   const projectYaml = useOperation("spec.read", { path: "brainforge/project.yaml" }, { enabled: project.data !== undefined });
   const settings = useOperation("settings.inspect", {}, { enabled: project.data !== undefined });
+  const completeness = useOperation("project.completeness", {}, { enabled: project.data !== undefined });
 
   if (!project.root) {
     return (
@@ -70,6 +71,7 @@ export function OverviewPage() {
 
   const allProblems: Problem[] = [...summary.problems];
   for (const spec of invalidSpecs) for (const problem of spec.problems) if (!allProblems.some((p) => p.file === problem.file && p.line === problem.line && p.message === problem.message)) allProblems.push({ file: spec.path, ...problem });
+  const report = completeness.data?.ok ? completeness.data.data : undefined;
 
   let next: NextStep;
   const firstBad = invalidSpecs[0];
@@ -78,7 +80,13 @@ export function OverviewPage() {
   else if (policy && policy.diff.length > 0) next = { label: "Confirm policy", to: "/settings/direction", why: policy.pendingRelaxation ? "The requested approval policy is more permissive than the confirmed one." : "The requested approval policy differs from the confirmed one." };
   else if (data.assets.length === 0 && missing.length === 0) next = { label: "Author asset YAML", to: "/assets", why: "No assets are defined yet." };
   else if (undefinedRequired) next = { label: "Author asset YAML", to: `/assets/${encodeURIComponent(undefinedRequired)}?step=definition&create=1`, why: `Required asset ${undefinedRequired} has no definition yet.` };
-  else next = { label: "Review assets", to: "/assets", why: "Definitions are in place. Generation and review arrive in later milestones." };
+  else {
+    const open = report?.requiredAssets.find((a) => a.state !== "complete");
+    if (open) next = { label: "Open " + (open.name ?? open.assetId), to: `/assets/${encodeURIComponent(open.assetId)}`, why: `${open.name ?? open.assetId}: ${open.reasons[0] ?? open.state.replaceAll("-", " ")}.` };
+    else if (report && report.counts.awaitingReview > 0) next = { label: "Open the review queue", to: "/review", why: `${report.counts.awaitingReview} output(s) are waiting for a decision.` };
+    else if (report && report.complete && report.export.status !== "current") next = { label: "Export", to: "/export", why: report.export.detail };
+    else next = { label: "Review assets", to: "/assets", why: "Definitions are in place." };
+  }
 
   return (
     <div>
@@ -105,31 +113,56 @@ export function OverviewPage() {
       <div className="grid-2" style={{ marginTop: 16 }}>
         <section className="panel" aria-labelledby="req-title" style={{ marginTop: 0 }}>
           <h2 id="req-title">Required assets complete</h2>
-          {required.length === 0 ? (
-            <p><Status tone="idle">None declared</Status></p>
+          {report ? (
+            <>
+              <p>
+                {report.counts.required === 0 ? <Status tone="idle">None declared</Status> : (
+                  <Status tone={report.complete ? "ok" : "warn"}>{report.counts.complete} of {report.counts.required} complete</Status>
+                )}
+              </p>
+              <ul className="plain-list" aria-label="Required assets">
+                {report.requiredAssets.map((asset) => (
+                  <li key={asset.assetId} className="row" style={{ justifyContent: "space-between" }}>
+                    <Link to={`/assets/${encodeURIComponent(asset.assetId)}`}>{asset.name ?? asset.assetId}</Link>
+                    <span className="secondary">{asset.state === "complete" ? `Version ${asset.activeVersionNumber} active` : `${asset.state.replaceAll("-", " ")}${asset.reasons[0] ? ` — ${asset.reasons[0]}` : ""}`}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
           ) : (
-            <p>
-              <Status tone={requiredValid === required.length ? "info" : "warn"}>{requiredValid} of {required.length} required definitions are valid</Status>
-            </p>
+            <>
+              {required.length === 0 ? <p><Status tone="idle">None declared</Status></p> : <p><Status tone={requiredValid === required.length ? "info" : "warn"}>{requiredValid} of {required.length} required definitions are valid</Status></p>}
+              {missing.length > 0 ? <p className="secondary">Missing definition: {missing.map((item) => item.id).join(", ")}</p> : null}
+              {invalid.length > 0 ? <p className="secondary">Invalid definition: {invalid.map((item) => item.id).join(", ")}</p> : null}
+            </>
           )}
-          <p className="secondary">Nothing is complete yet: producing and approving art starts in later milestones.</p>
-          {missing.length > 0 ? <p className="secondary">Missing definition: {missing.map((item) => item.id).join(", ")}</p> : null}
-          {invalid.length > 0 ? <p className="secondary">Invalid definition: {invalid.map((item) => item.id).join(", ")}</p> : null}
         </section>
         <section className="panel" aria-labelledby="reassess-title" style={{ marginTop: 0 }}>
           <h2 id="reassess-title">Needs reassessment</h2>
-          <p><Status tone="idle">Not started</Status></p>
-          <p className="secondary">No generated work exists to reassess.</p>
+          {report ? (
+            <p><Status tone={report.counts.assetsNeedingReassessment > 0 ? "warn" : "idle"}>{report.counts.assetsNeedingReassessment === 0 ? "Nothing needs reassessment" : `${report.counts.assetsNeedingReassessment} asset(s) need reassessment`}</Status></p>
+          ) : <p className="secondary" role="status">Loading…</p>}
+          <p className="secondary">Changed requirements return affected approvals to review; history is kept.</p>
         </section>
         <section className="panel" aria-labelledby="waiting-title" style={{ marginTop: 0 }}>
           <h2 id="waiting-title">Waiting for review</h2>
-          <p><Status tone="idle">Not started</Status></p>
-          <p className="secondary">Review queues arrive with generation.</p>
+          {report ? (
+            <>
+              <p><Status tone={report.counts.awaitingReview + report.counts.needsRevision > 0 ? "warn" : "idle"}>{report.counts.awaitingReview} awaiting a decision</Status></p>
+              <p className="secondary">{report.counts.escalated} escalated to a human · {report.counts.needsRevision} with unresolved required notes</p>
+              <Link to="/review">Open the review queue</Link>
+            </>
+          ) : <p className="secondary" role="status">Loading…</p>}
         </section>
         <section className="panel" aria-labelledby="export-title" style={{ marginTop: 0 }}>
           <h2 id="export-title">Export status</h2>
-          <p><Status tone="idle">Not started</Status></p>
-          <p className="secondary">Nothing has been exported.</p>
+          {report ? (
+            <>
+              <p><Status tone={report.export.status === "current" ? "ok" : report.export.status === "failed" || report.export.status === "out-of-date" ? "warn" : "idle"}>{report.export.status.replaceAll("-", " ")}</Status></p>
+              <p className="secondary">{report.export.detail}</p>
+              <Link to="/export">Open export</Link>
+            </>
+          ) : <p className="secondary" role="status">Loading…</p>}
         </section>
       </div>
     </div>

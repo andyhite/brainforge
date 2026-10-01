@@ -94,6 +94,16 @@ export async function shiftCanvas(png: Uint8Array, dx: number, dy: number): Prom
   return blank.composite([{ input: piece, left: Math.max(0, dx), top: Math.max(0, dy) }]).png().toBuffer();
 }
 
+/** Alpha at or above this becomes fully opaque under `alpha: "snap-near-opaque"` (matting leaves foreground at 254). */
+export const NEAR_OPAQUE_ALPHA = 254;
+
+/** Sets every alpha >= 254 to 255; lower values (soft edges) and colour channels are untouched. */
+export async function snapNearOpaque(png: Uint8Array): Promise<Uint8Array> {
+  const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  for (let i = 3; i < data.length; i += 4) if (data[i]! >= NEAR_OPAQUE_ALPHA) data[i] = 255;
+  return sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png({ compressionLevel: 9, palette: false }).toBuffer();
+}
+
 export type FieldBackground = "dark" | "light" | "checker";
 
 async function backgroundField(kind: FieldBackground, width: number, height: number): Promise<Buffer> {

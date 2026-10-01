@@ -3,6 +3,7 @@ import { loopJumps, MediaError, processClip, type ProcessedClip } from "@brainfo
 import { discoverAuthored } from "../authored.ts";
 import { authoredSetFor } from "../branches/basis.ts";
 import { computeEffective } from "../effective.ts";
+import { profileFor, resolveAlpha } from "../families/index.ts";
 import { normalizedHash } from "../operations.ts";
 import { type FrameOutputRow } from "../outputs/frames.ts";
 import { readProcessingSource, STILL_FPS } from "./source.ts";
@@ -117,8 +118,13 @@ export async function createProcessingPlan(open: OpenProject, actorId: string, i
     return typeof l?.value === "number" ? { value: l.value, source: l.source } : undefined;
   });
   if (playbackFps === undefined) block("PLAYBACK_FPS_MISSING", "No playback frame rate: set defaults.animation.playbackFps in project.yaml or animation.playbackFps on the deliverable (or pass recipe.playbackFps).", [{ label: "Read project.yaml", operation: "spec.read", input: { path: "brainforge/project.yaml" } }]);
-  const resizeFilter = pick("resizeFilter", req.resizeFilter, () => builtIn(processingRecipeDefaults.resizeFilter));
-  const alpha = pick("alpha", req.alpha, () => builtIn(processingRecipeDefaults.alpha));
+  const resizeFilter = pick("resizeFilter", req.resizeFilter, () => {
+    const l = leaf("processing.resizeFilter");
+    return l?.value === "nearest" || l?.value === "lanczos3" ? { value: l.value, source: l.source } : builtIn(processingRecipeDefaults.resizeFilter);
+  });
+  const alpha = pick("alpha", req.alpha, () => (asset?.spec && profileFor(asset.spec.family).alpha === "matte" && resolveAlpha(asset.spec.family, deliverable) === "transparent"
+    ? { value: "snap-near-opaque" as const, source: `derived: the ${asset.spec.family} family is matted, and in-graph matting leaves foreground alpha at 254, so near-opaque alpha is snapped to 255 in the processed stage only` }
+    : builtIn(processingRecipeDefaults.alpha)));
   const packaging = pick("packaging", req.packaging, () => builtIn(isStill ? "frames" as const : processingRecipeDefaults.packaging));
   const atlasOpts = pick("atlas", req.atlas, () => builtIn({ maxSize: 4096, padding: 2, extrude: 1 }));
   const tileRepeat = pick("tileRepeat", req.tileRepeat, () => builtIn(processingRecipeDefaults.tileRepeat));
@@ -173,7 +179,7 @@ export async function createProcessingPlan(open: OpenProject, actorId: string, i
           block("ANCHOR_UNAVAILABLE", `Scale reference ${referenceId} has no measurable standing height: ${e.message}`);
         }
         const defaultRef = branchId ? branchScaleReference(open, set, cand.asset_id, branchId) : undefined;
-        sources.scaleAnchor = `derived: ${referenceId === norm.referenceOutputId ? "the reference the run normalized its guides with" : `the explicit scaleReferenceOutputId ${referenceId}`}, standing height from its alpha bounds × guide scale ${norm.scale.toFixed(4)}, target ${subjectHeight?.source}`;
+        sources.scaleAnchor = `derived: ${referenceId === norm.referenceOutputId ? "the reference the run normalized its guides with" : `the explicit scaleReferenceOutputId ${referenceId}`} (${referenceId}), standing height from its alpha bounds${anchor ? ` ${Math.round(anchor.sourceStandingHeightPx / norm.scale)}px` : ""} × guide scale ${norm.scale.toFixed(4)}${anchor ? ` = ${Math.round(anchor.sourceStandingHeightPx)}px in the Wan canvas` : ""}, target ${subjectHeight?.source}`;
         if (req.scaleReferenceOutputId && req.scaleReferenceOutputId !== norm.referenceOutputId) {
           scaleWarnings.push(warn("SCALE_CHANGED", `Scale is anchored on ${referenceId}, not the reference ${norm.referenceOutputId} the guides were normalized with; the character's size differs from clips processed against that reference.`));
         }

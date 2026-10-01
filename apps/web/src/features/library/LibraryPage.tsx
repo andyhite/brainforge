@@ -5,7 +5,7 @@ import { useProjectRoot } from "../../lib/project-context.tsx";
 import { ProductionState } from "../production/ProductionState.tsx";
 import { FamilyChip, familyHint, useFamilies } from "../families/useFamilies.tsx";
 
-/** Library: per-asset production state. Promotion and activation are separate actions on each asset's Versions tab; export arrives in M8. */
+/** Library: per-asset production state. Promotion and activation are separate actions on each asset's Versions tab. Export is a separate page. */
 export function LibraryPage() {
   const { root } = useProjectRoot();
   const list = useOperation("asset.list", {}, { enabled: root !== undefined });
@@ -20,7 +20,7 @@ export function LibraryPage() {
       <PageHeader title="Library">
         <Link className="button primary" to="/assets/new">New asset</Link>
       </PageHeader>
-      <p className="secondary">Promoted versions are immutable; a version only becomes current when it is explicitly activated. Export is a separate step.</p>
+      <p className="secondary">Promoted versions are immutable; a version only becomes current when it is explicitly activated. Export is a separate step (Export page).</p>
       {assets.length === 0 ? <EmptyState title="No assets yet"><p>Define an asset first.</p></EmptyState> : (
         <ul className="plain-list" aria-label="Assets and their production versions">
           {assets.map((asset) => (

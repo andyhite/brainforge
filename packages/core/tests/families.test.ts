@@ -200,6 +200,19 @@ describe("generation by family", () => {
     expect(plan.prompt).toBe(CORTEX_PROMPT);
   });
 
+  test("style palette entries are joined with ', ', or '; ' when an entry itself contains a comma", async () => {
+    const f = await generationFixture();
+    fixtures.push(f);
+    await f.grant();
+    const styleLine = async (palette: string): Promise<string | undefined> => {
+      await put(f.root, "brainforge/styles/cranium.yaml", `schema: brainforge.style.v2\nid: cranium\npalette:\n${palette}`);
+      await put(f.root, "brainforge/assets/cortex/asset.yaml", "schema: brainforge.asset.v2\nid: cortex\nname: Cortex\nfamily: character\ndescription: A guarded teenager with an exposed brain.\nstyleIds: [cranium]\n");
+      return (await f.plan({ count: 1 })).promptSources.find((p) => p.label === "Style cranium")?.text;
+    };
+    expect(await styleLine("  - warm brown contours\n  - flat colour areas\n")).toBe("warm brown contours, flat colour areas");
+    expect(await styleLine("  - \"coral pink, slightly desaturated\"\n  - flat colour areas\n")).toBe("coral pink, slightly desaturated; flat colour areas");
+  });
+
   test("a deliverable chooses matte or opaque; the family default applies otherwise", () => {
     expect(resolveAlpha("character")).toBe("transparent");
     expect(resolveAlpha("environment")).toBe("opaque");
@@ -246,7 +259,7 @@ describe("generation by family", () => {
     expect(burst.prompt).toContain("The effect alone in the frame");
   });
 
-  test("a per-deliverable canvas rounds up to the model grid and records both sizes; oversized targets block", async () => {
+  test("a per-deliverable canvas rounds up to the model grid, tiny targets are drawn at native resolution, oversized targets block", async () => {
     const f = await generationFixture();
     fixtures.push(f);
     const asset = `schema: brainforge.asset.v2
@@ -258,6 +271,8 @@ deliverables:
   - { id: small, kind: view, description: A small icon-like render., output: { width: 100, height: 70 } }
   - { id: huge, kind: view, description: Too large., output: { width: 3000, height: 3000 } }
   - { id: exact, kind: view, description: Exact grid., output: { width: 512, height: 768 } }
+  - { id: tiny, kind: view, description: A 64px glyph., output: { width: 64, height: 64 } }
+  - { id: tiny-off, kind: variant, dependsOn: [tiny], description: The same glyph in flat grey., output: { width: 64, height: 64 } }
 `;
     await put(f.root, "brainforge/assets/cortex/asset.yaml", asset);
     expectOk(await f.h.call("project.open", { path: f.root }));
@@ -268,10 +283,17 @@ deliverables:
     await f.grant({ stepId: "exact" });
     const plan = async (stepId: string) => expectOk(await f.h.call("generation.plan", { assetId: "cortex", stepId, branchId, count: 1 }, { project: f.root })).plan;
     const small = await plan("small");
-    expect(small.submissions[0]?.values).toMatchObject({ width: 256, height: 256 });
-    expect(small.notes.join(" ")).toContain("Target output 100x70px; generating 256x256px");
+    expect(small.submissions[0]?.values).toMatchObject({ width: 1024, height: 720 });
+    expect(small.notes.join(" ")).toContain("Target output 100x70px; generating 1024x720px");
     const exact = await plan("exact");
     expect(exact.submissions[0]?.values).toMatchObject({ width: 512, height: 768 });
+    await f.grant({ stepId: "tiny" });
+    expect((await plan("tiny")).submissions[0]?.values).toMatchObject({ width: 1024, height: 1024 });
+    expect((await plan("tiny")).prompt).toContain("proportions, colours and drawing style identical to the reference image.");
+    await f.grant({ stepId: "tiny-off" });
+    const off = await plan("tiny-off");
+    expect(off.prompt).toContain("this deliverable's description names what changes, including colours");
+    expect(off.prompt).not.toContain("colours and drawing style identical");
     const huge = await plan("huge");
     expect(huge.blockers.map((b) => b.code)).toContain("SIZE_UNSUPPORTED");
     expect(huge.submissions[0]?.values.width).toBe(3008);

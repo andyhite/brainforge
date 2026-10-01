@@ -28,7 +28,8 @@ export const ProcessingRecipe = z.object({
   crop: Rect,
   output: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }),
   resizeFilter: z.enum(["nearest", "lanczos3"]).default("lanczos3"),
-  alpha: z.enum(["preserve", "matte"]).default("preserve"),
+  /** `snap-near-opaque`: processed stage only, alpha >= 254 becomes 255 (matting leaves foreground at 254). `matte`: flatten onto matteColor. */
+  alpha: z.enum(["preserve", "matte", "snap-near-opaque"]).default("preserve"),
   matteColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   /** Normalized [0,1] output pivot, origin top-left. */
   pivot: z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }),

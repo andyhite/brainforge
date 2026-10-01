@@ -15,17 +15,15 @@ Local asset-production tool for a game project. Humans review, approve, lock, an
 - NEVER learn the YAML format by writing drafts or hunting the filesystem. Call `spec_schema`, then dry-run with `spec_validate`.
 - ALWAYS pass `expectedHash` to `spec_write`: the `currentHash` from `spec_validate` (or `hash` from `spec_read`); `null` ONLY to create a new file.
 - NEVER hand-edit `brainforge/.state/`, any `versions/` or `work/` directory.
-- Generation spends the user's GPU. Only start jobs under a human-granted budget (`budget_list`), after showing the plan. Details: [generation-review](references/generation-review.md).
+- Generation spends the user's GPU. Only start jobs under a human-granted budget (`budget_list`), after showing the plan. Budgets are per step id: one grant for `concept` (size it to cover revision follow-ups) and one per deliverable, so ask the user for all of them up front. Details: [generation-review](references/generation-review.md).
 - Human decisions (grant budget, approve, lock concept, confirm policy, connection settings) are refused for agents. Tell the user to do it in the UI.
 </critical>
 
 ## Tool names
 
-Operations are named `spec_write`, `project_inspect`, etc. (operation name with `.` → `_`). The host adds a prefix; use the exact form your host shows:
-- oh-my-pi: `mcp__brainforge_<op>`, called by writing JSON to `xd://mcp__brainforge_<op>` (read that path first for the schema). A wrong form such as `xd__mcp__brainforge_project_inspect` fails.
-- Claude Code: `mcp__brainforge__<op>`.
-
-Everywhere else this document uses the bare operation name.
+One operation, two spellings. MCP tool = operation name with `.` → `_` (`spec_schema`); the host adds a prefix: oh-my-pi `mcp__brainforge_<op>` (JSON to `xd://mcp__brainforge_<op>`, read that path first; `xd__mcp__...` fails), Claude Code `mcp__brainforge__<op>`.
+CLI (no MCP): `bun /path/to/brainforge/apps/cli/src/main.ts <op> --input '<json>' [--project <root>] [--request-id <id>]` with the dotted name (`spec.schema`); `--list` lists operations; stdout is one JSON envelope; the agent is always `agent:cli`.
+This document uses the underscore form; with the CLI write dots.
 
 ## Am I in a project?
 
@@ -45,17 +43,18 @@ Inputs are JSON objects; unknown keys are rejected. Every tool also accepts opti
 |Specs|`spec_schema {kind:"project"\|"style"\|"asset"}` (authoritative format: pathPattern, JSON Schema, minimal + full examples, conventions), `spec_validate {path, text}` (dry run → `problems` with line/column/field, `currentHash`), `spec_list` (files + validity + hash), `spec_read {path}` → `{text, hash, problems}`, `spec_write {path, text, expectedHash}`|
 |Settings|`settings_inspect {assetId?, deliverableId?}` → effective value per field with source file, requested vs effective policy, conflicts|
 |Families|`family_list` (11 profiles: allowed kinds, alpha, motion, required fields, collection role), `family_template {family,id,name,description?}` → starter `asset.yaml` (placeholders `REPLACE:`); both read-only. [families](references/families.md), [environments](references/environments.md), [ui-vfx](references/ui-vfx.md)|
-|Assets|`asset_list`, `asset_inspect {assetId}` (yaml path/hash, directories, registered artifacts)|
+|Assets|`asset_list`, `asset_inspect {assetId}` (yaml path/hash, directories, registered artifacts), `asset_impact {assetId}` (read-only: per branch, which steps need reassessment after an edit and which inputs changed)|
 |References|`reference_import {sourcePath \| contentBase64+filename, label, scope:"project"\|"asset", assetId?}`, `reference_list {assetId?}`|
 |Workflows|`workflow_list`, `workflow_inspect {workflowId, version?}`, `workflow_preflight {workflowId, version?}` (read-only)|
-|Generation|`budget_list`, `step_inspect`, `generation_plan` (no submit), `generation_start {planId, planHash, budgetId}`, `job_list/inspect/reconcile/retry/cancel`, `candidate_list/inspect/favorite`|
-|Review|`annotation_create/update/delete/list`, `revision_list {status}`, `revision_inspect` (images), `revision_create`, `revision_respond`; `revision_resolve/waive` only if the user says so|
+|Generation|`budget_list`, `step_inspect`, `generation_plan` (no submit), `generation_start {planId, planHash, budgetId}`, `job_list/inspect/reconcile/retry/cancel`, `candidate_list`, `candidate_inspect`, `candidate_favorite` (a marker only, never approval)|
+|Review|`annotation_create`, `annotation_update`, `annotation_delete`, `annotation_list`, `revision_list {status}`, `revision_inspect` (images), `revision_create`, `revision_respond`; `revision_resolve/waive` only if the user says so|
 |Branches/review|`concept_lock {assetId,candidateId,outputId,inputMode}`, `branch_list`, `step_list`, `candidate_select`, `review_list/material/decide/escalate/history`; `review_override` human only. [branches-review](references/branches-review.md)|
 |Continue|`branch_plan` (read-only) → `branch_create {candidateId,outputId?,inputMode,planHash}`, `branch_compare`, `branch_select {assetId,branchId}`. [branches-continue](references/branches-continue.md)|
 |Motion|`output_inspect` (frames with source indices), `processing_plan` → `processing_start`, `candidate_export_cleanup` / `candidate_import_cleanup`. See [motion-processing](references/motion-processing.md)|
 |History|`history_examples {assetId, stepId?}` (accepted/rejected examples as images), `history_judgments`, `preference_propose/list`. [history-preferences](references/history-preferences.md)|
 |Production|`promotion_plan {assetId, branchId?, members?}` (all blockers for the whole bundle; `members` pins versions for an environment aggregate), `promotion_start {planId, planHash, requestId}` (promote; does NOT activate), `version_list {assetId}`, `version_inspect {versionId}`, `version_activate {versionId, expectedRevision, acknowledgeObsolete?}`. [production-versions](references/production-versions.md)|
 |Export|`export_plan {assetIds?, versions?, confirmEmpty?}` (stores a plan; lists blockers/leaving/conflicts), `export_start {planId, planHash, requestId}`, `export_list`, `export_inspect {exportId}`. [export](references/export.md)|
+|Completeness|`project_completeness` (read-only): is every required asset (project.yaml `requirements.assets`) complete, i.e. an active version that matches current requirements with nothing awaiting reassessment or unresolved required notes; per-asset state and reasons, review-queue counts, and the separate export status. Call it to answer "what is left?"|
 |Human only|`budget_grant`, `budget_revoke`, `policy_authorize`, `connection_set`, `review_override`, `preference_confirm`, `preference_reject`|
 
 `spec_write` accepts only `brainforge/project.yaml`, `brainforge/styles/<style-id>.yaml`, `brainforge/assets/<asset-id>/asset.yaml`. Any other path → `INVALID_INPUT`.
@@ -75,8 +74,8 @@ Inputs are JSON objects; unknown keys are rejected. Every tool also accepts opti
 11. Concept chosen: ask the user to lock it (`concept_lock` obeys policy; if refused name the candidate/output for the UI). Then `step_list` shows ready deliverables; plan/start with `branchId` + `stepId`. Review: `review_list` → `review_material` → judge → `review_decide` (with `requirementsHash`) or `review_escalate`. [branches-review](references/branches-review.md).
 11b. Continue from a candidate: `branch_plan` first, choose `inputMode` (`saved` default, `current` after YAML edits), `branch_create` with its `planHash`. Promotion checks CURRENT requirements: saved-input branch → rebase with `inputMode:"current"`. Concepts only via `concept_lock`. [branches-continue](references/branches-continue.md).
 12. Motion: an animation step needs its start/end guide poses approved. After generation only SOURCE frames exist: `processing_plan` → read it (sources, frame count, duration, warnings) → `processing_start` → NEW unapproved processed output → `candidate_select` it → review/decide that id. Compare 12 vs 16 fps outputs; one scale anchor per branch. Details: [motion-processing](references/motion-processing.md).
-13. Promote: all required deliverables approved → `promotion_plan` → show blockers/plan to the user → `promotion_start` with a fresh `requestId` (same one on retry). Activate separately: `version_list` → `version_activate` with its `active.revision`; obsolete versions need `acknowledgeObsolete` and a human. Refused → tell the user; never self-authorize. Details: [production-versions](references/production-versions.md).
-14. Export: assets need an ACTIVE version. `export_plan` → show blockers/leaving/conflicts to the user → `export_start` with a fresh `requestId` (same on retry). Public path is `<destination>/current/assets/...`, never with an export id. Unowned files are never overwritten (`EXPORT_CONFLICT`); export never promotes or activates. godot4 needs `export.godotProjectRoot` containing `project.godot`. Details: [export](references/export.md).
+13. Promote: all required deliverables approved → `promotion_plan` → show blockers/plan to the user → `promotion_start` with a fresh `requestId` (put it inside the input AND the envelope; same one on retry). Activate separately: `version_list` → `version_activate` with its `active.revision`; obsolete versions need `acknowledgeObsolete` and a human. Refused → tell the user; never self-authorize. Details: [production-versions](references/production-versions.md).
+14. Export: assets need an ACTIVE version. `export_plan` → show blockers/leaving/conflicts to the user → `export_start` with a fresh `requestId` (inside the input AND the envelope; same on retry). Public path is `<destination>/current/assets/...`, never with an export id. Unowned files are never overwritten (`EXPORT_CONFLICT`); export never promotes or activates. godot4 needs `export.godotProjectRoot` containing `project.godot`. Details: [export](references/export.md).
 15. Families (see [families](references/families.md)): static families (item, icon, tile, background, environment) get no animation; opaque families/deliverables need `output.alpha: opaque`; ui/effect animations write `animation.loop`. Environments: members listed in `collection.members`, children bind `referenceRoles.<n>: {assetId, branchId, role: direction}` to the LOCKED environment branch; the aggregate pins member versions ([environments](references/environments.md)). UI nine-slice, `export.sprites`, effects loop/once: [ui-vfx](references/ui-vfx.md). Opaque workflows are UNVERIFIED on real ComfyUI: say so.
 
 ## Writing prompt-bearing YAML
@@ -107,8 +106,8 @@ The YAML text IS the image prompt. The model (Krea, cfg 1) obeys what you descri
 
 ## Common agent mistakes
 
-- Wrong tool-name prefix; grepping for the schema instead of `spec_schema`; probing with junk `spec_write` (use `spec_validate`); dropping deliverables for unknown format.
-- Design-doc prose, negations, or turnaround language in prompt-bearing YAML (it all reaches the model); starting generation without reading `plan.prompt`.
+- Wrong tool-name form (underscores for MCP, dots for the CLI); grepping for the schema instead of `spec_schema`; probing with junk `spec_write` (use `spec_validate`); dropping deliverables for unknown format.
+- Design-doc prose, negations, or turnaround language in prompt-bearing YAML (it all reaches the model); starting generation without reading `plan.prompt`; trusting the sheet or a variation unseen (front and profile may both come back three-quarter; identity-edit variation ignores "make X bigger" at the default `referenceStrength`: [generation-review](references/generation-review.md)).
 - `review_decide` without `review_material` or with a stale `requirementsHash`; claiming human approval; treating escalation or `candidate_select` as approval.
 - Locking a concept the user did not choose; deliverable generation without a branch or approved dependency; branching a concept via `branch_create`.
 - Approving source frames as an animation; processed frame indices in annotations; per-clip scaling; expecting a changed recipe to edit an old output.

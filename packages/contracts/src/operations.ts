@@ -469,7 +469,7 @@ export const OPERATIONS = {
     }).strict(),
     data: z.object({ items: z.array(z.object({ candidate: Candidate, kind: z.enum(["awaiting-review", "escalated", "needs-revision", "overridden", "decided"]), escalation: Escalation.optional() })), total: z.number().int() }),
     mutating: false, humanOnly: false, needsProject: true,
-    summary: "Review queue, newest first, paged with offset. Filters: awaiting a decision, escalated to a human, with an open required revision, overridden by a human, decided, or all. Concept-step candidates are exploration and are not queued.",
+    summary: "Review queue, newest first, paged with offset. Filters: awaiting a decision, escalated to a human, with an open required revision, overridden by a human, decided, or all. Awaiting means a live candidate: one whose branch has selected a different candidate of the same step that carries an applicable approval is superseded and only appears under `all` (or `decided` / `needs-revision` / `overridden` when those apply). Concept-step candidates are exploration and are not queued.",
   },
   "review.history": {
     input: z.object({ candidateId: z.string() }).strict(),
@@ -637,6 +637,51 @@ export const OPERATIONS = {
     data: z.object({ path: z.string(), text: z.string(), notes: z.array(z.string()) }),
     mutating: false, humanOnly: false, needsProject: false,
     summary: "A valid starter asset.yaml for a family (deliverables, dependsOn, required fields filled with clearly marked placeholders to replace). Write it with spec.write after editing.",
+  },
+  "asset.impact": {
+    input: z.object({ assetId: z.string() }).strict(),
+    data: z.object({
+      assetId: z.string(),
+      /** Per branch: the steps whose approvals or outputs no longer match current inputs, with the inputs that changed. Empty `steps` means the branch is unaffected. */
+      branches: z.array(z.object({
+        /** Absent before any concept is locked (only the concept step exists). */
+        branchId: z.string().optional(),
+        steps: z.array(z.object({ stepId: z.string(), state: z.string(), reasons: z.array(z.string()) })),
+      })),
+      affectedSteps: z.number().int(),
+    }),
+    mutating: false, humanOnly: false, needsProject: true,
+    summary: "What a change to authored files affects for one asset: for every branch, which steps need reassessment and which inputs changed. Nothing is regenerated or modified; history is kept.",
+  },
+  "project.completeness": {
+    input: Empty,
+    data: z.object({
+      /** Every declared required asset has an active production version that satisfies current requirements, with nothing awaiting reassessment or unresolved required feedback. Export status is separate. */
+      complete: z.boolean(),
+      requiredAssets: z.array(z.object({
+        assetId: z.string(),
+        name: z.string().optional(),
+        state: z.enum(["complete", "no-definition", "invalid-definition", "no-promoted-version", "not-activated", "obsolete-version", "needs-reassessment", "open-feedback"]),
+        reasons: z.array(z.string()),
+        activeVersionId: z.string().optional(),
+        activeVersionNumber: z.number().int().optional(),
+      })),
+      counts: z.object({
+        required: z.number().int(), complete: z.number().int(),
+        /** Defined assets (required or not) with at least one step on their current/active branch needing reassessment. */
+        assetsNeedingReassessment: z.number().int(),
+        awaitingReview: z.number().int(), escalated: z.number().int(), needsRevision: z.number().int(),
+      }),
+      export: z.object({
+        destination: z.string().optional(),
+        status: z.enum(["not-exported", "in-progress", "failed", "out-of-date", "current"]),
+        exportId: z.string().optional(),
+        committedAt: z.string().optional(),
+        detail: z.string(),
+      }),
+    }),
+    mutating: false, humanOnly: false, needsProject: true,
+    summary: "Project completeness: whether every required asset has an active production version that satisfies current requirements (no pending reassessment, no unresolved required feedback), per-asset reasons, review-queue counts, and the separate export status. Read this to learn what remains.",
   },
 } as const satisfies Record<string, OperationDef>;
 

@@ -57,6 +57,8 @@ export function ClipPlayer(props: ClipPlayerProps) {
 function Player({ details, projectId, annotations = [], selectedId, onSelect, draft, onDraftChange, onDraftCommit, onFrame }: ClipPlayerProps & { details: Detail[]; projectId: string }) {
   const primary = details[0]!;
   const compare = details.length > 1;
+  // A processed still is a one-frame sequence; nothing about it plays, loops or has a frame rate.
+  const single = details.every((d) => d.frames.length === 1);
   const startsList = useMemo(() => details.map((d) => frameStarts(d.frames)), [details]);
   const totals = useMemo(() => details.map((d) => totalMs(d.frames)), [details]);
   const clockTotal = Math.max(...totals);
@@ -197,25 +199,27 @@ function Player({ details, projectId, annotations = [], selectedId, onSelect, dr
 
   return (
     <div className="clip-player" onKeyDown={onKeyDown} aria-label={compare ? "Clip comparison player" : "Clip player"} role="group">
-      <div className="viewer-tools" role="toolbar" aria-label="Playback">
-        <button type="button" className="primary" aria-pressed={playing} onClick={() => { if (finished) seek(0); setFinished(false); setPlaying((p) => !p); }}>{playing ? "Pause" : "Play"}</button>
-        <button type="button" onClick={() => { seek(0); setFinished(false); setPlaying(true); }}>Replay</button>
-        <button type="button" aria-pressed={loop} onClick={() => { setLoop((l) => !l); setFinished(false); }} title="Off plays the clip once and stops on its last frame">Loop</button>
-        <span className="status info" role="status" aria-live="polite">
-          <span aria-hidden="true">{loop ? "↻" : "①"}</span>
-          {loop ? "Loops" : finished ? "Played once — finished" : "Plays once"}
-          {primary.loop !== undefined && primary.loop !== loop ? <span className="secondary"> (authored: {primary.loop ? "loops" : "plays once"})</span> : null}
-        </span>
-        <span role="group" aria-label="Speed" className="row" style={{ gap: 4 }}>
-          {SPEEDS.map((s) => <button key={s} type="button" aria-pressed={speed === s} onClick={() => setSpeed(s)}>{s}×</button>)}
-        </span>
-      </div>
+      {single ? null : (
+        <div className="viewer-tools" role="toolbar" aria-label="Playback">
+          <button type="button" className="primary" aria-pressed={playing} onClick={() => { if (finished) seek(0); setFinished(false); setPlaying((p) => !p); }}>{playing ? "Pause" : "Play"}</button>
+          <button type="button" onClick={() => { seek(0); setFinished(false); setPlaying(true); }}>Replay</button>
+          <button type="button" aria-pressed={loop} onClick={() => { setLoop((l) => !l); setFinished(false); }} title="Off plays the clip once and stops on its last frame">Loop</button>
+          <span className="status info" role="status" aria-live="polite">
+            <span aria-hidden="true">{loop ? "↻" : "①"}</span>
+            {loop ? "Loops" : finished ? "Played once — finished" : "Plays once"}
+            {primary.loop !== undefined && primary.loop !== loop ? <span className="secondary"> (authored: {primary.loop ? "loops" : "plays once"})</span> : null}
+          </span>
+          <span role="group" aria-label="Speed" className="row" style={{ gap: 4 }}>
+            {SPEEDS.map((s) => <button key={s} type="button" aria-pressed={speed === s} onClick={() => setSpeed(s)}>{s}×</button>)}
+          </span>
+        </div>
+      )}
       <div className="viewer-tools" role="toolbar" aria-label="View">
         <button type="button" aria-pressed={zoom === "fit"} onClick={() => setZoom("fit")}>Fit</button>
         <button type="button" aria-pressed={zoom === "1:1"} onClick={() => setZoom("1:1")}>1:1</button>
         <span aria-hidden="true" style={{ width: 8 }} />
         {BACKGROUNDS.map((o) => <button key={o.id} type="button" aria-pressed={background === o.id} onClick={() => setBackground(o.id)}>{o.label}</button>)}
-        {primary.pivot ? <button type="button" aria-pressed={pivot} onClick={() => setPivot((p) => !p)}>Pivot & baseline</button> : null}
+        {primary.pivot && !single ? <button type="button" aria-pressed={pivot} onClick={() => setPivot((p) => !p)}>Pivot & baseline</button> : null}
         {atlasAvailable ? (
           <span role="group" aria-label="Frame source" className="row" style={{ gap: 4 }}>
             <button type="button" aria-pressed={mode === "frames"} onClick={() => setMode("frames")}>Frames</button>
@@ -228,7 +232,7 @@ function Player({ details, projectId, annotations = [], selectedId, onSelect, dr
           <button type="button" aria-pressed={tool === "none"} onClick={() => setTool("none")}>No tool</button>
           <button type="button" aria-pressed={tool === "pin"} onClick={() => setTool("pin")}>Pin</button>
           <button type="button" aria-pressed={tool === "rect"} onClick={() => setTool("rect")}>Rectangle</button>
-          <button type="button" onClick={() => { setPlaying(false); onDraftChange({ kind: "whole" }); }}>Note on whole frame</button>
+          <button type="button" onClick={() => { setPlaying(false); onDraftChange({ kind: "whole" }); }}>{single ? "Note on whole image" : "Note on whole frame"}</button>
           <button type="button" onClick={() => { setPlaying(false); onDraftChange({ kind: "pin", x: 0.5, y: 0.5 }); onDraftCommit?.(); }} className="secondary">Pin at centre</button>
         </div>
       ) : null}
@@ -273,8 +277,8 @@ function Player({ details, projectId, annotations = [], selectedId, onSelect, dr
                 </FrameCanvas>
                 <figcaption className="secondary">
                   <strong>{d.stage === "processed" ? "Processed" : "Raw"}</strong>
-                  {fps ? ` · ${formatFps(fps)}` : ""} · {d.frames.length} frames · {formatMs(totals[i]!)}
-                  {compare ? <> · frame {idx + 1} (source {f.sourceFrame + 1})</> : null}
+                  {single ? ` · ${d.width}×${d.height} px` : <>{fps ? ` · ${formatFps(fps)}` : ""} · {d.frames.length} frames · {formatMs(totals[i]!)}</>}
+                  {compare && !single ? <> · frame {idx + 1} (source {f.sourceFrame + 1})</> : null}
                   {source === "atlas" ? " · from atlas" : ""}
                 </figcaption>
               </figure>
@@ -283,14 +287,16 @@ function Player({ details, projectId, annotations = [], selectedId, onSelect, dr
         </div>
       </div>
 
-      <FrameStepper
-        count={primary.frames.length}
-        index={index}
-        onIndex={(i) => { setPlaying(false); seek(startsList[0]![i]!); }}
-        onStep={step}
-        covered={covered}
-        status={`Frame ${index + 1} of ${primary.frames.length} · source frame ${frame.sourceFrame + 1} (zero-based ${frame.sourceFrame}) · ${formatMs(startsList[0]![index]!)} of ${formatMs(totals[0]!)} · shows for ${formatMs(frame.durationMs)}`}
-      />
+      {single ? null : (
+        <FrameStepper
+          count={primary.frames.length}
+          index={index}
+          onIndex={(i) => { setPlaying(false); seek(startsList[0]![i]!); }}
+          onStep={step}
+          covered={covered}
+          status={`Frame ${index + 1} of ${primary.frames.length} · source frame ${frame.sourceFrame + 1} (zero-based ${frame.sourceFrame}) · ${formatMs(startsList[0]![index]!)} of ${formatMs(totals[0]!)} · shows for ${formatMs(frame.durationMs)}`}
+        />
+      )}
     </div>
   );
 }

@@ -1,10 +1,10 @@
 # Concept generation and review loop (M2)
 
-Bare operation names below (`generation_plan`). Host forms: oh-my-pi writes JSON to `xd://mcp__brainforge_generation_plan`; Claude Code calls `mcp__brainforge__generation_plan`. Read the xd:// path first for the schema in omp.
+Bare operation names below, in the MCP form (`generation_plan`); with the CLI use the dotted name (`generation.plan`). Host forms: oh-my-pi writes JSON to `xd://mcp__brainforge_generation_plan`; Claude Code calls `mcp__brainforge__generation_plan`. Read the xd:// path first for the schema in omp.
 
 ## Loop
 
-1. `budget_list {assetId?}`: what the human authorized (max starts, max candidate submissions, expiry, used/remaining). No active budget → ask the user to grant one in the web UI. `budget_grant` / `budget_revoke` are human-only; you are refused.
+1. `budget_list {assetId?}`: what the human authorized (max starts, max candidate submissions, expiry, used/remaining). Budgets are scoped to ONE step id, so a character needs a grant for `concept` and one for every deliverable (e.g. sheet, two poses, two clips = six); the `concept` budget must also cover the variations a revision follow-up needs. Tell the user the full list up front. No active budget for the step → ask the user to grant one in the web UI. `budget_grant` / `budget_revoke` are human-only; you are refused.
 2. `step_inspect {assetId, stepId:"concept"}`: state and blockers. `blocked` lists what is missing (e.g. asset.yaml fields, ComfyUI connection).
 3. `generation_plan {assetId, mode:"fresh"|"variation", count, parentCandidateId? (variation), referenceBindings?, iterationInstructions?}`: submits NOTHING. Returns `planId`, `planHash`, composed prompt with sources, workflow, execution/cost disclosure, pinned input hashes, remaining budget, blockers. Show the user the counts and disclosure before starting.
 4. `generation_start {planId, planHash, budgetId}`: revalidates and queues jobs; consumes one start plus one submission per candidate. Reuse `requestId` on retry: the same request never starts twice.
@@ -41,6 +41,9 @@ Step states: `blocked|ready|running|awaiting_review|complete|failed`. A concept 
 - Budget exhausted → report `return-to-human`; do not look for ways around it (new branch, spec edit, new revision do not reset counters).
 - Unknown values (seed, cost, GPU time) stay unknown. Report what the job/candidate records say.
 - Favorites are a shortlist, not approval.
+- Identity-edit variations (`mode:"variation"`, and every pose/sheet) keep the reference's identity and ignore size or proportion instructions ("make the brain bigger") at the default `referenceStrength`. Change the authored YAML, raise `referenceStrength`, or generate a fresh batch instead; look at the result before saying it worked.
+- A construction sheet can return front and profile both three-quarter (rear is usually a true rear). Check each region with `review_material` and say so in the decision reason; fix `regions[].view` wording and regenerate only if the user asks.
+- Several agents may share one Chrome DevTools endpoint and `browser.open` can hand back another agent's tab. Create a private page (`PUT /json/new`) and attach to it by `target`.
 
 ## Common mistakes
 

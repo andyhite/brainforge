@@ -126,6 +126,20 @@ test("alpha is preserved: foreground stays opaque and the outside stays transpar
   expect(clip.unionBounds).toEqual({ x: 13, y: 8, width: 6, height: 20 });
 });
 
+test("snap-near-opaque: 254 -> 255, 253 and soft edges unchanged; preserve touches nothing", async () => {
+  const px = (a: number): Promise<Uint8Array> => figure(13, 8, 6, 20, [200, 40, 40, a]);
+  const read = async (png: Uint8Array): Promise<number> => (await decodeRgba(png)).data[(15 * SRC + 15) * 4 + 3]!;
+  const snap = recipe({ alpha: "snap-near-opaque" });
+  for (const [alpha, want] of [[254, 255], [255, 255], [253, 253], [128, 128], [40, 40]] as const) {
+    expect(await read((await processClip([await px(alpha)], 16, snap, { pack: false })).frames[0]!.png)).toBe(want);
+  }
+  expect(await read((await processClip([await px(254)], 16, recipe(), { pack: false })).frames[0]!.png)).toBe(254);
+  // The colour channels and the transparent surround are untouched.
+  const { data } = await decodeRgba((await processClip([await px(254)], 16, snap, { pack: false })).frames[0]!.png);
+  expect([...data.subarray((15 * SRC + 15) * 4, (15 * SRC + 15) * 4 + 3)]).toEqual([200, 40, 40]);
+  expect(data[3]).toBe(0);
+});
+
 test("one uniform scale: a crouching clip is NOT refit to its smaller bounding box", async () => {
   // The anchor says 20px standing -> 10px (scale 0.5). A 10px-tall crouch must come out 5px tall, not 10.
   const half = recipe({ scaleAnchor: { referenceOutputId: "ref", referenceHash: "0".repeat(64), sourceStandingHeightPx: 20, targetStandingHeightPx: 10, sourceFeet: { x: 16, y: 28 } } });

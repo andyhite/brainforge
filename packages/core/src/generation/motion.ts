@@ -4,6 +4,7 @@ import type { AuthoredSet } from "../authored.ts";
 import { computeEffective } from "../effective.ts";
 import type { OpenProject } from "../project-runtime.ts";
 import { selectedOutput } from "../review/requirements.ts";
+import { branchScaleReference } from "../processing/anchor.ts";
 import { guideKindsFor, resolveAlpha } from "../families/index.ts";
 import type { PinnedReference } from "./plan.ts";
 import { readPinnedReference } from "./references.ts";
@@ -28,16 +29,9 @@ export interface MotionInputs {
 
 const blocker = (code: string, message: string, recoveryActions: PlanBlocker["recoveryActions"] = []): PlanBlocker => ({ code, message, recoveryActions });
 
-/** The scale-anchor reference: the branch's front crop of its selected construction sheet, else the locked concept output. */
-async function anchorReference(project: OpenProject, spec: AssetSpec, branchId: string, concept: { id: string; sha256: string }): Promise<{ id: string; sha256: string; label: string }> {
-  for (const sheet of spec.deliverables.filter((d) => d.kind === "reference-sheet")) {
-    const sel = selectedOutput(project.db, branchId, sheet.id);
-    if (!sel) continue;
-    const crops = project.db.query<{ file_id: string; sha256: string; region_id: string }, [string]>("SELECT file_id, sha256, region_id FROM output_crops WHERE output_id = ?").all(sel.outputId);
-    const front = crops.find((c) => c.region_id === "front") ?? crops.find((c) => /(^|-)front$/.test(c.region_id));
-    if (front) return { id: front.file_id, sha256: front.sha256, label: `the front crop of ${sheet.id}` };
-  }
-  return { ...concept, label: "the branch's locked concept output" };
+/** The scale-anchor reference: see `branchScaleReference` (neutral pose, else front crop, else concept). */
+function anchorReference(project: OpenProject, set: AuthoredSet, assetId: string, branchId: string, concept: { id: string; sha256: string }): { id: string; sha256: string; label: string } {
+  return branchScaleReference(project, set, assetId, branchId) ?? { ...concept, label: "the branch's locked concept output" };
 }
 
 /** Foreground bounds of an image that must carry real alpha; otherwise the whole canvas would pass for the figure. */
@@ -129,7 +123,7 @@ export async function resolveMotion(
     ]));
     return out;
   }
-  const anchor = await anchorReference(project, spec, branchId, concept);
+  const anchor = anchorReference(project, set, assetId, branchId, concept);
   const anchorBytes = await readPinnedReference(project, anchor);
   if (!anchorBytes) {
     out.blockers.push(blocker("OUTPUT_MISSING", `The scale-anchor reference ${anchor.id} (${anchor.label}) is missing on disk or no longer matches its recorded hash.`, stepAction(deliverable.id)));
@@ -199,7 +193,8 @@ export async function resolveMotion(
           continue;
         }
         const ratio = bounds.height / anchorBounds.height;
-        if (calibrated && (ratio < 0.75 || ratio > 1.33)) out.notes.push(`The ${role} guide ${id} stands ${bounds.height}px against the anchor's ${anchorBounds.height}px (ratio ${ratio.toFixed(2)}); a different pixel scale or pose than the reference would change the character's apparent height. Review the normalized guide before approving the run.`);
+        if (calibrated) out.notes.push(`The ${role} guide ${id} stands ${bounds.height}px (${(ratio * 100).toFixed(1)}% of the anchor's ${anchorBounds.height}px); it is scaled by the same ${scale.toFixed(4)} as the anchor, so its figure is ${Math.round(bounds.height * scale)}px tall in the Wan canvas.`);
+        if (calibrated && (ratio < 0.75 || ratio > 1.25)) out.notes.push(`The ${role} guide ${id} differs markedly in size from the anchor (ratio ${ratio.toFixed(2)}); a different pose or pixel scale than the reference would change the character's apparent height. Review the normalized guide before approving the run.`);
         transform = { ...t, outputId: sel.outputId, sha256: sel.sha256 };
         cache.set(sel.outputId, transform);
       } catch (e) {

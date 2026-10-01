@@ -31,11 +31,16 @@ export const formatMs = (ms: number): string => (ms >= 1000 ? `${(ms / 1000).toF
 
 export const formatFps = (fps: number): string => `${Math.round(fps * 100) / 100} fps`;
 
+/** A one-frame sequence is a processed still image: it has no frame rate, duration or loop to show. */
+export const isSingleImage = (o: CandidateOutput): boolean => o.mediaKind === "frames" && o.frameCount === 1;
+
 /** Short plain-language description of one output, used for buttons and badges. */
 export function outputLabel(o: CandidateOutput): string {
+  if (isSingleImage(o)) return `${o.stage === "processed" ? "Processed" : "Raw"} image · ${o.width}×${o.height}`;
   if (o.mediaKind === "frames") {
     const fps = o.stage === "processed" ? o.playbackFps : o.sourceFps;
-    return `${o.stage === "processed" ? "Processed" : "Raw"} frames${fps ? ` · ${formatFps(fps)}` : ""}${o.frameCount !== undefined ? ` · ${o.frameCount} frames` : ""}`;
+    const kind = o.stage === "processed" ? "Processed" : o.role === "matted" ? "Raw matted" : "Raw untouched";
+    return `${kind} frames${fps ? ` · ${formatFps(fps)}` : ""}${o.frameCount !== undefined ? ` · ${o.frameCount} frames` : ""}`;
   }
   return o.role === "matted" ? "Matted (background removed)" : "Untouched";
 }

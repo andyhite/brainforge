@@ -57,12 +57,16 @@ export function composePrompt(input: PromptInput): PromptPart[] {
 
   if (input.mode === "variation" && iteration) parts.push({ ...iteration, text: `Change: ${iteration.text}` });
   const motion = input.deliverable?.spec.kind === "animation" ? input.deliverable.spec.animation?.motion.trim() : undefined;
+  // A state or variant derived from a base deliverable (disabled icon, pressed button) exists to change appearance, so colours are not locked to the reference.
+  const stateLike = (input.deliverable?.spec.kind === "ui-state" || input.deliverable?.spec.kind === "variant") && (input.deliverable.spec.dependsOn.length > 0);
   if (input.mode === "variation" || input.deliverable) {
     parts.push({
       label: "Identity lock", source: `workflow:${input.workflow.id}@${input.workflow.version}`,
       text: motion !== undefined
         ? "Keep the subject's identity, proportions, colours and drawing style identical to the first and last frame."
-        : "Keep the subject's identity, proportions, colours and drawing style identical to the reference image.",
+        : stateLike
+          ? "Keep the subject's shape, proportions and drawing style identical to the reference image; this deliverable's description names what changes, including colours."
+          : "Keep the subject's identity, proportions, colours and drawing style identical to the reference image.",
     });
   }
   const description = input.deliverable?.spec.description.trim();
@@ -91,7 +95,11 @@ export function composePrompt(input: PromptInput): PromptPart[] {
   for (const style of stylesFor(set, spec)) {
     const s = style.spec;
     if (!s) continue;
-    if (s.palette.length > 0) parts.push({ label: `Style ${s.id}`, source: `${style.path}:palette`, text: s.palette.map((p) => p.trim()).join(", ") });
+    if (s.palette.length > 0) {
+      const entries = s.palette.map((p) => p.trim());
+      // "; " keeps comma-bearing entries from reading as several phrases; plain entries keep the original ", ".
+      parts.push({ label: `Style ${s.id}`, source: `${style.path}:palette`, text: entries.join(entries.some((p) => p.includes(",")) ? "; " : ", ") });
+    }
   }
   if (input.mode === "fresh" && iteration) parts.push(iteration);
   const regions = input.deliverable?.spec.kind === "reference-sheet" ? input.deliverable.spec.regions : undefined;

@@ -6,6 +6,7 @@ import { resolveIn, sha256 } from "@brainforge/storage";
 import type { AuthoredSet } from "../authored.ts";
 import type { OpenProject } from "../project-runtime.ts";
 import { selectedOutput } from "../review/requirements.ts";
+import { readPinnedReference } from "../generation/references.ts";
 
 /** What the animation run recorded when it normalized its guides into the Wan canvas (`plan_json.motion.guideNormalization`). */
 export const GuideNormalization = z.object({
@@ -27,6 +28,12 @@ export interface ReferenceImage { id: string; sha256: string; bytes: Uint8Array 
  * region crop. Undefined when unknown, missing, or no longer matching its recorded hash.
  */
 export async function loadReferenceImage(open: OpenProject, id: string): Promise<ReferenceImage | undefined> {
+  // A processed still is a one-frame sequence: its recorded hash is the manifest hash and its bytes are frame 0.
+  const frames = open.db.query<{ sha256: string }, [string]>("SELECT sha256 FROM candidate_outputs WHERE output_id = ? AND media_kind = 'frames'").get(id);
+  if (frames) {
+    const first = await readPinnedReference(open, { id, sha256: frames.sha256 });
+    return first ? { id, sha256: frames.sha256, bytes: first } : undefined;
+  }
   const row =
     open.db.query<{ path: string; sha256: string }, [string]>("SELECT path, sha256 FROM candidate_outputs WHERE output_id = ? AND media_kind = 'image'").get(id)
     ?? open.db.query<{ path: string; sha256: string }, [string]>("SELECT path, sha256 FROM output_crops WHERE file_id = ?").get(id);
@@ -46,19 +53,26 @@ export function guideNormalizationOf(open: OpenProject, candidateId: string): Gu
 }
 
 /**
- * The branch's current scale reference: the selected reference-sheet's `front` crop, else the locked concept output.
+ * The branch's scale reference, in order: the selected output of the first `pose` deliverable (the neutral pose the
+ * animations are conditioned on, so the height is measured on the very kind of image Wan receives), else the
+ * selected construction sheet's `front` crop, else the locked concept output. Never a posed frame picked per clip.
  * Compared against the reference the run normalized with, to say honestly when the character's reference moved.
  */
-export function branchScaleReference(open: OpenProject, set: AuthoredSet, assetId: string, branchId: string): { id: string; sha256: string } | undefined {
+export function branchScaleReference(open: OpenProject, set: AuthoredSet, assetId: string, branchId: string): { id: string; sha256: string; label: string } | undefined {
   const spec = set.assets.find((a) => a.fileId === assetId)?.spec;
+  for (const d of spec?.deliverables ?? []) {
+    if (d.kind !== "pose") continue;
+    const sel = selectedOutput(open.db, branchId, d.id);
+    if (sel) return { id: sel.outputId, sha256: sel.sha256, label: `the selected neutral pose ${d.id}` };
+  }
   for (const d of spec?.deliverables ?? []) {
     if (d.kind !== "reference-sheet") continue;
     const sel = selectedOutput(open.db, branchId, d.id);
     const crop = sel && open.db.query<{ file_id: string; sha256: string }, [string]>("SELECT file_id, sha256 FROM output_crops WHERE output_id = ? AND region_id = 'front'").get(sel.outputId);
-    if (crop) return { id: crop.file_id, sha256: crop.sha256 };
+    if (crop) return { id: crop.file_id, sha256: crop.sha256, label: `the front crop of ${d.id}` };
   }
   const branch = open.db.query<{ concept_output_id: string; concept_output_hash: string }, [string, string]>("SELECT concept_output_id, concept_output_hash FROM branches WHERE branch_id = ? AND asset_id = ?").get(branchId, assetId);
-  return branch ? { id: branch.concept_output_id, sha256: branch.concept_output_hash } : undefined;
+  return branch ? { id: branch.concept_output_id, sha256: branch.concept_output_hash, label: "the branch's locked concept output" } : undefined;
 }
 
 /**

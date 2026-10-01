@@ -2,10 +2,12 @@ import { Link, useSearchParams } from "react-router-dom";
 import type { Candidate, CandidateOutput } from "@brainforge/contracts";
 import { useMutationOperation, useOperation } from "../../api/hooks.ts";
 import { ErrorBanner, NetworkProblem, Status } from "../../components/ui.tsx";
+import { isSingleImage } from "../animation/timing.ts";
 import { ApprovalBadge } from "../review/ApprovalBadge.tsx";
 
 function describe(output: CandidateOutput): string {
   const kind = output.stage === "source" ? (output.role === "matted" ? "Source, matted" : "Source, untouched") : "Processed";
+  if (isSingleImage(output)) return `${kind} image · ${output.width}×${output.height}`;
   const rate = output.stage === "processed" ? `${output.playbackFps ?? "?"} fps` : `${output.sourceFps ?? "?"} fps source`;
   const length = output.totalDurationMs === undefined ? "" : ` · ${Math.round(output.totalDurationMs)} ms`;
   return `${kind} · ${output.frameCount ?? "?"} frames · ${rate}${length} · ${output.width}×${output.height}`;
@@ -22,6 +24,7 @@ export function OutputLineage({ candidate, assetId }: { candidate: Candidate; as
   const ids = new Set(outputs.map((o) => o.outputId));
   const roots = outputs.filter((o) => !o.parentOutputId || !ids.has(o.parentOutputId));
   const base = `/assets/${encodeURIComponent(assetId)}/candidates/${encodeURIComponent(candidate.candidateId)}`;
+  const stillsOnly = outputs.length > 0 && outputs.every(isSingleImage);
 
   const renderNode = (output: CandidateOutput, previous: CandidateOutput | undefined) => {
     const approval = candidate.approvals[candidate.outputs.indexOf(output)];
@@ -37,7 +40,7 @@ export function OutputLineage({ candidate, assetId }: { candidate: Candidate; as
           </div>
           <div className="row">
             {output.stage === "processed" ? <ApprovalBadge approval={approval} compact /> : null}
-            <Link className="button" to={`${base}?output=${encodeURIComponent(output.outputId)}`} aria-current={shown === output.outputId ? "true" : undefined}>Open in player</Link>
+            <Link className="button" to={`${base}?output=${encodeURIComponent(output.outputId)}`} aria-current={shown === output.outputId ? "true" : undefined}>{isSingleImage(output) ? "Show" : "Open in player"}</Link>
             {output.parentOutputId && ids.has(output.parentOutputId) ? <Link className="button" to={`${base}?output=${encodeURIComponent(output.outputId)}&compare=${encodeURIComponent(output.parentOutputId)}`}>Compare with source</Link> : null}
             {previous && previous.stage === "processed" && output.stage === "processed" ? <Link className="button" to={`${base}?output=${encodeURIComponent(output.outputId)}&compare=${encodeURIComponent(previous.outputId)}`}>Compare with previous</Link> : null}
             {output.stage === "processed" && candidate.branchId ? (
@@ -54,8 +57,8 @@ export function OutputLineage({ candidate, assetId }: { candidate: Candidate; as
 
   return (
     <section className="panel" aria-labelledby="lineage-title">
-      <h2 id="lineage-title" style={{ margin: 0 }}>Source and processed clips</h2>
-      <p className="secondary">Approval belongs to one exact output. A processed clip starts unapproved and never inherits a decision; review it in the decision panel below.</p>
+      <h2 id="lineage-title" style={{ margin: 0 }}>{stillsOnly ? "Processed images" : "Source and processed clips"}</h2>
+      <p className="secondary">Approval belongs to one exact output. A processed {stillsOnly ? "image" : "clip"} starts unapproved and never inherits a decision; review it in the decision panel below.</p>
       <ol className="lineage-root" aria-label="Outputs by lineage">{roots.map((root) => renderNode(root, undefined))}</ol>
       {!outputs.some((o) => o.stage === "processed") ? <p className="secondary">No processed clip yet. Use “Process into an export clip” to make one; the step cannot complete from source frames alone.</p> : null}
       {select.error ? <NetworkProblem error={select.error} /> : null}

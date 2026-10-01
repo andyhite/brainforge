@@ -69,7 +69,7 @@ export function DefinitionStep({ inspect, autoCreate }: { inspect: Inspect; auto
           </table>
         </div>
         <p style={{ marginBottom: 0 }}>Registered retained artifacts: {inspect.registeredArtifacts}</p>
-        {inspect.registeredArtifacts > 0 ? <p className="secondary">M0 art-proof media registered in place; not production approvals.</p> : null}
+        {inspect.registeredArtifacts > 0 ? <p className="secondary">Feasibility-trial media registered in place; these are not production approvals.</p> : null}
       </section>
     </div>
   );

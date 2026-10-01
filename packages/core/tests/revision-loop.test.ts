@@ -51,6 +51,17 @@ describe("required feedback outlives newer candidates", () => {
     expect((await step("walk")).blockers).toEqual([]);
   });
 
+  test("an open note on another step never shows up as a blocker of the concept step", async () => {
+    const { g, branchId } = await locked();
+    await seedCandidate(g, "a", "cortex", "portrait", undefined, branchId);
+    const note = expectOk(await h.call("annotation.create", { candidateId: "a", outputId: "out_a", geometry: pin, text: "hands", requiresRevision: true }, { project: g.root })).annotation;
+    expectOk(await h.call("revision.create", { candidateId: "a", annotationIds: [note.annotationId], summary: "s" }, { project: g.root }));
+    const concept = expectOk(await h.call("step.inspect", { assetId: "cortex", stepId: "concept", branchId }, { project: g.root })).step;
+    expect(concept.blockers.map((b) => b.code)).not.toContain("REVISION_OPEN");
+    const portrait = expectOk(await h.call("step.inspect", { assetId: "cortex", stepId: "portrait", branchId }, { project: g.root })).step;
+    expect(portrait.blockers.map((b) => b.code)).toContain("REVISION_OPEN");
+  });
+
   test("a waived note is released too; a note edited after resolution blocks again", async () => {
     const { g, branchId } = await locked();
     await seedCandidate(g, "a", "cortex", "portrait", undefined, branchId);
@@ -83,6 +94,7 @@ describe("frame-range revision loop", () => {
     const note = expectOk(await h.call("annotation.create", { candidateId: "m1", outputId: "out_m1_frames", geometry: { kind: "rect", x: 0.1, y: 0.1, width: 0.5, height: 0.5 }, frameRange: { start: 2, end: 4 }, text: "foot slides", requiresRevision: true }, { project: g.root })).annotation;
     const created = expectOk(await h.call("revision.create", { candidateId: "m1", annotationIds: [note.annotationId], summary: "foot slides in frames 3-5" }, { project: g.root }));
     expect(created.revision.outputIds).toEqual(["out_m1_frames"]);
+    expect(created.revision.stepId).toBe("walk"); // the candidate's own step, not a hardcoded "concept"
     expect(created.visuals.map((v) => v.label)).toEqual(["Annotated render of out_m1_frames, frame 3", "Annotated render of out_m1_frames, frame 5"]);
 
     const dir = `brainforge/assets/cortex/work/reviews/${created.revision.revisionRequestId}`;
@@ -128,6 +140,8 @@ describe("review.list", () => {
     for (const id of ids) await seedCandidate(g, id, "cortex", "portrait", undefined, branchId);
     const agentCtx = { actorId: "agent:local", actorType: "agent" } as const;
     await judge(g, "r1", "approve", human);                        // decided
+    // A real candidate also carries its untouched decode, which nobody reviews: it must not keep r1 "awaiting".
+    g.h.registry.get(g.root)!.db.query("INSERT INTO candidate_outputs (output_id, candidate_id, role, file_id, path, sha256, width, height, media_type) SELECT 'out_r1_untouched', candidate_id, 'untouched', 'out_r1_untouched', path, sha256, width, height, media_type FROM candidate_outputs WHERE output_id = 'out_r1'").run();
     await judge(g, "r2", "reject", agentCtx);                      // overridden below
     await judge(g, "r2", "approve", human, true);
     const note = expectOk(await h.call("annotation.create", { candidateId: "r3", outputId: "out_r3", geometry: pin, text: "n", requiresRevision: true }, { project: g.root })).annotation;
@@ -143,15 +157,28 @@ describe("review.list", () => {
     expect((await list("overridden")).items[0]!.kind).toBe("overridden");
     expect(idsOf(await list("needs-revision"))).toEqual(["r3"]);
     expect(idsOf(await list("escalated"))).toEqual(["r4"]);
-    expect(idsOf(await list("awaiting"))).toEqual(["r5", "r4", "r3"]);
+    // r1 is approved and selected for the step, so the undecided r5 and r3 are superseded old attempts; escalated r4 still waits for a human.
+    expect(idsOf(await list("awaiting"))).toEqual(["r4"]);
     const all = await list("all");
     expect(all.total).toBe(5);
-    expect(all.items.map((i) => [i.candidate.candidateId, i.kind])).toEqual([["r5", "awaiting-review"], ["r4", "escalated"], ["r3", "needs-revision"], ["r2", "overridden"], ["r1", "decided"]]);
+    expect(all.items.map((i) => [i.candidate.candidateId, i.kind])).toEqual([["r5", "decided"], ["r4", "escalated"], ["r3", "needs-revision"], ["r2", "overridden"], ["r1", "decided"]]);
 
     const page = await list("all", { limit: 2, offset: 1 });
     expect(idsOf(page)).toEqual(["r4", "r3"]);
     expect(page.total).toBe(5);
     expect(idsOf(await list("all", { stepId: "walk" }))).toEqual([]);
     expect((await list("all", { assetId: "marcus" })).total).toBe(0);
+  });
+
+  test("a candidate is awaiting until a different candidate of its step is selected and approved", async () => {
+    const { g, branchId } = await locked();
+    await seedCandidate(g, "old", "cortex", "portrait", undefined, branchId);
+    await seedCandidate(g, "new", "cortex", "portrait", undefined, branchId);
+    const awaiting = async () => expectOk(await h.call("review.list", { filter: "awaiting" }, { project: g.root })).items.map((i) => i.candidate.candidateId);
+    expect((await awaiting()).sort()).toEqual(["new", "old"]);
+    await judge(g, "new", "approve", human);
+    expectOk(await h.call("candidate.select", { branchId, deliverableId: "portrait", candidateId: "new" }, { project: g.root }));
+    expect(await awaiting()).toEqual([]);
+    expect(expectOk(await h.call("review.list", { filter: "all" }, { project: g.root })).total).toBe(2);
   });
 });

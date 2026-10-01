@@ -90,15 +90,23 @@ deliverables:
     kind: reference-sheet
     required: true
     description: One sheet with three upright figures side by side, labelled views front, profile and rear, on plain light grey.
+    referenceStrength: 2
     regions:
-      - { id: front, x: 0, y: 0, width: 512, height: 768 }
-      - { id: profile, x: 512, y: 0, width: 512, height: 768 }
-      - { id: rear, x: 1024, y: 0, width: 512, height: 768 }
+      - { id: front, x: 0, y: 0, width: 512, height: 768, view: front view facing the viewer }
+      - { id: profile, x: 512, y: 0, width: 512, height: 768, view: side profile facing right }
+      - { id: rear, x: 1024, y: 0, width: 512, height: 768, view: rear view facing away from the viewer }
   - id: idle-rest
     kind: pose
     required: true
     description: Side-oriented three-quarter standing pose with relaxed arms and weight on one leg, used as the idle loop guide.
     dependsOn: [construction-sheet]
+    referenceRoles: { front: { deliverableId: construction-sheet, outputRole: front } }
+  - id: walk-contact
+    kind: pose
+    required: true
+    description: Side-oriented three-quarter walking pose at the moment the front heel lands, arms swinging opposite to the legs, used as the walk loop guide.
+    dependsOn: [construction-sheet]
+    referenceRoles: { front: { deliverableId: construction-sheet, outputRole: front } }
   - id: idle
     kind: animation
     required: true
@@ -107,6 +115,18 @@ deliverables:
     animation:
       motion: Slow breathing with a slight brain bob, feet planted.
       loop: true
+      startReference: idle-rest
+      endReference: idle-rest
+  - id: walk
+    kind: animation
+    required: true
+    description: Steady walk cycle.
+    dependsOn: [walk-contact]
+    animation:
+      motion: A steady walk in place with the arms swinging opposite to the legs and a gentle brain bob on each step.
+      loop: true
+      startReference: walk-contact
+      endReference: walk-contact
 `;
 
 export interface SpecExamples {
@@ -148,7 +168,7 @@ export const SPEC_EXAMPLES: Record<AuthoredKind, SpecExamples> = {
     full: STYLE_FULL,
     conventions: [
       "<id> is lowercase kebab-case and must equal the file name without .yaml.",
-      "palette: sent to model: yes, every entry. One visual phrase per entry (colour, line, rendering), positive wording only, most important first.",
+      "palette: sent to model: yes, every entry. One visual phrase per entry (colour, line, rendering), positive wording only, most important first. Entries are joined with ', ' (with '; ' when any entry contains a comma).",
       "description: sent to model: no. Documentation only.",
       "id, references, preferences: sent to model: no.",
       "preferences holds only confirmed preference ids; do not invent them.",
@@ -173,6 +193,7 @@ export const SPEC_EXAMPLES: Record<AuthoredKind, SpecExamples> = {
       "identity is a free map of plain-language requirements (anatomy, clothing, material, ...).",
       "animation deliverables take animation: {motion, loop, sourceFrameCount (4n+1), startReference, endReference (pose deliverable ids in dependsOn), sourceFps, playbackFps}; motion is one concrete positive sentence of what moves, no process words. reference-sheet deliverables take regions: [{id, x, y, width, height}] in source pixels.",
       "Each family allows only some deliverable kinds and requires some fields per kind (animation.motion; reference-sheet regions; tile environment.tileSize; ui-state ui.state; ui and effect animations also write animation.loop). Call family_list for the rules and family_template {family,id,name} for a starter file instead of guessing.",
+      "ui and icon states: write each state's whole look in its own description (positive wording; text and labels are never generated, so keep the nine-slice centre a plain even surface); the base state's pixels are not fed to the next state, and identity/palette reach every state.",
       "deliverables[].output: {alpha: transparent|opaque, width, height}: width and height together or neither. State output.alpha: opaque on opaque stills (backgrounds, tiles, UI panels). Not sent to the model.",
       "environment assets list children in collection.members; a child binds the environment's locked concept with referenceRoles.<name>: {assetId, branchId, role: direction} (branchId from branch_list after the human locks). attachments only on equipment and props. export: {sprites: individual|atlas|both} packages stills.",
       ...COMMON_CONVENTIONS,

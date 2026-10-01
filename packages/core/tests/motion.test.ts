@@ -162,6 +162,12 @@ describe("animation generation", () => {
     const norm = plan.motion!.guideNormalization;
     expect(norm.subjectHeightPx).toBeCloseTo((216 * 768) / 256, 5);
     expect(norm.scale * norm.sourceStandingHeightPx).toBeCloseTo(norm.subjectHeightPx, 5);
+    // The anchor is the neutral pose Wan is conditioned on (never the construction sheet or another image of the figure):
+    // the pose's own height at the branch scale is exactly the target standing height in the Wan canvas.
+    expect(norm.referenceOutputId).toBe(poseOutputId);
+    const poseBounds = plan.motion!.guides[0]!.transform.sourceBounds;
+    expect(poseBounds.height * norm.scale).toBeCloseTo(norm.subjectHeightPx, 5);
+    expect(plan.notes.join("\n")).toContain("guide idle-rest stands");
 
     expectOk(await call(f, "generation.start", { planId: plan.planId, planHash: plan.planHash, budgetId: plan.budgets[0]!.budgetId }));
     await f.waitJobs((jobs) => succeeded(jobs.filter((j) => j.stepId === "idle")), "the motion job");

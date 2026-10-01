@@ -120,7 +120,7 @@ export function toRevision(db: Database, r: RevisionRow): RevisionRequest {
   }));
   const terminal = r.status === "resolved" || r.status === "waived";
   return {
-    revisionRequestId: r.revision_request_id, assetId: r.asset_id, stepId: "concept", candidateId: r.candidate_id,
+    revisionRequestId: r.revision_request_id, assetId: r.asset_id, stepId: r.step_id, candidateId: r.candidate_id,
     outputIds: strings(r.output_ids_json), annotationIds: strings(r.annotation_ids_json), summary: r.summary, status: r.status,
     waitingFor: terminal ? null : r.status === "open" ? "external-agent" : "reviewer",
     createdBy: r.created_by, createdAt: r.created_at, updatedAt: r.updated_at,

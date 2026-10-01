@@ -206,7 +206,7 @@ export function AnnotatedViewer({ src, alt, width, height, annotations, selected
             className="annot-canvas"
             style={{ width, height, marginLeft: -width / 2, marginTop: -height / 2, transform: `translate(${x}px, ${y}px) scale(${scale})` }}
           >
-            <img src={src} alt={alt} width={width} height={height} draggable={false} onError={() => setFailed(true)} />
+            <img src={src} alt={alt} width={width} height={height} draggable={false} style={{ imageRendering: scale > 1 ? "pixelated" : "auto" }} onError={() => setFailed(true)} />
             <svg className="annot-svg" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
               {annotations.map((a, i) => a.geometry.kind === "rect" ? (
                 <rect key={a.annotationId} x={a.geometry.x} y={a.geometry.y} width={a.geometry.width} height={a.geometry.height} className={`annot-rect${a.annotationId === selectedId ? " selected" : ""}${a.requiresRevision ? " required" : ""}`} vectorEffect="non-scaling-stroke" data-n={i + 1} />

@@ -12,7 +12,9 @@ import { WAN_CANVAS, resolveMotion } from "./motion.ts";
 /** Codes computeSteps reports that make a step unrunnable; they carry over to the plan unchanged. */
 const STEP_BLOCKERS = new Set(["STEP_BLOCKED", "NO_BRANCH", "DEPENDENCY_NOT_APPROVED"]);
 const STEP = 16;
-const MIN_SIDE = 256;
+/** Targets with a longer side under SMALL_SIDE (an icon or UI state) are drawn at Krea's native NATIVE_SIDE and fitted down by processing; larger authored canvases generate at their own size. */
+const SMALL_SIDE = 256;
+const NATIVE_SIDE = 1024;
 const MAX_SIDE = 2048;
 
 /** What a deliverable step contributes to a generation plan. */
@@ -134,9 +136,10 @@ export async function resolveDeliverable(project: OpenProject, set: AuthoredSet,
 
   const target = node.deliverable.output;
   if (regions.length === 0 && target?.width !== undefined && target.height !== undefined) {
-    const fit = (n: number): number => Math.max(MIN_SIDE, Math.ceil(n / STEP) * STEP);
+    const scale = Math.max(target.width, target.height) < SMALL_SIDE ? NATIVE_SIDE / Math.max(target.width, target.height) : 1;
+    const fit = (n: number): number => Math.max(SMALL_SIDE, Math.ceil((n * scale) / STEP) * STEP);
     out.size = { width: fit(target.width), height: fit(target.height) };
-    out.notes.push(`Target output ${target.width}x${target.height}px; generating ${out.size.width}x${out.size.height}px (rounded up to a multiple of ${STEP}, at least ${MIN_SIDE}). The exact target is applied by processing; nothing is silently downscaled here.`);
+    out.notes.push(`Target output ${target.width}x${target.height}px; generating ${out.size.width}x${out.size.height}px (a multiple of ${STEP}${scale > 1 ? `, scaled up because ${SMALL_SIDE}px and smaller targets are drawn at the model's native ${NATIVE_SIDE}px` : ""}). The exact target is applied by processing; nothing is silently downscaled here.`);
     if (out.size.width > MAX_SIDE || out.size.height > MAX_SIDE) {
       out.blockers.push({ code: "SIZE_UNSUPPORTED", message: `${stepId} asks for ${target.width}x${target.height}px, which needs a ${out.size.width}x${out.size.height} canvas; the workflow generates at most ${MAX_SIDE} on a side.`, recoveryActions: [{ label: "Lower output.width/height in asset.yaml", operation: "spec.read", input: { path: `brainforge/assets/${assetId}/asset.yaml` } }] });
     }

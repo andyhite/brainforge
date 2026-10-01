@@ -4,10 +4,11 @@ Bare operation names. Read [families](families.md) for kinds/required fields and
 
 ## UI states and nine-slice
 
-- Each state is a `ui-state` deliverable (or `still`/`variant`). `ui.state` (required on `ui-state`, free string such as `normal`, `pressed`) names the state; it is NEVER sent to the model, so write what the state looks like in that deliverable's `description`. Later states `dependsOn` the base state so they derive from the approved base.
+- Each state is a `ui-state` deliverable (or `still`/`variant`). `ui.state` (required on `ui-state`, free string such as `normal`, `pressed`) names the state; it is NEVER sent to the model, so write what the state looks like in that deliverable's `description`. Later states `dependsOn` the base state, which orders work and review (the state cannot start until the base is approved). It does NOT feed the base's pixels to the model: every deliverable is conditioned on the branch's locked concept alone (one reference image), so describe the changed state completely (shape stays, colours and details named in that description). For a derived `ui-state`/`variant` (one with `dependsOn`) the identity-lock sentence drops "colours", so a disabled grey icon can recolour; put the state's colours in ITS description, never in `identity.*` or the style palette, which are sent with every deliverable of every asset using them (a style palette naming red/yellow tinted a blue button red).
 - `ui.nineSlice {left,top,right,bottom}` are integer margins in OUTPUT pixels of the exported image. They must leave a positive stretchable centre: validator ERROR when `left+right >= output.width` or `top+bottom >= output.height` (checked when `output.width/height` are authored); `processing_plan` also blocks with `NINESLICE_INVALID` when they do not fit the final output. The recipe's `nineSlice` defaults from `ui.nineSlice` and is carried to the export. Margins pinned in the reviewed output's recipe win over later YAML edits.
-- Opaque panels: `output.alpha: opaque` (the `ui` default). A cut-out element sets `output.alpha: transparent` (matted).
+- Opaque panels: `output.alpha: opaque` (the `ui` default). Rounded or irregular outlines leave light-grey corners in an opaque panel; a cut-out element sets `output.alpha: transparent` (matted).
 - Set one canvas per element with `output {width,height}` (both or neither, max 8192). Different elements may have different canvases.
+- Canvas and conditioning facts (small canvases generated at 1024 and fitted; one locked-concept reference per deliverable; style palette and `identity.*` in every prompt; palette joining) are in [families](families.md) "What the model receives".
 
 ```yaml asset
 schema: brainforge.asset.v2
@@ -55,7 +56,7 @@ Pages are capped at 4096x4096 with 2 px gutters, 1 px extrusion and no rotation;
 
 ## Icons
 
-`icon`: single glyph, transparent by default, fixed canvas (typically 64-256 px). States are `ui-state` variants with `ui.state`. One subject, no text/numbers, high contrast. Set `output {width,height}` so every state shares one size. See the `heart-icon` example in [families](families.md).
+`icon`: single glyph, transparent by default, fixed canvas (typically 16-256 px). States are `ui-state` variants with `ui.state`. One subject, no text/numbers, high contrast. Set `output {width,height}` so every state shares one size. A canvas whose longer side is under 256 px is still GENERATED at 1024x1024 (the model's native size) and fitted down by processing; set `defaults.processing.resizeFilter: nearest` for pixel art. BiRefNet cuts cream/white details out of the light-grey background imperfectly, so expect a few semi-transparent edge pixels; check the matte on the dark backdrop. See the `heart-icon` example in [families](families.md).
 
 ## Effects: transparent vs opaque, loop vs once
 

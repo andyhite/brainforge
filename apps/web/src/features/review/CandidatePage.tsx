@@ -14,6 +14,7 @@ import { ClipPlayer, type FrameInfoEvent } from "../animation/ClipPlayer.tsx";
 import { CompareClips } from "../animation/CompareClips.tsx";
 import { LoopBoundary } from "../animation/LoopBoundary.tsx";
 import { OutputsList } from "../animation/OutputsList.tsx";
+import { isSingleImage } from "../animation/timing.ts";
 import { AnnotationPanel } from "./AnnotationPanel.tsx";
 import { RevisionList } from "./RevisionList.tsx";
 import { NewRevisionForm } from "./NewRevisionForm.tsx";
@@ -158,7 +159,7 @@ function CandidateDetail({ assetId, inspect, projectId }: { assetId: string; ins
           </div>
           {tab === "notes" ? (
             <div role="tabpanel" id="panel-notes" aria-labelledby="tab-notes">
-              {output ? <AnnotationPanel candidateId={candidate.candidateId} output={output} annotations={onOutput} selectedId={selectedId} onSelect={setSelectedId} draft={draft} onDraftChange={setDraft} formRef={formRef} {...(output.mediaKind === "frames" && frame ? { frame } : {})} /> : null}
+              {output ? <AnnotationPanel candidateId={candidate.candidateId} output={output} annotations={onOutput} selectedId={selectedId} onSelect={setSelectedId} draft={draft} onDraftChange={setDraft} formRef={formRef} {...(output.mediaKind === "frames" && !isSingleImage(output) && frame ? { frame } : {})} /> : null}
               {elsewhere > 0 ? <p className="secondary" style={{ marginTop: 12 }}>{elsewhere} {elsewhere === 1 ? "note was" : "notes were"} made on the other output and {elsewhere === 1 ? "is" : "are"} not shown here.</p> : null}
             </div>
           ) : (
@@ -171,7 +172,7 @@ function CandidateDetail({ assetId, inspect, projectId }: { assetId: string; ins
       </div>
 
       {output?.mediaKind === "frames" && output.frameCount !== undefined && output.frameCount > 1 ? <LoopBoundary outputId={output.outputId} /> : null}
-      {output && output.mediaKind === "image" && candidate.stepId !== "concept" ? <FamilyPreviews assetId={candidate.assetId} deliverableId={candidate.stepId} candidateId={candidate.candidateId} outputId={output.outputId} /> : null}
+      {output && (output.mediaKind === "image" || isSingleImage(output)) && candidate.stepId !== "concept" ? <FamilyPreviews assetId={candidate.assetId} deliverableId={candidate.stepId} candidateId={candidate.candidateId} outputId={output.outputId} /> : null}
       <ProcessingSection candidate={candidate} />
       <DecisionPanel candidateId={candidate.candidateId} stepId={candidate.stepId} />
       <section className="panel" aria-label="Provenance" style={{ marginTop: 16 }}>
