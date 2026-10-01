@@ -14,6 +14,7 @@
   "dependencies": {
     "@brainforge/contracts": "workspace:*",
     "@brainforge/core": "workspace:*",
+    "@brainforge/media": "workspace:*",
     "@brainforge/storage": "workspace:*",
     "hono": "^4.7.0"
   }

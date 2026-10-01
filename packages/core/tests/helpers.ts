@@ -2,13 +2,12 @@ import { deflateSync } from "node:zlib";
 import { mkdir, mkdtemp, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { Capability, OperationContext, OperationData, OperationName, OperationResult } from "@brainforge/contracts";
+import type { OperationContext, OperationData, OperationName, OperationResult } from "@brainforge/contracts";
+import type { ComfyTransport } from "@brainforge/comfy";
 import { createProjectRegistry, executeOperation, projectHandlers, type IdempotencyStore, type MachineStore, type OperationRuntime, type OpenableProjectRegistry } from "../src/index.ts";
 
-const ALL: Capability[] = ["read", "spec-write", "reference-import", "project-open", "project-init", "snapshot"];
-
-export const human: OperationContext = { actorId: "human-1", actorType: "human", grants: [{ root: "*", capabilities: ALL }] };
-export const agent: OperationContext = { actorId: "agent-1", actorType: "agent", grants: [{ root: "*", capabilities: ALL }] };
+export const human: OperationContext = { actorId: "human:local", actorType: "human" };
+export const agent: OperationContext = { actorId: "agent:local", actorType: "agent" };
 
 export const PROJECT_YAML = `schema: brainforge.project.v2
 id: demo
@@ -50,8 +49,13 @@ export interface Harness {
 
 let counter = 0;
 
-export function createHarness(): Harness {
-  const registry = createProjectRegistry();
+export interface HarnessOptions {
+  /** Injected ComfyUI transport. With it, the registry also runs the generation scheduler (fast polling). */
+  comfy?: () => ComfyTransport | undefined;
+}
+
+export function createHarness(options: HarnessOptions = {}): Harness {
+  const registry = createProjectRegistry(options.comfy ? { generation: { comfy: options.comfy, workflowsDir: join(import.meta.dir, "../../comfy/workflows"), pollIntervalMs: 15, tickIntervalMs: 15 } } : {});
   const recents: { root: string; name?: string }[] = [];
   let comfy: string | undefined;
   const machine: MachineStore = {
@@ -61,7 +65,8 @@ export function createHarness(): Harness {
     recordRecent: (root, name) => { recents.push({ root, name }); },
     recents: () => recents.map((r) => ({ ...r, lastOpenedAt: new Date().toISOString() })),
   };
-  const runtime: OperationRuntime = { projects: registry, machine, workflowsDir: join(import.meta.dir, "../../comfy/workflows"), publicUrl: "http://127.0.0.1:3210" };
+  const workflowsDir = join(import.meta.dir, "../../comfy/workflows");
+  const runtime: OperationRuntime = { projects: registry, machine, workflowsDir, publicUrl: "http://127.0.0.1:3210", ...(options.comfy ? { comfy: options.comfy } : {}) };
   return {
     runtime, registry, recents,
     setComfyUrl: (u) => { comfy = u; },

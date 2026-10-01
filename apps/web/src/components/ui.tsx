@@ -33,7 +33,7 @@ export function Banner({ tone, title, children, actions }: { tone: Exclude<Tone,
 }
 
 export function NetworkProblem({ error }: { error: { message: string } }) {
-  return <Banner tone="bad" title="Cannot reach the server">{error.message} The server may not be running; start it and reload.</Banner>;
+  return <Banner tone="bad" title="Cannot reach the server">{error.message} Start the server: bun run server</Banner>;
 }
 
 function ActionLinks({ actions }: { actions: Array<RecoveryAction | NextAction> }) {

@@ -81,7 +81,6 @@ export function ProjectSettingsPage() {
           {summary.state === "open" ? <Status tone="ok">Open</Status> : summary.state === "closing" ? <Status tone="warn">Closing</Status> : <Status tone="idle">Closed</Status>}
           {summary.writable ? <Status tone="ok">Writable</Status> : <Status tone="warn">Read-only</Status>}
           {summary.specValid ? <Status tone="ok">project.yaml valid</Status> : <Status tone="bad">project.yaml invalid</Status>}
-          {summary.needsRebind ? <Status tone="warn">Needs rebinding</Status> : null}
         </div>
         <dl className="kv" style={{ marginTop: 16 }}>
           <dt>Name</dt><dd>{summary.name}</dd>
@@ -89,7 +88,6 @@ export function ProjectSettingsPage() {
           <dt>Schema</dt><dd>{summary.specValid ? <span>brainforge.project.v2 — valid</span> : <span>needs fixing — see problems</span>}</dd>
           <dt>Revision</dt><dd>{summary.revision}</dd>
         </dl>
-        {summary.needsRebind ? <Banner tone="warn" title="This project was moved or copied">Agent grants and the connection must be rebound before agents can act here. Files and history are unchanged.</Banner> : null}
         {summary.problems.length > 0 ? <ProblemList problems={summary.problems} blocked={BLOCKED_TEXT} onOpenFile={specRoute} /> : null}
       </section>
 

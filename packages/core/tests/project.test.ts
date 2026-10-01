@@ -331,7 +331,6 @@ describe("project.snapshot", () => {
 
     const opened = expectOk(await h.call("project.open", { path: dest }));
     expect(opened.project.root).toBe(dest.replace(parent, parent));
-    expect(opened.project.needsRebind).toBe(true);
     const db = h.registry.getOpen(dest)?.db;
     expect(db?.query<{ reference_id: string }, []>("SELECT reference_id FROM reference_records").all().map((r) => r.reference_id)).toEqual([ref.referenceId]);
     expect(expectOk(await h.call("spec.list", {}, { project: dest })).files.map((f) => f.path)).toContain("brainforge/assets/cortex/asset.yaml");

@@ -67,7 +67,7 @@ function emit(io: CliIo, value: unknown): void {
 export async function run(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
   const args = parseArgs(argv);
   if ("error" in args) {
-    emit(io, failure("", "INVALID_INPUT", args.error, [{ label: "Usage: bf <operation> --project <dir> --input '<json>' --json   (bf --list for operations)" }]));
+    emit(io, failure("", "INVALID_INPUT", args.error, [{ label: "Usage: bf <operation> [--project <dir>] --input '<json>'   (bf --list for operations)" }]));
     return 2;
   }
 
@@ -106,7 +106,7 @@ export async function run(argv: string[], env: Record<string, string | undefined
         name: args.op,
         summary: def.summary,
         mutating: def.mutating,
-        capability: def.capability,
+        needsProjectNote: "project defaults to the nearest ancestor of the working directory containing brainforge/project.yaml",
         humanOnly: def.humanOnly,
         needsProject: def.needsProject,
         inputSchema: z.toJSONSchema(def.input, { io: "input", unrepresentable: "any" }),
@@ -159,9 +159,7 @@ export async function run(argv: string[], env: Record<string, string | undefined
   const callOptions: Parameters<typeof callOperation>[1] = { input, requestId, timeoutMs, signal: controller.signal };
   if (args.project !== undefined) callOptions.project = args.project;
   const serverUrl = env.BF_SERVER_URL?.trim();
-  const token = env.BF_AGENT_TOKEN?.trim();
   if (serverUrl) callOptions.serverUrl = serverUrl;
-  if (token) callOptions.token = token;
   const result = await callOperation(args.op, callOptions);
   process.off("SIGINT", onSigint);
   emit(io, result);

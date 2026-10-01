@@ -5,6 +5,7 @@ import {
   acquireProjectLease, appendEvents, openProjectDb, readEventsAfter, type ProjectDb, type ProjectLease, type StoredEvent,
 } from "@brainforge/storage";
 import { OperationFailure, type IdempotencyStore, type ProjectHandle, type ProjectRegistry } from "./runtime.ts";
+import { GenerationScheduler, type SchedulerOptions } from "./generation/scheduler.ts";
 import { readAuthoredFile } from "./authored.ts";
 
 export type ProjectState = "open" | "closing";
@@ -12,8 +13,6 @@ export type ProjectState = "open" | "closing";
 /** A registered project: the seam handle plus lifecycle and snapshot coordination used by core handlers. */
 export interface OpenProject extends ProjectHandle {
   readonly state: ProjectState;
-  /** The recorded root differed from the actual location when this project was opened. */
-  readonly needsRebind: boolean;
   readonly upgradeInstruction?: string;
   /** True while a snapshot holds the project quiesced; `transact` refuses to start. */
   readonly quiesced: boolean;
@@ -95,7 +94,6 @@ class Project implements OpenProject {
     readonly projectId: string,
     private readonly store: ProjectDb,
     readonly lease: ProjectLease,
-    readonly needsRebind: boolean,
   ) {
     const base = store.idempotency;
     // After close the DB is gone; the executor still records the closing request's result, which is moot.
@@ -181,6 +179,16 @@ class Project implements OpenProject {
       this.gate.releaseExclusive();
     }
   }
+  private readonly stoppers: (() => Promise<void>)[] = [];
+
+  addStopper(stop: () => Promise<void>): void {
+    this.stoppers.push(stop);
+  }
+
+  /** Stop background work before the DB closes; in-flight jobs stay in their persisted state and resume on the next open. */
+  async stopBackground(): Promise<void> {
+    for (const stop of this.stoppers.splice(0)) await stop();
+  }
 
   finalize(): void {
     if (this.closed) return;
@@ -197,7 +205,12 @@ function writeMeta(project: ProjectDb, key: string, value: string): void {
   project.db.query("INSERT INTO project_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
 }
 
-export function createProjectRegistry(): OpenableProjectRegistry {
+export interface ProjectRegistryOptions {
+  /** Present when this process should run generation jobs for opened projects. */
+  generation?: SchedulerOptions;
+}
+
+export function createProjectRegistry(options: ProjectRegistryOptions = {}): OpenableProjectRegistry {
   const open = new Map<string, Project>();
   const pending = new Map<string, Promise<Project>>();
 
@@ -216,8 +229,6 @@ export function createProjectRegistry(): OpenableProjectRegistry {
     let store: ProjectDb | undefined;
     try {
       store = openProjectDb(root);
-      const storedRoot = readMeta(store, "root");
-      const needsRebind = storedRoot !== undefined && storedRoot !== root;
       const yaml = await readAuthoredFile(root, "brainforge/project.yaml");
       const fromYaml = yaml?.kind === "project" ? yaml.spec?.id : undefined;
       const projectId = fromYaml ?? readMeta(store, "project_id") ?? slug(basename(root));
@@ -225,14 +236,25 @@ export function createProjectRegistry(): OpenableProjectRegistry {
         writeMeta(store, "root", root);
         writeMeta(store, "project_id", projectId);
       }
-      return new Project(root, projectId, store, lease, needsRebind);
+      return new Project(root, projectId, store, lease);
     } catch (e) {
       try { store?.close(); } finally { lease.release(); }
       throw e;
     }
   }
 
-  return {
+  /** Background work (the generation scheduler) lives and dies with the open project. */
+  function startBackground(project: Project): void {
+    if (!options.generation || !project.writable) return;
+    const scheduler = new GenerationScheduler(project, options.generation);
+    scheduler.onIdle = () => {
+      registry.settleClosing().catch((e: unknown) => console.error("[brainforge] closing project:", e instanceof Error ? e.message : String(e)));
+    };
+    project.addStopper(() => scheduler.stop());
+    scheduler.start();
+  }
+
+  const registry: OpenableProjectRegistry = {
     get: (path) => lookup(path),
     getOpen: (path) => lookup(path),
     list: () => [...open.values()],
@@ -242,7 +264,7 @@ export function createProjectRegistry(): OpenableProjectRegistry {
       if (existing) return existing;
       let inflight = pending.get(root);
       if (!inflight) {
-        inflight = doOpen(root).then((p) => { open.set(root, p); return p; }).finally(() => { pending.delete(root); });
+        inflight = doOpen(root).then((p) => { open.set(root, p); startBackground(p); return p; }).finally(() => { pending.delete(root); });
         pending.set(root, inflight);
       }
       return inflight;
@@ -254,6 +276,7 @@ export function createProjectRegistry(): OpenableProjectRegistry {
         project.state = "closing";
         return "closing";
       }
+      await project.stopBackground();
       await project.exclusive(async () => {
         project.finalize();
       });
@@ -263,6 +286,7 @@ export function createProjectRegistry(): OpenableProjectRegistry {
     async settleClosing() {
       for (const p of [...open.values()]) {
         if (p.state === "closing" && p.trackedWork() === 0) {
+          await p.stopBackground();
           await p.exclusive(async () => { p.finalize(); });
           open.delete(p.root);
         }
@@ -270,11 +294,13 @@ export function createProjectRegistry(): OpenableProjectRegistry {
     },
     async closeAll() {
       for (const p of [...open.values()]) {
+        await p.stopBackground();
         await p.exclusive(async () => { p.finalize(); });
         open.delete(p.root);
       }
     },
   };
+  return registry;
 }
 
 export function isOpenProject(handle: ProjectHandle): handle is OpenProject {

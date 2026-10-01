@@ -10,6 +10,7 @@
     "feasibility": "bun scripts/feasibility.ts",
     "bf": "bun apps/cli/src/main.ts",
     "server": "bun apps/server/src/index.ts",
+    "mcp": "bun apps/mcp/src/main.ts",
     "dev": "turbo run dev",
     "build": "turbo run build",
     "test": "turbo run test",

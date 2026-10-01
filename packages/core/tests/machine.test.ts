@@ -1,33 +1,22 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Capability, OperationName, OperationRequest, OperationResult } from "@brainforge/contracts";
+import type { OperationName, OperationRequest, OperationResult } from "@brainforge/contracts";
 import {
-  createMachineStore, executeOperation, machineHandlers, HUMAN_CONTEXT, PAIRING_MAX_FAILURES,
-  type AuthMachineStore, type HandlerMap, type OperationRuntime, type ProjectHandle,
+  agentContext, createMachineStore, executeOperation, machineHandlers, HUMAN_CONTEXT,
+  type HandlerMap, type LocalMachineStore, type OperationRuntime, type ProjectHandle,
 } from "../src/index.ts";
 
 const T0 = Date.parse("2026-01-01T00:00:00.000Z");
-const HOUR = 3_600_000;
 
 let dir: string;
 let clockMs: number;
-let store: AuthMachineStore;
+let store: LocalMachineStore;
 let runtime: OperationRuntime;
 let projects: ProjectHandle[];
 let counter = 0;
-
-function fakeProject(root: string): ProjectHandle {
-  return {
-    root, projectId: `p-${root}`, db: new Database(":memory:"), writable: true, idempotency: store.idempotency,
-    revision: () => 1,
-    transact: (fn) => ({ value: fn(), revision: 1 }),
-    eventsAfter: () => ({ events: [], resync: false }),
-    subscribe: () => () => {},
-  };
-}
 
 const handlers: HandlerMap = {
   ...machineHandlers,
@@ -55,13 +44,6 @@ async function run<K extends OperationName>(context: Parameters<typeof executeOp
   return executeOperation(runtime, handlers, context, name, { requestId: opts.requestId ?? `req-${counter}`, ...(opts.project ? { project: opts.project } : {}), input });
 }
 
-async function agent(caps: Capability[], roots: string[] = []) {
-  const issued = store.issueToken({ name: "omp", capabilities: caps, roots });
-  const token = store.resolveBearer(issued.secret);
-  if (!token) throw new Error("token did not resolve");
-  return { issued, token, context: store.contextForToken(token) };
-}
-
 function errorCode(r: OperationResult<unknown>): string | undefined {
   return r.ok ? undefined : r.error.code;
 }
@@ -72,246 +54,70 @@ function requireData(r: OperationResult<unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(r.data));
 }
 
-describe("pairing", () => {
-  test("code is single use", () => {
-    const code = store.newPairingCode();
-    expect(store.consumePairingCode(code)).toEqual({ ok: true });
-    expect(store.consumePairingCode(code)).toMatchObject({ ok: false });
+describe("identity", () => {
+  test("agent names are sanitized to [a-z0-9._-], max 40, default local", () => {
+    expect(agentContext(undefined)).toEqual({ actorId: "agent:local", actorType: "agent" });
+    expect(agentContext("  !!! ")).toEqual({ actorId: "agent:local", actorType: "agent" });
+    expect(agentContext("Omp Agent/../X_1").actorId).toBe("agent:ompagent..x_1");
+    expect(agentContext("a".repeat(80)).actorId).toBe(`agent:${"a".repeat(40)}`);
   });
 
-  test("code is accepted case-insensitively without the dash", () => {
-    const code = store.newPairingCode();
-    expect(store.consumePairingCode(code.replace("-", "").toLowerCase())).toEqual({ ok: true });
-  });
-
-  test("code expires after ten minutes", () => {
-    const code = store.newPairingCode();
-    clockMs += 10 * 60_000 + 1;
-    expect(store.consumePairingCode(code)).toMatchObject({ ok: false });
-  });
-
-  test("a new code invalidates the previous unused one", () => {
-    const first = store.newPairingCode();
-    const second = store.newPairingCode();
-    expect(store.consumePairingCode(first)).toMatchObject({ ok: false });
-    expect(store.consumePairingCode(second)).toEqual({ ok: true });
-  });
-
-  test("five wrong attempts lock pairing for a minute, even for the right code", () => {
-    const code = store.newPairingCode();
-    for (let i = 0; i < PAIRING_MAX_FAILURES - 1; i++) expect(store.consumePairingCode("WRONGCOD")).toEqual({ ok: false, locked: false });
-    expect(store.consumePairingCode("WRONGCOD")).toMatchObject({ ok: false, locked: true });
-    expect(store.consumePairingCode(code)).toMatchObject({ ok: false, locked: true });
-    clockMs += 61_000;
-    expect(store.consumePairingCode(code)).toEqual({ ok: true });
-  });
-
-  test("the pairing code is not stored in the database", async () => {
-    const code = store.newPairingCode();
-    const raw = new Database(join(dir, "config", "machine.sqlite"), { readonly: true });
-    const rows = raw.query<{ code_hash: string }, []>("SELECT code_hash FROM pairing_codes").all();
-    raw.close();
-    expect(rows.every((r) => r.code_hash !== code.replace("-", ""))).toBe(true);
+  test("an agent cannot run human-only operations; a human can", async () => {
+    const denied = await run(agentContext("omp"), "connection.set", { comfyUrl: null });
+    expect(errorCode(denied)).toBe("HUMAN_AUTHORIZATION_REQUIRED");
+    if (!denied.ok) expect(denied.error.message).toContain("Brainforge UI");
+    expect(requireData(await run(HUMAN_CONTEXT, "connection.set", { comfyUrl: null }))).toEqual({ configured: false });
   });
 });
 
-describe("sessions", () => {
-  test("slide on use within the 12h idle window and end at 7 days absolute", () => {
-    const s = store.createSession();
-    clockMs += 11 * HOUR;
-    expect(store.resolveSession(s.secret)?.csrfToken).toBe(s.csrfToken);
-    clockMs += 11 * HOUR;
-    expect(store.resolveSession(s.secret)).toBeDefined();
-    clockMs += 13 * HOUR;
-    expect(store.resolveSession(s.secret)).toBeUndefined();
+describe("idempotency", () => {
+  test("identical retry replays the stored result; a changed payload conflicts", async () => {
+    const first = await run(HUMAN_CONTEXT, "connection.set", { comfyUrl: null }, { requestId: "same" });
+    store.setComfyUrl("http://changed:8188");
+    const replay = await run(HUMAN_CONTEXT, "connection.set", { comfyUrl: null }, { requestId: "same" });
+    expect(requireData(first)).toEqual({ configured: false });
+    expect(requireData(replay)).toEqual({ configured: false });
+    expect(store.comfyUrl()).toBe("http://changed:8188");
+    expect(errorCode(await run(HUMAN_CONTEXT, "connection.set", { comfyUrl: "http://127.0.0.1:1" }, { requestId: "same" }))).toBe("IDEMPOTENCY_CONFLICT");
+  });
+});
 
-    const t = store.createSession();
-    for (let i = 0; i < 16; i++) {
-      clockMs += 11 * HOUR;
-      store.resolveSession(t.secret);
+describe("migration", () => {
+  test("a machine.sqlite from the credential-era schema loses the obsolete tables and keeps its data", async () => {
+    const configDir = join(dir, "old");
+    await mkdir(configDir, { recursive: true });
+    const old = new Database(join(configDir, "machine.sqlite"), { create: true });
+    old.exec(`
+CREATE TABLE idempotency (actor_id TEXT NOT NULL, request_id TEXT NOT NULL, operation TEXT NOT NULL, payload_hash TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('reserved', 'done')), result_json TEXT, created_at TEXT NOT NULL, completed_at TEXT, PRIMARY KEY (actor_id, request_id));
+CREATE TABLE recents (root TEXT PRIMARY KEY, name TEXT, last_opened_at TEXT NOT NULL);
+CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE sessions (session_hash TEXT PRIMARY KEY, csrf_hash TEXT NOT NULL, created_at TEXT NOT NULL, last_seen_at TEXT NOT NULL, expires_at TEXT NOT NULL, revoked_at TEXT);
+CREATE TABLE pairing_codes (code_hash TEXT PRIMARY KEY, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT);
+CREATE TABLE tokens (token_id TEXT PRIMARY KEY, name TEXT NOT NULL, secret_hash TEXT NOT NULL UNIQUE, capabilities_json TEXT NOT NULL, roots_json TEXT NOT NULL, created_at TEXT NOT NULL, last_used_at TEXT, revoked_at TEXT);
+CREATE TABLE authorization_requests (authorization_request_id TEXT PRIMARY KEY, status TEXT NOT NULL, requester_actor_id TEXT NOT NULL, requester_name TEXT NOT NULL, scope TEXT NOT NULL, project_root TEXT, capabilities_json TEXT NOT NULL, reason TEXT NOT NULL, url TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, granted_capabilities_json TEXT, granted_expires_at TEXT, bound_root TEXT, decision_reason TEXT, decided_by TEXT, decided_at TEXT);
+CREATE INDEX authorization_requests_requester ON authorization_requests (requester_actor_id, status);
+INSERT INTO recents VALUES ('/kept', 'Kept', '2025-12-31T00:00:00.000Z');
+INSERT INTO settings VALUES ('comfyUrl', 'http://kept:8188');
+PRAGMA user_version = 1;
+`);
+    old.close();
+
+    const migrated = createMachineStore({ configDir });
+    try {
+      expect(migrated.recents().map((r) => r.root)).toEqual(["/kept"]);
+      expect(migrated.comfyUrl()).toBe("http://kept:8188");
+    } finally {
+      migrated.close();
     }
-    expect(store.resolveSession(t.secret)).toBeUndefined();
+    const check = new Database(join(configDir, "machine.sqlite"));
+    const tables = check.query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map((t) => t.name);
+    check.close();
+    expect(tables).toEqual(["idempotency", "recents", "settings"]);
   });
 
-  test("revoked and unknown secrets do not resolve", () => {
-    const s = store.createSession();
-    store.revokeSession(s.secret);
-    expect(store.resolveSession(s.secret)).toBeUndefined();
-    expect(store.resolveSession("nope")).toBeUndefined();
-  });
-});
-
-describe("tokens", () => {
-  test("secret is returned once and only its hash is stored", async () => {
-    const r = await run(HUMAN_CONTEXT, "token.issue", { name: "omp", capabilities: ["read"], roots: [dir] });
-    const data = requireData(r);
-    const secret = String(data.secret);
-    expect(secret.startsWith("bfa_")).toBe(true);
-    const raw = new Database(join(dir, "config", "machine.sqlite"), { readonly: true });
-    const dump = JSON.stringify([raw.query("SELECT * FROM tokens").all(), raw.query("SELECT * FROM idempotency").all()]);
-    raw.close();
-    expect(dump.includes(secret)).toBe(false);
-    expect(store.resolveBearer(secret)).toBeDefined();
-  });
-
-  test("retrying token.issue with the same requestId creates no second token and no second secret", async () => {
-    const input = { name: "omp", capabilities: ["read" as const], roots: [dir] };
-    const first = requireData(await run(HUMAN_CONTEXT, "token.issue", input, { requestId: "issue-1" }));
-    const replay = await run(HUMAN_CONTEXT, "token.issue", input, { requestId: "issue-1" });
-    const second = requireData(replay);
-    expect(store.listTokens()).toHaveLength(1);
-    expect(second.token).toEqual(first.token);
-    expect(second.secret).toBe("");
-    expect(replay.ok && replay.warnings.some((w) => w.includes("shown only once"))).toBe(true);
-    expect(errorCode(await run(HUMAN_CONTEXT, "token.issue", { ...input, name: "other" }, { requestId: "issue-1" }))).toBe("IDEMPOTENCY_CONFLICT");
-  });
-
-  test("revoked tokens stop resolving", async () => {
-    const { issued } = await agent(["read"], [dir]);
-    store.revokeToken(issued.token.tokenId);
-    expect(store.resolveBearer(issued.secret)).toBeUndefined();
-    expect(store.resolveBearer("bfa_unknown")).toBeUndefined();
-  });
-
-  test("agents cannot issue, list, or revoke tokens", async () => {
-    const { context } = await agent(["read"], [dir]);
-    expect(errorCode(await run(context, "token.issue", { name: "x", capabilities: ["read"], roots: [dir] }))).toBe("HUMAN_AUTHORIZATION_REQUIRED");
-    expect(errorCode(await run(context, "token.list", {}))).toBe("HUMAN_AUTHORIZATION_REQUIRED");
-  });
-
-  test("token scope becomes agent grants; human context holds every capability on *", async () => {
-    const root = await realpath(dir);
-    const { context } = await agent(["read", "spec-write"], [root]);
-    expect(context.actorType).toBe("agent");
-    expect(context.actorId.startsWith("token:")).toBe(true);
-    expect(context.grants).toEqual([{ root, capabilities: ["read", "spec-write"] }]);
-    expect(HUMAN_CONTEXT.grants[0]?.root).toBe("*");
-  });
-});
-
-describe("authorization lifecycle", () => {
-  async function ask(context: Parameters<typeof run>[0], root: string, caps: Capability[] = ["read", "spec-write"]) {
-    const r = await run(context, "authorization.request", { scope: "project", projectRoot: root, capabilities: caps, reason: "need it" });
-    return String(requireData(r).authorizationRequestId);
-  }
-
-  test("request → pending → deny → new request → narrower grant → bound capabilities, other roots stay denied", async () => {
-    const rootA = await realpath(await mkdtemp(join(tmpdir(), "bf-a-")));
-    const rootB = await realpath(await mkdtemp(join(tmpdir(), "bf-b-")));
-    projects.push(fakeProject(rootA), fakeProject(rootB));
-    const { context: bare } = await agent([], []);
-
-    const first = await ask(bare, rootA);
-    const pending = requireData(await run(bare, "authorization.inspect", { authorizationRequestId: first }));
-    expect(pending.request).toMatchObject({ status: "pending", url: `http://127.0.0.1:3210/settings/agents?request=${first}`, requested: { capabilities: ["read", "spec-write"], projectRoot: rootA } });
-    expect(errorCode(await run(bare, "spec.list", {}, { project: rootA }))).toBe("HUMAN_AUTHORIZATION_REQUIRED");
-
-    expect(errorCode(await run(HUMAN_CONTEXT, "authorization.deny", { authorizationRequestId: first, reason: "" }))).toBe("INVALID_INPUT");
-    const denied = requireData(await run(HUMAN_CONTEXT, "authorization.deny", { authorizationRequestId: first, reason: "too broad" }));
-    expect(denied.request).toMatchObject({ status: "denied", reason: "too broad", decidedBy: "human:local" });
-    expect(errorCode(await run(HUMAN_CONTEXT, "authorization.grant", { authorizationRequestId: first, capabilities: ["read"], expiresAt: new Date(clockMs + HOUR).toISOString() }))).toBe("REVISION_CONFLICT");
-
-    const second = await ask(bare, rootA);
-    const expiresAt = new Date(clockMs + 2 * HOUR).toISOString();
-    const granted = requireData(await run(HUMAN_CONTEXT, "authorization.grant", { authorizationRequestId: second, capabilities: ["read"], expiresAt }));
-    expect(granted.request).toMatchObject({ status: "granted", granted: { capabilities: ["read"], expiresAt, boundRoot: rootA } });
-
-    const refreshed = store.contextForToken({ tokenId: bare.actorId.slice("token:".length), name: "bare", capabilities: [], roots: [], createdAt: "x" });
-    expect(refreshed.grants).toEqual([{ root: rootA, capabilities: ["read"] }]);
-    expect(await run(refreshed, "spec.list", {}, { project: rootA })).toMatchObject({ ok: true });
-    expect(errorCode(await run(refreshed, "spec.list", {}, { project: rootB }))).toBe("HUMAN_AUTHORIZATION_REQUIRED");
-    await rm(rootA, { recursive: true });
-    await rm(rootB, { recursive: true });
-  });
-
-  test("grant cannot broaden the request, expiry must be future and within 30 days", async () => {
-    const root = await realpath(dir);
-    const { context } = await agent([], []);
-    const id = await ask(context, root, ["read"]);
-    const ok = new Date(clockMs + HOUR).toISOString();
-    const broadened = await run(HUMAN_CONTEXT, "authorization.grant", { authorizationRequestId: id, capabilities: ["read", "snapshot"], expiresAt: ok });
-    expect(errorCode(broadened)).toBe("INVALID_INPUT");
-    expect(!broadened.ok && broadened.error.message).toContain("snapshot");
-    expect(errorCode(await run(HUMAN_CONTEXT, "authorization.grant", { authorizationRequestId: id, capabilities: ["read"], expiresAt: new Date(clockMs - 1000).toISOString() }))).toBe("INVALID_INPUT");
-    expect(errorCode(await run(HUMAN_CONTEXT, "authorization.grant", { authorizationRequestId: id, capabilities: ["read"], expiresAt: new Date(clockMs + 31 * 24 * HOUR).toISOString() }))).toBe("INVALID_INPUT");
-    expect(store.getAuthorizationRequest(id)?.status).toBe("pending");
-  });
-
-  test("an agent cannot grant, deny, or revoke, including its own request", async () => {
-    const root = await realpath(dir);
-    const { context } = await agent(["read"], [root]);
-    const id = await ask(context, root, ["read"]);
-    const expiresAt = new Date(clockMs + HOUR).toISOString();
-    expect(errorCode(await run(context, "authorization.grant", { authorizationRequestId: id, capabilities: ["read"], expiresAt }))).toBe("HUMAN_AUTHORIZATION_REQUIRED");
-    expect(errorCode(await run(context, "authorization.deny", { authorizationRequestId: id, reason: "x" }))).toBe("HUMAN_AUTHORIZATION_REQUIRED");
-    expect(errorCode(await run(context, "authorization.revoke", { authorizationRequestId: id, reason: "x" }))).toBe("HUMAN_AUTHORIZATION_REQUIRED");
-    expect(store.getAuthorizationRequest(id)?.status).toBe("pending");
-  });
-
-  test("a request whose actor type was forged to human is still refused: nobody grants their own request", async () => {
-    const root = await realpath(dir);
-    const { context } = await agent([], []);
-    const id = await ask(context, root, ["read"]);
-    const forged = { ...context, actorType: "human" as const };
-    const r = await run(forged, "authorization.grant", { authorizationRequestId: id, capabilities: ["read"], expiresAt: new Date(clockMs + HOUR).toISOString() });
-    expect(errorCode(r)).toBe("HUMAN_AUTHORIZATION_REQUIRED");
-  });
-
-  test("list/inspect visibility: humans see all, agents only their own; others get NOT_FOUND", async () => {
-    const root = await realpath(dir);
-    const a = await agent([], []);
-    const b = await agent([], []);
-    const idA = await ask(a.context, root, ["read"]);
-    await ask(b.context, root, ["read"]);
-    expect(requireData(await run(HUMAN_CONTEXT, "authorization.list", {})).requests).toHaveLength(2);
-    const own = requireData(await run(a.context, "authorization.list", {})).requests;
-    expect(Array.isArray(own) && own.length).toBe(1);
-    expect(errorCode(await run(b.context, "authorization.inspect", { authorizationRequestId: idA }))).toBe("NOT_FOUND");
-    expect(errorCode(await run(b.context, "authorization.withdraw", { authorizationRequestId: idA }))).toBe("NOT_FOUND");
-    expect(requireData(await run(a.context, "authorization.withdraw", { authorizationRequestId: idA })).request).toMatchObject({ status: "withdrawn" });
-  });
-
-  test("pending requests expire after 24 hours; granted ones stop granting at their own expiry", async () => {
-    const root = await realpath(dir);
-    const { context } = await agent([], []);
-    const id = await ask(context, root, ["read"]);
-    clockMs += 24 * HOUR + 1;
-    expect(store.getAuthorizationRequest(id)?.status).toBe("expired");
-    expect(errorCode(await run(HUMAN_CONTEXT, "authorization.grant", { authorizationRequestId: id, capabilities: ["read"], expiresAt: new Date(clockMs + HOUR).toISOString() }))).toBe("REVISION_CONFLICT");
-
-    const id2 = await ask(context, root, ["read"]);
-    await run(HUMAN_CONTEXT, "authorization.grant", { authorizationRequestId: id2, capabilities: ["read"], expiresAt: new Date(clockMs + HOUR).toISOString() });
-    const token = { tokenId: context.actorId.slice("token:".length), name: "x", capabilities: [] as Capability[], roots: [] as string[], createdAt: "x" };
-    expect(store.contextForToken(token).grants).toHaveLength(1);
-    clockMs += 2 * HOUR;
-    expect(store.contextForToken(token).grants).toHaveLength(0);
-    expect(store.getAuthorizationRequest(id2)?.status).toBe("expired");
-  });
-
-  test("revoke ends a grant; only granted requests can be revoked", async () => {
-    const root = await realpath(dir);
-    const { context } = await agent([], []);
-    const id = await ask(context, root, ["read"]);
-    expect(errorCode(await run(HUMAN_CONTEXT, "authorization.revoke", { authorizationRequestId: id, reason: "no" }))).toBe("REVISION_CONFLICT");
-    await run(HUMAN_CONTEXT, "authorization.grant", { authorizationRequestId: id, capabilities: ["read"], expiresAt: new Date(clockMs + HOUR).toISOString() });
-    expect(requireData(await run(HUMAN_CONTEXT, "authorization.revoke", { authorizationRequestId: id, reason: "done" })).request).toMatchObject({ status: "revoked", reason: "done" });
-    const token = { tokenId: context.actorId.slice("token:".length), name: "x", capabilities: [] as Capability[], roots: [] as string[], createdAt: "x" };
-    expect(store.contextForToken(token).grants).toHaveLength(0);
-  });
-
-  test("root-scoped requests need the human to choose a project root at grant time", async () => {
-    const root = await realpath(dir);
-    const { context } = await agent([], []);
-    const id = requireData(await run(context, "authorization.request", { scope: "root", capabilities: ["read"], reason: "browse" })).authorizationRequestId;
-    const expiresAt = new Date(clockMs + HOUR).toISOString();
-    expect(errorCode(await run(HUMAN_CONTEXT, "authorization.grant", { authorizationRequestId: String(id), capabilities: ["read"], expiresAt }))).toBe("INVALID_INPUT");
-    const g = await run(HUMAN_CONTEXT, "authorization.grant", { authorizationRequestId: String(id), capabilities: ["read"], expiresAt, projectRoot: root });
-    expect(requireData(g).request).toMatchObject({ status: "granted", granted: { boundRoot: root } });
-  });
-
-  test("project-scoped request without projectRoot is invalid", async () => {
-    const { context } = await agent([], []);
-    expect(errorCode(await run(context, "authorization.request", { scope: "project", capabilities: ["read"], reason: "x" }))).toBe("INVALID_INPUT");
+  test("config dir is 0700 and the database 0600", async () => {
+    expect((await stat(store.configDir)).mode & 0o777).toBe(0o700);
+    expect((await stat(join(store.configDir, "machine.sqlite"))).mode & 0o777).toBe(0o600);
   });
 });
 

@@ -4,13 +4,16 @@ import { ErrorBanner, NetworkProblem, PageHeader, Status } from "../../component
 import { useProjectRoot } from "../../lib/project-context.tsx";
 import { DefinitionStep } from "./DefinitionStep.tsx";
 import { ReferencesStep } from "./ReferencesStep.tsx";
+import { ConceptStep } from "../generation/ConceptStep.tsx";
 
 export function AssetPage() {
   const { assetId = "" } = useParams();
   const [params] = useSearchParams();
-  const step = params.get("step") === "references" ? "references" : "definition";
+  const stepParam = params.get("step");
+  const step = stepParam === "references" || stepParam === "concept" ? stepParam : "definition";
   const { root } = useProjectRoot();
   const query = useOperation("asset.inspect", { assetId }, { enabled: root !== undefined && assetId !== "" });
+  const conceptState = useOperation("step.inspect", { assetId, stepId: "concept" }, { enabled: root !== undefined && assetId !== "" });
 
   if (root === undefined) {
     return <><PageHeader title="Asset" /><p>No project selected. <Link to="/projects/open">Open a project</Link>.</p></>;
@@ -52,9 +55,13 @@ export function AssetPage() {
             <Link to={`${base}?step=references`} aria-current={step === "references" ? "step" : undefined}>References</Link>{" "}
             {referenceCount > 0 ? <Status tone="ok">{referenceCount} imported</Status> : <Status tone="idle">None yet</Status>}
           </li>
+          <li>
+            <Link to={`${base}?step=concept`} aria-current={step === "concept" ? "step" : undefined}>Concept</Link>{" "}
+            {conceptState.data?.ok ? <Status tone={conceptState.data.data.step.state === "complete" ? "ok" : conceptState.data.data.step.state === "failed" ? "bad" : conceptState.data.data.step.state === "blocked" ? "warn" : "info"}>{conceptState.data.data.step.state.replaceAll("_", " ")}</Status> : <Status tone="idle">…</Status>}
+          </li>
         </ol>
       </nav>
-      {step === "references" ? <ReferencesStep assetId={assetId} inspect={inspect} /> : <DefinitionStep inspect={inspect} autoCreate={params.get("create") === "1"} />}
+      {step === "concept" ? <ConceptStep assetId={assetId} /> : step === "references" ? <ReferencesStep assetId={assetId} inspect={inspect} /> : <DefinitionStep inspect={inspect} autoCreate={params.get("create") === "1"} />}
     </>
   );
 }

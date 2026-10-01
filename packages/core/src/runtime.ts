@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import type {
   ErrorCode, NextAction, OperationContext, OperationData, OperationName, ParsedOperationInput, RecoveryAction,
 } from "@brainforge/contracts";
+import type { ComfyTransport } from "@brainforge/comfy";
 
 /** Typed failure raised by handlers; executeOperation converts it to the error envelope. */
 export class OperationFailure extends Error {
@@ -52,7 +53,7 @@ export interface ProjectRegistry {
   list(): ProjectHandle[];
 }
 
-/** Machine-level state under `~/.config/brainforge/` (override with `BF_CONFIG_DIR`). Implemented by the auth module. */
+/** Machine-level state under `~/.config/brainforge/` (override with `BF_CONFIG_DIR`). Implemented by `LocalMachineStore` in machine-store.ts. */
 export interface MachineStore {
   readonly idempotency: IdempotencyStore;
   /** Configured ComfyUI base URL (env `BF_COMFY_URL` overrides the stored value), if any. */
@@ -69,6 +70,8 @@ export interface OperationRuntime {
   workflowsDir: string;
   /** Public base URL used in human-facing links, e.g. `http://127.0.0.1:3210`. */
   publicUrl: string;
+  /** ComfyUI transport for the current machine setting; absent means "build one from `machine.comfyUrl()`". Tests inject a fake here. */
+  comfy?: () => ComfyTransport | undefined;
 }
 
 export interface HandlerArgs<K extends OperationName> {

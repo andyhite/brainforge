@@ -83,6 +83,8 @@ export const ProjectSpec = z.object({
   id: KebabId,
   name: z.string().min(1),
   artDirection: z.string().default(""),
+  /** Never sent to the image model: setting, rules, status. */
+  notes: z.string().default(""),
   styleIds: z.array(KebabId).default([]),
   references: z.array(z.string()).default([]),
   defaults: Defaults.default({}),
@@ -102,6 +104,7 @@ export type ProjectSpec = z.infer<typeof ProjectSpec>;
 export const StyleSpec = z.object({
   schema: z.literal("brainforge.style.v2"),
   id: KebabId,
+  /** Documentation for people; NEVER sent to the image model. Put visual phrases in `palette`. */
   description: z.string().default(""),
   palette: z.array(z.string()).default([]),
   references: z.array(z.string()).default([]),
@@ -154,6 +157,8 @@ export const AssetSpec = z.object({
   name: z.string().min(1),
   family: AssetFamily,
   description: z.string().min(1),
+  /** Never sent to the image model: status, open questions, proposals, source-doc references. */
+  notes: z.string().default(""),
   identity: z.record(z.string(), z.string()).default({}),
   styleIds: z.array(KebabId).default([]),
   references: z.array(z.string()).default([]),

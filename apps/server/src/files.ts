@@ -1,7 +1,8 @@
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { extname } from "node:path";
 import type { ProjectHandle } from "@brainforge/core";
-import { resolveIn } from "@brainforge/storage";
+import { resizeToMax } from "@brainforge/media";
+import { paths, resolveIn, sha256, writeFileAtomic } from "@brainforge/storage";
 
 const MEDIA_TYPES: Record<string, string> = {
   ".png": "image/png",
@@ -42,11 +43,18 @@ export type FileLookup =
   | { kind: "not-found"; message: string }
   | { kind: "missing"; message: string };
 
-/** Registered ID → media file. The stored relative path is revalidated by `resolveIn` on every request. */
+interface PathRow { path: string }
+
+/**
+ * Registered ID → media file: a candidate output, annotated review render, reference or retained artifact.
+ * The stored relative path is revalidated by `resolveIn` on every request.
+ */
 export async function lookupRegisteredFile(project: ProjectHandle, fileId: string): Promise<FileLookup> {
   const row =
-    project.db.query<{ path: string }, [string]>("SELECT path FROM reference_records WHERE reference_id = ?").get(fileId)
-    ?? project.db.query<{ path: string }, [string]>("SELECT path FROM artifact_records WHERE artifact_id = ?").get(fileId);
+    project.db.query<PathRow, [string]>("SELECT path FROM candidate_outputs WHERE output_id = ?").get(fileId)
+    ?? project.db.query<PathRow, [string]>("SELECT path FROM review_files WHERE file_id = ?").get(fileId)
+    ?? project.db.query<PathRow, [string]>("SELECT path FROM reference_records WHERE reference_id = ?").get(fileId)
+    ?? project.db.query<PathRow, [string]>("SELECT path FROM artifact_records WHERE artifact_id = ?").get(fileId);
   if (!row) return { kind: "not-found", message: `No registered file ${fileId}` };
   const mediaType = MEDIA_TYPES[extname(row.path).toLowerCase()];
   if (!mediaType) return { kind: "not-found", message: `File ${fileId} is not an image or video` };
@@ -64,6 +72,26 @@ export async function lookupRegisteredFile(project: ProjectHandle, fileId: strin
     return { kind: "missing", message: `File ${fileId} is missing on disk` };
   }
   return { kind: "ok", abs, mediaType };
+}
+
+export const MIN_DERIVATIVE = 64;
+export const MAX_DERIVATIVE = 4096;
+
+/**
+ * A resized PNG of an image file, cached under `.state/staging/derivatives` by content hash and size so a
+ * changed original never serves a stale derivative. Returns undefined for non-image media.
+ */
+export async function derivativeFor(project: ProjectHandle, found: Extract<FileLookup, { kind: "ok" }>, requestedMax: number): Promise<string | undefined> {
+  if (!found.mediaType.startsWith("image/")) return undefined;
+  const max = Math.min(MAX_DERIVATIVE, Math.max(MIN_DERIVATIVE, Math.round(requestedMax)));
+  const bytes = new Uint8Array(await readFile(found.abs));
+  const digest = sha256(bytes);
+  const rel = `${paths.staging("derivatives")}/${digest}-${max}.png`;
+  const abs = await resolveIn(project.root, rel);
+  if (await stat(abs).then((s) => s.isFile(), () => false)) return abs;
+  const { bytes: resized } = await resizeToMax(bytes, max);
+  await writeFileAtomic(abs, resized);
+  return abs;
 }
 
 export async function serveFile(abs: string, mediaType: string, rangeHeader: string | undefined): Promise<Response> {

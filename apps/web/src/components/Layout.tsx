@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { ProjectEventsProvider, useLiveState, type LiveState } from "../api/events.tsx";
 import { useMutationOperation, useOperation } from "../api/hooks.ts";
-import { usePendingAuthorizationCount } from "../features/settings/agents/usePending.ts";
 import { useProjectRoot } from "../lib/project-context.tsx";
 import { useProject } from "../lib/use-project.ts";
 import { Banner, Status, type Tone } from "./ui.tsx";
@@ -10,6 +9,7 @@ import { Banner, Status, type Tone } from "./ui.tsx";
 const NAV = [
   { to: "/", label: "Overview", end: true },
   { to: "/assets", label: "Assets", end: false },
+  { to: "/jobs", label: "Jobs", end: false },
   { to: "/review", label: "Review", end: false },
   { to: "/library", label: "Library", end: false },
   { to: "/settings", label: "Settings", end: false },
@@ -61,7 +61,6 @@ function ProjectSwitcher() {
 
 export function Layout() {
   const project = useProject();
-  const pending = usePendingAuthorizationCount();
   const [menuOpen, setMenuOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const location = useLocation();
@@ -93,9 +92,6 @@ export function Layout() {
           ) : null}
           <span className="spacer" />
           <LiveIndicator />
-          <Link className="button" to="/settings/agents">
-            Requests{pending > 0 ? <span className="badge" aria-label={`${pending} pending`}>{pending}</span> : null}
-          </Link>
           <button type="button" aria-expanded={inspectorOpen} aria-controls="inspector" onClick={() => setInspectorOpen((open) => !open)}>
             {inspectorOpen ? "Hide inspector" : "Inspector"}
           </button>
@@ -104,17 +100,11 @@ export function Layout() {
           {NAV.map((item) => (
             <NavLink key={item.to} to={item.to} end={item.end}>
               {item.label}
-              {item.to === "/settings" && pending > 0 ? <span className="badge" aria-label={`${pending} pending requests`}>{pending}</span> : null}
             </NavLink>
           ))}
         </nav>
         <main className="main" id="main" tabIndex={-1}>
           <div className="main-inner">
-            {summary?.needsRebind ? (
-              <Banner tone="warn" title="This project was moved or copied" actions={<Link className="button" to="/settings/agents">Review agent grants</Link>}>
-                Agent grants and the connection need rebinding before agents can use it again. Your authored files and history are intact.
-              </Banner>
-            ) : null}
             <Outlet />
           </div>
         </main>

@@ -8,3 +8,5 @@ export * from "./snapshot.ts";
 export { projectHandlers } from "./handlers/index.ts";
 export * from "./machine-store.ts";
 export { machineHandlers } from "./handlers/machine.ts";
+export { createComfyResolver } from "./generation/comfy.ts";
+export type { SchedulerOptions } from "./generation/scheduler.ts";

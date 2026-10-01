@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { WorkflowDescriptor, type ComfyGraph } from "@brainforge/contracts";
-import type { ComfyClient } from "./client.ts";
+import type { ComfyTransport } from "./client.ts";
 
 const WORKFLOW_DIR = join(import.meta.dir, "..", "workflows");
 
@@ -57,7 +57,7 @@ export interface PreflightReport {
 }
 
 /** Checks graph node classes and model filenames against the live /object_info. */
-export async function preflight(wf: WorkflowDescriptor, client: ComfyClient): Promise<PreflightReport> {
+export async function preflight(wf: WorkflowDescriptor, client: ComfyTransport): Promise<PreflightReport> {
   const info = await client.objectInfo();
   const classes = new Set(Object.values(wf.graph).map((n) => n.class_type));
   for (const c of wf.requiredNodes) classes.add(c);

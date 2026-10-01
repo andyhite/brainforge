@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
-  assertHandlersComplete, createMachineStore, createProjectRegistry, machineHandlers, projectHandlers, type HandlerMap, type OperationRuntime,
+  assertHandlersComplete, createComfyResolver, createMachineStore, createProjectRegistry, machineHandlers, projectHandlers, type HandlerMap, type OperationRuntime,
 } from "@brainforge/core";
 import { createApp, MAX_BODY_BYTES } from "./app.ts";
 
@@ -23,17 +23,20 @@ try {
 }
 
 const machine = createMachineStore();
-const projects = createProjectRegistry();
+const comfy = createComfyResolver(machine);
+const workflowsDir = resolve(repoRoot, "packages/comfy/workflows");
+const projects = createProjectRegistry({ generation: { comfy, workflowsDir } });
 const runtime: OperationRuntime = {
   projects,
   machine,
-  workflowsDir: resolve(repoRoot, "packages/comfy/workflows"),
+  workflowsDir,
   publicUrl: `http://127.0.0.1:${port}`,
+  comfy,
 };
 const handlers: HandlerMap = { ...projectHandlers, ...machineHandlers };
 assertHandlersComplete(handlers);
 
-const app = createApp({ runtime, handlers, machine, port, version, webDist: resolve(repoRoot, "apps/web/dist") });
+const app = createApp({ runtime, handlers, port, version, webDist: resolve(repoRoot, "apps/web/dist") });
 
 const server = Bun.serve({
   hostname: "127.0.0.1",
@@ -44,9 +47,8 @@ const server = Bun.serve({
   maxRequestBodySize: MAX_BODY_BYTES + 64 * 1024,
 });
 
-const pairingCode = machine.newPairingCode();
 console.log(`Brainforge server listening on ${runtime.publicUrl}`);
-console.log(`Pairing code: ${pairingCode}   (single use, valid 10 minutes — enter it in the browser)`);
+console.log(`Open this in your browser: ${runtime.publicUrl}`);
 
 let stopping = false;
 async function shutdown(signal: string): Promise<void> {

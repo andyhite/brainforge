@@ -43,7 +43,6 @@ export function summarize(project: OpenProject, set: AuthoredSet): ProjectSummar
     specValid: set.project?.valid ?? false,
     problems: set.project?.problems ?? [],
     writable: project.writable,
-    needsRebind: project.needsRebind,
   };
 }
 
@@ -135,7 +134,6 @@ export const lifecycleHandlers: HandlerMap = {
     runtime.machine.recordRecent(root, set.project?.spec?.name);
     const warnings: string[] = [];
     if (!set.project?.valid) warnings.push("brainforge/project.yaml is invalid; fix it to unblock dependent work. Earlier work stays readable.");
-    if (project.needsRebind) warnings.push("This project moved since access was granted; grants for the previous location must be re-issued.");
     if (!project.writable && project.upgradeInstruction) warnings.push(project.upgradeInstruction);
     return {
       data: { project: summary }, warnings, revision: project.revision(),

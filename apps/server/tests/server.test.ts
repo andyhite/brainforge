@@ -4,8 +4,10 @@ import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  createMachineStore, machineHandlers, type AuthMachineStore, type HandlerMap, type OperationRuntime, type ProjectHandle,
+  createMachineStore, machineHandlers, type HandlerMap, type LocalMachineStore, type OperationRuntime, type ProjectHandle,
 } from "@brainforge/core";
+import { decodeImage } from "@brainforge/media";
+import { makePng } from "../../../packages/core/tests/helpers.ts";
 import { createApp } from "../src/app.ts";
 
 const PORT = 3210;
@@ -17,7 +19,7 @@ interface WireEvent { sequence: number; type: string; at: string; data: unknown 
 let dir: string;
 let root: string;
 let otherRoot: string;
-let store: AuthMachineStore;
+let store: LocalMachineStore;
 let app: ReturnType<typeof createApp>;
 let events: WireEvent[];
 let listeners: ((e: WireEvent) => void)[];
@@ -28,6 +30,8 @@ function fakeProject(projectRoot: string, projectId: string): ProjectHandle {
   const db = new Database(":memory:");
   db.exec("CREATE TABLE reference_records (reference_id TEXT PRIMARY KEY, path TEXT NOT NULL)");
   db.exec("CREATE TABLE artifact_records (artifact_id TEXT PRIMARY KEY, path TEXT NOT NULL)");
+  db.exec("CREATE TABLE candidate_outputs (output_id TEXT PRIMARY KEY, path TEXT NOT NULL)");
+  db.exec("CREATE TABLE review_files (file_id TEXT PRIMARY KEY, path TEXT NOT NULL)");
   return {
     root: projectRoot, projectId, db, writable: true, idempotency: store.idempotency,
     revision: () => events.length,
@@ -69,28 +73,12 @@ function pick(value: unknown, ...path: string[]): unknown {
   return current;
 }
 
-async function pair(): Promise<{ cookie: string; csrf: string; setCookie: string }> {
-  const code = store.newPairingCode();
-  const res = await call("/api/pair", { method: "POST", body: JSON.stringify({ code }) });
-  expect(res.status).toBe(200);
-  const setCookie = res.headers.get("set-cookie") ?? "";
-  return { cookie: setCookie.split(";")[0] ?? "", csrf: String((await body(res)).csrfToken), setCookie };
-}
-
-function op(name: string, input: unknown, auth: { cookie?: string; csrf?: string; bearer?: string }, project?: string, requestId?: string): Promise<Response> {
+function op(name: string, input: unknown, who: { origin?: string; agent?: string }, project?: string, requestId?: string): Promise<Response> {
   reqCounter += 1;
   const headers: Record<string, string> = {};
-  if (auth.cookie) headers.cookie = auth.cookie;
-  if (auth.csrf) headers["x-csrf-token"] = auth.csrf;
-  if (auth.bearer) headers.authorization = `Bearer ${auth.bearer}`;
+  if (who.origin) headers.origin = who.origin;
+  if (who.agent) headers["x-brainforge-agent"] = who.agent;
   return call(`/api/operations/${name}`, { method: "POST", headers, body: JSON.stringify({ requestId: requestId ?? `r-${reqCounter}`, ...(project ? { project } : {}), input }) });
-}
-
-async function issueToken(human: { cookie: string; csrf: string }, caps: string[], roots: string[]): Promise<string> {
-  const res = await op("token.issue", { name: "omp", capabilities: caps, roots }, human);
-  const data = (await body(res)).data;
-  if (!data || typeof data !== "object" || !("secret" in data) || typeof data.secret !== "string") throw new Error("no secret");
-  return data.secret;
 }
 
 beforeEach(async () => {
@@ -113,13 +101,16 @@ beforeEach(async () => {
   project.db.query("INSERT INTO reference_records VALUES ('linked', 'brainforge/references/ref1/link.png')").run();
   project.db.query("INSERT INTO reference_records VALUES ('gone', 'brainforge/references/ref1/gone.png')").run();
   project.db.query("INSERT INTO artifact_records VALUES ('art1', 'brainforge/references/ref1/a.png')").run();
+  await mkdir(join(root, "brainforge/assets/cortex/work/candidates/c1/original"), { recursive: true });
+  await writeFile(join(root, "brainforge/assets/cortex/work/candidates/c1/original/out1.png"), makePng(300, 150, [200, 40, 40]));
+  project.db.query("INSERT INTO candidate_outputs VALUES ('out1', 'brainforge/assets/cortex/work/candidates/c1/original/out1.png')").run();
   const projects = [project, fakeProject(otherRoot, "proj-2")];
   const runtime: OperationRuntime = {
     projects: { get: (r) => projects.find((p) => p.root === r), list: () => projects },
     machine: store, workflowsDir: "", publicUrl: `http://${HOST}`,
   };
   const handlers: HandlerMap = { ...machineHandlers, "spec.list": async () => ({ data: { files: [] } }) };
-  app = createApp({ runtime, handlers, machine: store, port: PORT, version: "9.9.9", heartbeatMs: 50 });
+  app = createApp({ runtime, handlers, port: PORT, version: "9.9.9", heartbeatMs: 50 });
 });
 
 afterEach(async () => {
@@ -149,162 +140,68 @@ describe("host and origin", () => {
   });
 });
 
-describe("pairing and sessions", () => {
-  test("pairing sets an HttpOnly SameSite=Strict cookie and returns a csrf token; the code is single use", async () => {
-    const code = store.newPairingCode();
-    const res = await call("/api/pair", { method: "POST", body: JSON.stringify({ code }) });
-    expect(res.status).toBe(200);
-    const setCookie = res.headers.get("set-cookie") ?? "";
-    expect(setCookie).toStartWith("bf_session=");
-    expect(setCookie).toContain("HttpOnly");
-    expect(setCookie).toContain("SameSite=Strict");
-    expect(setCookie).toContain("Path=/");
-    expect(setCookie).not.toContain("Domain");
-    expect(typeof (await body(res)).csrfToken).toBe("string");
-    const again = await call("/api/pair", { method: "POST", body: JSON.stringify({ code }) });
-    expect(again.status).toBe(401);
+describe("identity from the transport", () => {
+  test("no Origin is an agent: human-only connection.set is denied with 403 and a UI hint", async () => {
+    const res = await op("connection.set", { comfyUrl: null }, {});
+    expect(res.status).toBe(403);
+    const error = (await body(res)).error;
+    expect(error).toMatchObject({ code: "HUMAN_AUTHORIZATION_REQUIRED" });
+    expect(String(pick(error, "message"))).toContain("Brainforge UI");
   });
 
-  test("an expired code is rejected", async () => {
-    let now = Date.now();
-    const clocked = createMachineStore({ configDir: join(dir, "config2"), now: () => new Date(now) });
-    const code = clocked.newPairingCode();
-    now += 11 * 60_000;
-    expect(clocked.consumePairingCode(code)).toMatchObject({ ok: false });
-    clocked.close();
+  test("an allowed Origin is the human UI and may run human-only operations", async () => {
+    for (const origin of ["http://127.0.0.1:3210", "http://localhost:3210", "http://127.0.0.1:5173", "http://localhost:5173"]) {
+      const res = await op("connection.set", { comfyUrl: null }, { origin });
+      expect(res.status).toBe(200);
+      expect(await body(res)).toMatchObject({ ok: true, data: { configured: false } });
+    }
   });
 
-  test("five wrong codes lock pairing (429) even for the valid code", async () => {
-    const code = store.newPairingCode();
-    for (let i = 0; i < 4; i++) expect((await call("/api/pair", { method: "POST", body: JSON.stringify({ code: "AAAA-AAAA" }) })).status).toBe(401);
-    const fifth = await call("/api/pair", { method: "POST", body: JSON.stringify({ code: "AAAA-AAAA" }) });
-    expect(fifth.status).toBe(429);
-    expect(fifth.headers.get("retry-after")).toBe("60");
-    expect((await call("/api/pair", { method: "POST", body: JSON.stringify({ code }) })).status).toBe(429);
+  test("x-brainforge-agent names the agent, sanitized, but never makes it human", async () => {
+    const res = await op("connection.set", { comfyUrl: null }, { agent: "Omp Bot!" });
+    expect(res.status).toBe(403);
+    expect((await op("project.recent", {}, { agent: "omp" })).status).toBe(200);
   });
 
-  test("malformed pairing bodies are INVALID_INPUT", async () => {
-    expect((await call("/api/pair", { method: "POST", body: "nope" })).status).toBe(400);
-    expect((await call("/api/pair", { method: "POST", body: JSON.stringify({}) })).status).toBe(400);
-  });
-
-  test("GET /api/session reports the paired human and csrf token, or unauthenticated", async () => {
-    expect(await (await call("/api/session")).json()).toEqual({ authenticated: false });
-    const { cookie, csrf } = await pair();
-    const session = await body(await call("/api/session", { headers: { cookie } }));
-    expect(session).toEqual({ authenticated: true, actor: { actorId: "human:local", actorType: "human" }, csrfToken: csrf });
-  });
-
-  test("logout revokes the session", async () => {
-    const { cookie, csrf } = await pair();
-    expect((await call("/api/session/logout", { method: "POST", headers: { cookie, "x-csrf-token": csrf } })).status).toBe(200);
-    expect(await (await call("/api/session", { headers: { cookie } })).json()).toEqual({ authenticated: false });
+  test("a present but disallowed Origin is 403 even for read operations", async () => {
+    const res = await op("project.recent", {}, { origin: "http://evil.example" });
+    expect(res.status).toBe(403);
+    expect((await body(res)).error).toMatchObject({ code: "HUMAN_AUTHORIZATION_REQUIRED", message: "Origin not allowed" });
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
   });
 });
 
 describe("operations", () => {
-  test("unauthenticated → 401 UNAUTHENTICATED envelope", async () => {
-    const res = await op("project.recent", {}, {});
-    expect(res.status).toBe(401);
-    expect((await body(res)).error).toMatchObject({ code: "UNAUTHENTICATED" });
-  });
-
-  test("cookie POST requires the CSRF header; bearer POST does not", async () => {
-    const human = await pair();
-    expect((await op("project.recent", {}, { cookie: human.cookie })).status).toBe(403);
-    expect((await op("project.recent", {}, { cookie: human.cookie, csrf: "wrong" })).status).toBe(403);
-    expect((await op("project.recent", {}, human)).status).toBe(200);
-    const secret = await issueToken(human, ["read"], [root]);
-    expect((await op("project.recent", {}, { bearer: secret })).status).toBe(200);
-  });
-
-  test("unknown and revoked bearer tokens are 401, and a bad bearer never falls back to the cookie", async () => {
-    const human = await pair();
-    expect((await op("project.recent", {}, { bearer: "bfa_nope" })).status).toBe(401);
-    const secret = await issueToken(human, ["read"], [root]);
-    expect((await op("project.recent", {}, { bearer: secret })).status).toBe(200);
-    const tokenId = store.listTokens()[0]?.tokenId ?? "";
-    expect((await op("token.revoke", { tokenId }, human)).status).toBe(200);
-    expect((await op("project.recent", {}, { bearer: secret })).status).toBe(401);
-    const mixed = await call("/api/operations/project.recent", { method: "POST", headers: { cookie: human.cookie, "x-csrf-token": human.csrf, authorization: "Bearer bfa_nope" }, body: JSON.stringify({ requestId: "m1", input: {} }) });
-    expect(mixed.status).toBe(401);
-  });
-
   test("unknown operation 404, invalid JSON 400, invalid envelope 400, oversized body 413", async () => {
-    const human = await pair();
-    expect((await op("nope.nothing", {}, human)).status).toBe(404);
-    const headers = { cookie: human.cookie, "x-csrf-token": human.csrf };
-    expect((await call("/api/operations/project.recent", { method: "POST", headers, body: "{" })).status).toBe(400);
-    expect((await call("/api/operations/project.recent", { method: "POST", headers, body: JSON.stringify({ input: {} }) })).status).toBe(400);
-    const big = await call("/api/operations/project.recent", { method: "POST", headers: { ...headers, "content-length": String(26 * 1024 * 1024) }, body: "{}" });
+    expect((await op("nope.nothing", {}, {})).status).toBe(404);
+    expect((await call("/api/operations/project.recent", { method: "POST", body: "{" })).status).toBe(400);
+    expect((await call("/api/operations/project.recent", { method: "POST", body: JSON.stringify({ input: {} }) })).status).toBe(400);
+    const big = await call("/api/operations/project.recent", { method: "POST", headers: { "content-length": String(26 * 1024 * 1024) }, body: "{}" });
     expect(big.status).toBe(413);
   });
 
   test("error envelopes map to HTTP status: invalid input 400", async () => {
-    const human = await pair();
-    const res = await op("connection.set", { comfyUrl: "not a url" }, human);
+    const res = await op("connection.set", { comfyUrl: "not a url" }, { origin: "http://127.0.0.1:3210" });
     expect(res.status).toBe(400);
     expect((await body(res)).error).toMatchObject({ code: "INVALID_INPUT" });
   });
 
-  test("an agent token cannot call a human-only operation", async () => {
-    const human = await pair();
-    const secret = await issueToken(human, ["read"], [root]);
-    for (const [name, input] of [["token.list", {}], ["connection.set", { comfyUrl: null }]] as const) {
-      const res = await op(name, input, { bearer: secret });
-      expect(res.status).toBe(403);
-      expect((await body(res)).error).toMatchObject({ code: "HUMAN_AUTHORIZATION_REQUIRED" });
-    }
-  });
-
-  test("full authorization flow over HTTP: request, deny, new request, narrower grant, then bounded access", async () => {
-    const human = await pair();
-    const secret = await issueToken(human, ["read"], [join(dir, "unused")]);
-    const bearer = { bearer: secret };
-    expect((await op("spec.list", {}, bearer, root)).status).toBe(403);
-
-    const asked = await body(await op("authorization.request", { scope: "project", projectRoot: root, capabilities: ["read", "spec-write"], reason: "author asset" }, bearer));
-    const id1 = String(pick(asked, "data", "authorizationRequestId"));
-
-    // The agent cannot grant its own request.
-    const selfGrant = await op("authorization.grant", { authorizationRequestId: id1, capabilities: ["read"], expiresAt: new Date(Date.now() + 3_600_000).toISOString() }, bearer);
-    expect(selfGrant.status).toBe(403);
-    expect((await op("authorization.deny", { authorizationRequestId: id1, reason: "" }, human)).status).toBe(400);
-    expect((await op("authorization.deny", { authorizationRequestId: id1, reason: "too broad" }, human)).status).toBe(200);
-    expect((await op("spec.list", {}, bearer, root)).status).toBe(403);
-
-    const asked2 = await body(await op("authorization.request", { scope: "project", projectRoot: root, capabilities: ["read", "spec-write"], reason: "just read" }, bearer));
-    const id2 = String(pick(asked2, "data", "authorizationRequestId"));
-    const grant = await op("authorization.grant", { authorizationRequestId: id2, capabilities: ["read"], expiresAt: new Date(Date.now() + 3_600_000).toISOString() }, human);
-    expect(grant.status).toBe(200);
-    expect((await op("spec.list", {}, bearer, root)).status).toBe(200);
-    const otherDir = await op("spec.list", {}, bearer, otherRoot);
-    expect(otherDir.status).toBe(403);
-    expect((await body(otherDir)).error).toMatchObject({ code: "HUMAN_AUTHORIZATION_REQUIRED" });
-
-    expect((await op("authorization.revoke", { authorizationRequestId: id2, reason: "done" }, human)).status).toBe(200);
-    expect((await op("spec.list", {}, bearer, root)).status).toBe(403);
-  });
-
-  test("retrying token.issue with the same requestId returns the same token without a second secret", async () => {
-    const human = await pair();
-    const input = { name: "omp", capabilities: ["read"], roots: [root] };
-    const first = await body(await op("token.issue", input, human, undefined, "same"));
-    const second = await body(await op("token.issue", input, human, undefined, "same"));
-    expect(pick(second, "data", "token", "tokenId")).toBe(pick(first, "data", "token", "tokenId"));
-    expect(String(pick(first, "data", "secret")).startsWith("bfa_")).toBe(true);
-    expect(pick(second, "data", "secret")).toBe("");
-    expect(store.listTokens()).toHaveLength(1);
+  test("an identical retry replays the first result; a changed payload is IDEMPOTENCY_CONFLICT", async () => {
+    const human = { origin: "http://127.0.0.1:3210" };
+    const first = await body(await op("connection.set", { comfyUrl: null }, human, undefined, "same"));
+    store.setComfyUrl("http://changed:8188");
+    const second = await body(await op("connection.set", { comfyUrl: null }, human, undefined, "same"));
+    expect(second).toEqual(first);
+    expect(store.comfyUrl()).toBe("http://changed:8188");
+    const conflict = await op("connection.set", { comfyUrl: "http://127.0.0.1:1" }, human, undefined, "same");
+    expect(conflict.status).toBe(409);
   });
 });
 
 describe("files", () => {
-  async function auth(): Promise<Record<string, string>> {
-    return { cookie: (await pair()).cookie };
-  }
-
+  const auth = (): Record<string, string> => ({});
   test("serves a registered reference or artifact id with content type and Accept-Ranges", async () => {
-    const headers = await auth();
+    const headers = auth();
     for (const id of ["ref1", "art1"]) {
       const res = await call(`/api/projects/proj-1/files/${id}`, { headers });
       expect(res.status).toBe(200);
@@ -314,8 +211,27 @@ describe("files", () => {
     }
   });
 
+  test("serves a candidate output by id, with ?max= derivatives of the right size, never enlarged", async () => {
+    const original = await call("/api/projects/proj-1/files/out1");
+    expect(original.status).toBe(200);
+    expect(original.headers.get("content-type")).toBe("image/png");
+    expect(await decodeImage(new Uint8Array(await original.arrayBuffer()))).toMatchObject({ width: 300, height: 150 });
+
+    const small = await call("/api/projects/proj-1/files/out1?max=128");
+    expect(small.status).toBe(200);
+    expect(await decodeImage(new Uint8Array(await small.arrayBuffer()))).toMatchObject({ width: 128, height: 64 });
+
+    const clamped = await call("/api/projects/proj-1/files/out1?max=1");
+    expect(await decodeImage(new Uint8Array(await clamped.arrayBuffer()))).toMatchObject({ width: 64, height: 32 });
+
+    const notEnlarged = await call("/api/projects/proj-1/files/out1?max=4000");
+    expect(await decodeImage(new Uint8Array(await notEnlarged.arrayBuffer()))).toMatchObject({ width: 300, height: 150 });
+
+    expect((await call("/api/projects/proj-1/files/out1?max=abc")).status).toBe(400);
+  });
+
   test("Range: start-end, open end, suffix, and unsatisfiable", async () => {
-    const headers = await auth();
+    const headers = auth();
     const get = (range: string) => call("/api/projects/proj-1/files/ref1", { headers: { ...headers, range } });
     const r1 = await get("bytes=2-5");
     expect(r1.status).toBe(206);
@@ -332,7 +248,7 @@ describe("files", () => {
   });
 
   test("stored paths that escape the game root, absolute paths, symlink escapes, and unknown ids are refused; missing files are OUTPUT_MISSING", async () => {
-    const headers = await auth();
+    const headers = auth();
     for (const id of ["evil", "abs", "linked", "nope"]) {
       const res = await call(`/api/projects/proj-1/files/${id}`, { headers });
       expect(res.status).toBe(404);
@@ -343,14 +259,9 @@ describe("files", () => {
     expect((await call("/api/projects/proj-1/files/%2e%2e", { headers })).status).toBe(404);
   });
 
-  test("requires authentication and read access on that project", async () => {
-    expect((await call("/api/projects/proj-1/files/ref1")).status).toBe(401);
-    const human = await pair();
-    const secret = await issueToken(human, ["read"], [otherRoot]);
-    expect((await call("/api/projects/proj-1/files/ref1", { headers: { authorization: `Bearer ${secret}` } })).status).toBe(403);
-    expect((await call("/api/projects/proj-9/files/ref1", { headers: { authorization: `Bearer ${secret}` } })).status).toBe(404);
-    const allowed = await issueToken(human, ["read"], [root]);
-    expect((await call("/api/projects/proj-1/files/ref1", { headers: { authorization: `Bearer ${allowed}` } })).status).toBe(200);
+  test("unknown projects are 404 and a foreign Origin is refused", async () => {
+    expect((await call("/api/projects/proj-9/files/ref1")).status).toBe(404);
+    expect((await call("/api/projects/proj-1/files/ref1", { headers: { origin: "http://evil.example" } })).status).toBe(403);
   });
 });
 
@@ -371,7 +282,7 @@ describe("events (SSE)", () => {
   }
 
   test("replays events after Last-Event-ID with ids, then streams live events; heartbeat comments flow", async () => {
-    const headers = { cookie: (await pair()).cookie };
+    const headers = {};
     publish(1);
     publish(2);
     publish(3);
@@ -390,7 +301,7 @@ describe("events (SSE)", () => {
   });
 
   test("a gap or unknown sequence yields a resync event instead of events", async () => {
-    const headers = { cookie: (await pair()).cookie };
+    const headers = {};
     historyStart = 10;
     for (let i = 10; i <= 12; i++) publish(i);
     const gap = await readUntil(await call("/api/projects/proj-1/events?after=2", { headers }), "event: resync");
@@ -400,12 +311,9 @@ describe("events (SSE)", () => {
     expect(future).toContain("event: resync");
   });
 
-  test("rejects bad cursors and unauthenticated or unauthorized callers", async () => {
-    const human = await pair();
-    expect((await call("/api/projects/proj-1/events?after=abc", { headers: { cookie: human.cookie } })).status).toBe(400);
-    expect((await call("/api/projects/proj-1/events")).status).toBe(401);
-    const secret = await issueToken(human, ["read"], [otherRoot]);
-    expect((await call("/api/projects/proj-1/events", { headers: { authorization: `Bearer ${secret}` } })).status).toBe(403);
+  test("rejects bad cursors and unknown projects", async () => {
+    expect((await call("/api/projects/proj-1/events?after=abc")).status).toBe(400);
+    expect((await call("/api/projects/proj-9/events")).status).toBe(404);
   });
 });
 
@@ -423,7 +331,7 @@ describe("static and fallback", () => {
     await writeFile(join(dist, "index.html"), "<html>spa</html>");
     await writeFile(join(dist, "assets/app.js"), "console.log(1)");
     await writeFile(join(dir, "secret.txt"), "SECRET");
-    const spa = createApp({ runtime: { projects: { get: () => undefined, list: () => [] }, machine: store, workflowsDir: "", publicUrl: "" }, handlers: {}, machine: store, port: PORT, version: "1", webDist: dist });
+    const spa = createApp({ runtime: { projects: { get: () => undefined, list: () => [] }, machine: store, workflowsDir: "", publicUrl: "" }, handlers: {}, port: PORT, version: "1", webDist: dist });
     const get = (p: string) => Promise.resolve(spa.fetch(new Request(`http://${HOST}${p}`, { headers: { host: HOST } })));
     expect(await (await get("/")).text()).toBe("<html>spa</html>");
     expect(await (await get("/settings/agents")).text()).toBe("<html>spa</html>");

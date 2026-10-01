@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import {
-  OPERATIONS, isOperationName, type Capability, type OperationContext, type OperationData, type OperationName, type OperationRequest, type OperationResult,
+  OPERATIONS, isOperationName, type OperationContext, type OperationData, type OperationName, type OperationRequest, type OperationResult,
 } from "@brainforge/contracts";
 import { OperationFailure, type HandlerArgs, type HandlerMap, type IdempotencyStore, type OperationRuntime, type ProjectHandle } from "./runtime.ts";
 
@@ -12,12 +12,6 @@ export function normalizedHash(value: unknown): string {
     : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, x]) => [k, norm(x)]))
     : v;
   return createHash("sha256").update(JSON.stringify(norm(value))).digest("hex");
-}
-
-function grantedCapabilities(context: OperationContext, root: string): Set<Capability> {
-  const caps = new Set<Capability>();
-  for (const g of context.grants) if (g.root === "*" || g.root === root) for (const c of g.capabilities) caps.add(c);
-  return caps;
 }
 
 async function canonical(path: string): Promise<string> {
@@ -37,8 +31,9 @@ function fail(requestId: string, e: unknown): OperationResult<never> {
 }
 
 /**
- * The single execution path for HTTP, CLI, and agent tools. Identity comes only from `context`, which the
- * server establishes from the session or token; nothing in the request can choose an actor or make it human.
+ * The single execution path for HTTP, CLI, and MCP. Identity comes only from `context`, which the
+ * server derives from the transport (Origin / agent header); nothing in the request can choose an actor.
+ * Trust-the-local-machine model: this guards accidents and cross-site requests, not a hostile local process.
  */
 export async function executeOperation<K extends OperationName>(
   runtime: OperationRuntime,
@@ -58,9 +53,7 @@ export async function executeOperation<K extends OperationName>(
     return fail(requestId, new OperationFailure("INVALID_INPUT", "Input failed validation", parsed.error.issues.map((i) => ({ field: i.path.join("."), message: i.message }))));
   }
   if (def.humanOnly && context.actorType !== "human") {
-    return fail(requestId, new OperationFailure("HUMAN_AUTHORIZATION_REQUIRED", `${name} can only be performed by an authenticated human`, undefined, [
-      { label: "Ask a human to do this", operation: "authorization.request" },
-    ]));
+    return fail(requestId, new OperationFailure("HUMAN_AUTHORIZATION_REQUIRED", "This action is reserved for the person using the Brainforge UI; ask the user to do it there"));
   }
 
   let project: ProjectHandle | undefined;
@@ -74,26 +67,8 @@ export async function executeOperation<K extends OperationName>(
       if (!project) {
         throw new OperationFailure("PROJECT_NOT_OPEN", `Project ${root} is not open`, { root }, [{ label: "Open this project", operation: "project.open", input: { path: root } }]);
       }
-      if (def.capability) {
-        const caps = grantedCapabilities(context, project.root);
-        if (caps.size === 0 || (def.capability !== "read" && !caps.has(def.capability))) {
-          throw new OperationFailure("HUMAN_AUTHORIZATION_REQUIRED", `Not authorized for ${def.capability} on ${project.root}`, { root: project.root, capability: def.capability }, [
-            { label: "Request access", operation: "authorization.request", input: { scope: "project", projectRoot: project.root, capabilities: [def.capability], reason: `Needed for ${name}` } },
-          ]);
-        }
-      }
       if (!project.writable && def.mutating) {
         throw new OperationFailure("IO_ERROR", "Project database is newer than this build; it is open read-only. Upgrade Brainforge to modify it.");
-      }
-    } else if (def.capability) {
-      const data: unknown = parsed.data;
-      const target = data && typeof data === "object" && "path" in data && typeof data.path === "string" ? data.path : undefined;
-      if (!target) throw new OperationFailure("INVALID_INPUT", "path is required");
-      const root = await canonical(target);
-      if (!grantedCapabilities(context, root).has(def.capability)) {
-        throw new OperationFailure("HUMAN_AUTHORIZATION_REQUIRED", `Not authorized for ${def.capability} on ${root}`, { root, capability: def.capability }, [
-          { label: "Request access", operation: "authorization.request", input: { scope: "project", projectRoot: root, capabilities: [def.capability], reason: `Needed for ${name}` } },
-        ]);
       }
     }
 
