@@ -1,0 +1,16 @@
+{
+  "name": "@brainforge/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc -p .", "test": "bun test tests --pass-with-no-tests" },
+  "dependencies": {
+    "@brainforge/contracts": "workspace:*",
+    "@brainforge/storage": "workspace:*",
+    "@brainforge/comfy": "workspace:*",
+    "@brainforge/media": "workspace:*",
+    "yaml": "^2.8.0",
+    "zod": "^4.0.0"
+  }
+}

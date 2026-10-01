@@ -1,0 +1,49 @@
+import { z } from "zod";
+
+const Rect = z.object({
+  x: z.number().int().min(0),
+  y: z.number().int().min(0),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+});
+
+/**
+ * Scale anchor: one uniform scale derived from the approved neutral reference's
+ * standing height, never from a posed frame's bounding box.
+ */
+export const ScaleAnchor = z.object({
+  referenceOutputId: z.string(),
+  referenceHash: z.string(),
+  sourceStandingHeightPx: z.number().positive(),
+  targetStandingHeightPx: z.number().positive(),
+  /** Source-pixel point (the neutral reference's feet, bottom-centre) that maps to the output pivot. */
+  sourceFeet: z.object({ x: z.number(), y: z.number() }),
+});
+export type ScaleAnchor = z.infer<typeof ScaleAnchor>;
+
+export const ProcessingRecipe = z.object({
+  trim: z.object({ start: z.number().int().min(0), endExclusive: z.number().int().positive() }).optional(),
+  closingFrame: z.enum(["keep", "exclude-last"]).default("keep"),
+  /** Source-pixel crop. */
+  crop: Rect,
+  output: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }),
+  resizeFilter: z.enum(["nearest", "lanczos3"]).default("lanczos3"),
+  alpha: z.enum(["preserve", "matte"]).default("preserve"),
+  matteColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  /** Normalized [0,1] output pivot, origin top-left. */
+  pivot: z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }),
+  frameOffsets: z.array(z.object({ index: z.number().int().min(0), dx: z.number().int(), dy: z.number().int() })).optional(),
+  playbackFps: z.number().positive(),
+  resample: z.literal("nearest").default("nearest"),
+  loop: z.boolean(),
+  scaleAnchor: ScaleAnchor.optional(),
+  packaging: z.enum(["frames", "atlas", "both"]).default("frames"),
+  atlas: z.object({
+    maxSize: z.number().int().positive().default(4096),
+    padding: z.number().int().min(0).default(2),
+    extrude: z.number().int().min(0).default(1),
+  }).default({ maxSize: 4096, padding: 2, extrude: 1 }),
+  tileRepeat: z.enum(["none", "mirror-x", "mirror-y", "mirror-xy"]).default("none"),
+});
+export type ProcessingRecipe = z.infer<typeof ProcessingRecipe>;
+export type ProcessingRecipeInput = z.input<typeof ProcessingRecipe>;

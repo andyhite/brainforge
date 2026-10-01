@@ -1,0 +1,153 @@
+schema: brainforge.comfy-workflow.v2
+id: wan22-motion
+version: 1
+description: >
+  WAN 2.2 I2V 14B first/last-frame with the lightx2v 4-step LoRAs (high-noise expert steps 0-2,
+  low-noise expert steps 2-4, euler/simple, cfg 1, ModelSamplingSD3 shift 5), per the Comfy-Org
+  template. Start and end images are uploaded already flattened onto light grey by the caller. Frames
+  are saved untouched and as RGBA through explicit BiRefNet matting (RemoveBackground -> InvertMask ->
+  JoinImageWithAlpha). A loop passes the same guide as start and end image.
+
+graph:
+  clip:
+    class_type: CLIPLoader
+    inputs: { clip_name: umt5_xxl_fp8_e4m3fn_scaled.safetensors, type: wan, device: default }
+  vae:
+    class_type: VAELoader
+    inputs: { vae_name: wan_2.1_vae.safetensors }
+  hi_unet:
+    class_type: UNETLoader
+    inputs: { unet_name: wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors, weight_dtype: default }
+  hi_lora:
+    class_type: LoraLoaderModelOnly
+    inputs: { model: [hi_unet, 0], lora_name: wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors, strength_model: 1.0 }
+  hi_shift:
+    class_type: ModelSamplingSD3
+    inputs: { model: [hi_lora, 0], shift: 5 }
+  lo_unet:
+    class_type: UNETLoader
+    inputs: { unet_name: wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors, weight_dtype: default }
+  lo_lora:
+    class_type: LoraLoaderModelOnly
+    inputs: { model: [lo_unet, 0], lora_name: wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors, strength_model: 1.0 }
+  lo_shift:
+    class_type: ModelSamplingSD3
+    inputs: { model: [lo_lora, 0], shift: 5 }
+  pos:
+    class_type: CLIPTextEncode
+    inputs: { text: '', clip: [clip, 0] }
+  neg:
+    class_type: CLIPTextEncode
+    inputs:
+      text: 色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走
+      clip: [clip, 0]
+  img_start:
+    class_type: LoadImage
+    inputs: { image: '' }
+  img_end:
+    class_type: LoadImage
+    inputs: { image: '' }
+  flf:
+    class_type: WanFirstLastFrameToVideo
+    inputs:
+      positive: [pos, 0]
+      negative: [neg, 0]
+      vae: [vae, 0]
+      width: 768
+      height: 768
+      length: 33
+      batch_size: 1
+      start_image: [img_start, 0]
+      end_image: [img_end, 0]
+  s1:
+    class_type: KSamplerAdvanced
+    inputs:
+      model: [hi_shift, 0]
+      add_noise: enable
+      noise_seed: 0
+      steps: 4
+      cfg: 1
+      sampler_name: euler
+      scheduler: simple
+      positive: [flf, 0]
+      negative: [flf, 1]
+      latent_image: [flf, 2]
+      start_at_step: 0
+      end_at_step: 2
+      return_with_leftover_noise: enable
+  s2:
+    class_type: KSamplerAdvanced
+    inputs:
+      model: [lo_shift, 0]
+      add_noise: disable
+      noise_seed: 0
+      steps: 4
+      cfg: 1
+      sampler_name: euler
+      scheduler: simple
+      positive: [flf, 0]
+      negative: [flf, 1]
+      latent_image: [s1, 0]
+      start_at_step: 2
+      end_at_step: 10000
+      return_with_leftover_noise: disable
+  dec:
+    class_type: VAEDecode
+    inputs: { samples: [s2, 0], vae: [vae, 0] }
+  save_untouched:
+    class_type: SaveImage
+    inputs: { filename_prefix: brainforge/wan22-motion/untouched, images: [dec, 0] }
+  bgl:
+    class_type: LoadBackgroundRemovalModel
+    inputs: { bg_removal_name: birefnet.safetensors }
+  rm:
+    class_type: RemoveBackground
+    inputs: { bg_removal_model: [bgl, 0], image: [dec, 0] }
+  inv:
+    class_type: InvertMask
+    inputs: { mask: [rm, 0] }
+  ja:
+    class_type: JoinImageWithAlpha
+    inputs: { image: [dec, 0], alpha: [inv, 0] }
+  save_matted:
+    class_type: SaveImage
+    inputs: { filename_prefix: brainforge/wan22-motion/matted, images: [ja, 0] }
+
+inputBindings:
+  - { name: prompt, nodeId: pos, field: text, type: string, required: true }
+  - { name: width, nodeId: flf, field: width, type: integer, required: true, min: 256, max: 1280, step: 16 }
+  - { name: height, nodeId: flf, field: height, type: integer, required: true, min: 256, max: 1280, step: 16 }
+  - { name: length, nodeId: flf, field: length, type: integer, required: true, min: 5, max: 81 }
+  - name: seed
+    nodeId: s1
+    field: noise_seed
+    type: seed
+    alsoTo: [{ nodeId: s2, field: noise_seed }]
+  - { name: start_pose, nodeId: img_start, field: image, type: image, required: true }
+  - { name: end_pose, nodeId: img_end, field: image, type: image, required: true }
+
+outputBindings:
+  - { role: untouched, nodeId: save_untouched, kind: frame-sequence, fps: 16 }
+  - { role: matted, nodeId: save_matted, kind: frame-sequence, fps: 16 }
+
+requiredNodes: [CLIPLoader, VAELoader, UNETLoader, LoraLoaderModelOnly, ModelSamplingSD3, CLIPTextEncode, LoadImage, WanFirstLastFrameToVideo, KSamplerAdvanced, VAEDecode, SaveImage, LoadBackgroundRemovalModel, RemoveBackground, InvertMask, JoinImageWithAlpha]
+
+requiredModels:
+  - { nodeId: clip, field: clip_name, filename: umt5_xxl_fp8_e4m3fn_scaled.safetensors }
+  - { nodeId: vae, field: vae_name, filename: wan_2.1_vae.safetensors }
+  - { nodeId: hi_unet, field: unet_name, filename: wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors }
+  - { nodeId: hi_lora, field: lora_name, filename: wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors }
+  - { nodeId: lo_unet, field: unet_name, filename: wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors }
+  - { nodeId: lo_lora, field: lora_name, filename: wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors }
+  - { nodeId: bgl, field: bg_removal_name, filename: birefnet.safetensors }
+
+execution:
+  computeLocation: "Remote ComfyUI server at BF_COMFY_URL (reported by /system_stats; reachability does not imply the work runs on this machine)"
+  externalServices: []
+  credentialKeys: []
+  costDescription: "Uses the user's own ComfyUI GPU host; no per-run fee is reported by the server. Hosting or electricity cost is unknown to Brainforge."
+
+notes:
+  - "Adapted from the archived wan22-flf recipe (same models, samplers, shift, negative prompt kept verbatim; at cfg 1 the negative has no effect). Model-file integrity on this server is unverified; licenses were verified in the archive on 2026-09-29 (WAN 2.2 Apache-2.0, lightx2v LoRAs Apache-2.0, BiRefNet MIT)."
+  - "Start/end images must be uploaded flattened onto light grey: LoadImage drops alpha onto black, which WAN would see as a character on black."
+  - "WAN renders at 16 fps; length must be 4n+1 (33 = 2.06 s). No custom nodes."

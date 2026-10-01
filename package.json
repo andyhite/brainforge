@@ -1,0 +1,30 @@
+{
+  "name": "brainforge",
+  "private": true,
+  "packageManager": "bun@1.3.14",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "feasibility": "bun scripts/feasibility.ts",
+    "bf": "bun apps/cli/src/main.ts",
+    "server": "bun apps/server/src/index.ts",
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.0",
+    "turbo": "^2.5.0",
+    "typescript": "^5.9.0",
+    "@brainforge/contracts": "workspace:*",
+    "@brainforge/storage": "workspace:*",
+    "@brainforge/comfy": "workspace:*",
+    "@brainforge/media": "workspace:*",
+    "@brainforge/core": "workspace:*",
+    "@brainforge/server": "workspace:*",
+    "zod": "^4.0.0"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "@brainforge/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --bun vite",
+    "build": "bun --bun vite build",
+    "typecheck": "tsc -p .",
+    "test": "bun test tests --pass-with-no-tests"
+  },
+  "dependencies": {
+    "@brainforge/contracts": "workspace:*",
+    "@radix-ui/react-dialog": "^1.1.0",
+    "@tanstack/react-query": "^5.60.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.0.0",
+    "yaml": "^2.6.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "vite": "^6.0.0"
+  }
+}

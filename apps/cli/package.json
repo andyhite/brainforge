@@ -1,0 +1,14 @@
+{
+  "name": "@brainforge/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": { "brainforge": "./src/main.ts" },
+  "exports": {
+    ".": "./src/cli.ts",
+    "./main": "./src/main.ts",
+    "./client": "./src/client.ts"
+  },
+  "scripts": { "typecheck": "tsc -p .", "test": "bun test tests --pass-with-no-tests" },
+  "dependencies": { "@brainforge/contracts": "workspace:*", "zod": "^4.0.0" }
+}
