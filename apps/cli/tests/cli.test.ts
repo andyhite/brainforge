@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +11,8 @@ interface Seen { path: string; agent: string | null; origin: string | null; body
 const seen: Seen[] = [];
 const OK = { ok: true, data: { projects: [] }, nextActions: [], warnings: [] };
 let reply: (path: string, count: number) => { status: number; body: unknown } = () => ({ status: 200, body: OK });
+const PNG = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3]);
+const fileRequests: string[] = [];
 let server: Bun.Server<undefined>;
 let url: string;
 const sandbox = realpathSync(mkdtempSync(join(tmpdir(), "bf-cli-")));
@@ -27,6 +29,12 @@ beforeAll(() => {
     port: 0,
     hostname: "127.0.0.1",
     async fetch(request) {
+      if (request.method === "GET") {
+        const url = new URL(request.url);
+        fileRequests.push(`${url.pathname}${url.search}`);
+        if (url.pathname.endsWith("/bad")) return new Response("nope", { status: 404 });
+        return new Response(PNG, { headers: { "content-type": "image/png" } });
+      }
       const body: unknown = await request.json();
       const path = new URL(request.url).pathname;
       seen.push({ path, agent: request.headers.get("x-brainforge-agent"), origin: request.headers.get("origin"), body });
@@ -168,5 +176,37 @@ describe("registry introspection", () => {
     expect(r.code).toBe(0);
     const data = z.object({ inputSchema: z.object({ properties: z.record(z.string(), z.unknown()) }) }).parse(single(r.stdout).data);
     expect(Object.keys(data.inputSchema.properties)).toContain("expectedHash");
+  });
+});
+
+describe("visuals", () => {
+  const visual = (fileId: string, mediaType = "image/png") => ({ fileId, role: "original", label: fileId, mediaType });
+  const VisualFiles = z.object({ visualFiles: z.array(z.object({ fileId: z.string(), path: z.string().optional(), error: z.string().optional() })) });
+  let data: unknown;
+  beforeEach(() => {
+    reply = (path) => ({ status: 200, body: { ok: true, data: path.endsWith("/project.inspect") ? { project: { projectId: "proj-1" } } : data, nextActions: [], warnings: [] } });
+  });
+  afterEach(() => {
+    reply = () => ({ status: 200, body: OK });
+  });
+
+  test("image visuals are saved as model-sized files; failures and non-images are listed, not dropped", async () => {
+    data = { visuals: [visual("f1"), visual("bad"), visual("clip", "video/mp4"), visual("f2")] };
+    fileRequests.length = 0;
+    const r = await bf(["candidate.inspect", "--input", '{"candidateId":"c1"}'], {}, undefined, game);
+    expect(r.code).toBe(0);
+    const files = VisualFiles.parse(JSON.parse(r.stdout)).visualFiles;
+    expect(files.map((f) => f.fileId)).toEqual(["f1", "bad", "clip", "f2"]);
+    for (const f of [files[0], files[3]]) expect(Buffer.from(await Bun.file(f?.path ?? "").bytes()).equals(Buffer.from(PNG))).toBe(true);
+    expect(files[1]?.error).toContain("404");
+    expect(files[2]?.error).toContain("video/mp4");
+    expect(fileRequests).toEqual(["/api/projects/proj-1/files/f1?max=1568", "/api/projects/proj-1/files/bad?max=1568", "/api/projects/proj-1/files/f2?max=1568"]);
+  });
+
+  test("history.examples visuals of every example are saved", async () => {
+    data = { examples: [{ decisionId: "d-acc", outcome: "accepted", visuals: [visual("ex-a")] }, { decisionId: "d-rej", outcome: "rejected", visuals: [visual("ex-r")] }] };
+    const r = await bf(["history.examples", "--input", '{"assetId":"cortex"}'], {}, undefined, game);
+    const files = VisualFiles.parse(JSON.parse(r.stdout)).visualFiles;
+    expect(files.map((f) => [f.fileId, f.path !== undefined])).toEqual([["ex-a", true], ["ex-r", true]]);
   });
 });

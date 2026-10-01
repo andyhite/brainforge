@@ -13,7 +13,7 @@ Brainforge never generates art by itself. All image and motion generation goes t
 |Need|Notes|
 |---|---|
 |[Bun](https://bun.sh) 1.3.14|Runtime, package manager, test runner. Pinned in `package.json` and `.bun-version`. No Node.js needed.|
-|ComfyUI reachable over HTTP|Tested with 0.36.0. Needs the Krea 2 Turbo, Wan 2.2 i2v and BiRefNet models plus the Krea2 identity-edit nodes. Check with `workflow_preflight`.|
+|ComfyUI reachable over HTTP|Tested with 0.36.0. Needs the Krea 2 Turbo, Wan 2.2 i2v and BiRefNet models plus the Krea2 identity-edit nodes. Check with `workflow.preflight`.|
 |FFmpeg / ffprobe (optional)|Only for video-producing workflows. The bundled Wan workflows save PNG frame sequences.|
 |Godot 4.3+ (optional)|Only to open the `godot4` export. Not required for generic export.|
 
@@ -51,37 +51,26 @@ Loopback does not mean free or local compute. The ComfyUI server may be a remote
 
 In your game repo (the **game root**):
 
-1. In the UI, open Settings and enter the game directory, or let an agent call `project_init` (previews first, `confirm: true` to write).
+1. In the UI, open Settings and enter the game directory, or let an agent call `project.init` (previews first, `confirm: true` to write).
 2. Brainforge creates `brainforge/` (and `brainforge/.gdignore`). It never touches the rest of your game.
 3. Author `project.yaml`, a style, and your first asset (see below).
 
-## Using it with an agent (MCP)
+## Using it with an agent (CLI)
 
-`apps/mcp` is a stdio MCP server exposing one tool per operation (`spec_write`, `generation_plan`, `review_decide`, ...). It is a thin HTTP client of the running server.
-
-oh-my-pi, in `~/.omp/agent/mcp.json` (or `<game>/.omp/mcp.json`):
-
-```json
-{
-  "mcpServers": {
-    "brainforge": {
-      "type": "stdio",
-      "command": "bun",
-      "args": ["/path/to/brainforge/apps/mcp/src/main.ts"],
-      "env": { "BF_SERVER_URL": "http://127.0.0.1:3210" }
-    }
-  }
-}
-```
-
-Claude Code: the same block (without `type`) in the game repo's `.mcp.json`. Start the agent inside the game directory; the project is found by walking up to the first `brainforge/project.yaml`. More in [skills/brainforge/references/mcp-setup.md](skills/brainforge/references/mcp-setup.md).
-
-The agent skill in [skills/brainforge/](skills/brainforge/SKILL.md) documents every tool, the YAML formats and the operating protocol. Without MCP, the same operations are available from the CLI:
+Agents use the CLI only, guided by the skill in [skills/brainforge/](skills/brainforge/SKILL.md) (every operation, the YAML formats, the operating protocol). Install a `brainforge` wrapper once so it is on PATH in any game directory (writes `~/.local/bin/brainforge` pointing at this checkout; rerun after moving it):
 
 ```sh
-bun run bf -- --list
-bun run bf -- spec.schema --input '{"kind":"asset"}' --project /path/to/game
+bun run install-cli
 ```
+
+Then, from inside the game directory (the project is found by walking up to the first `brainforge/project.yaml`; server URL from `BF_SERVER_URL`, default `http://127.0.0.1:3210`):
+
+```sh
+brainforge --list
+brainforge spec.read --input '{"path":"brainforge/assets/cortex/asset.yaml"}'
+```
+
+Inside the checkout, use `bun run bf -- <op> --input '<json>'` instead. Other flags: `--input-file <path>`, `--input -` (stdin), `--project <dir>`, `--request-id <id>`, `--timeout <s>`, `<op> --help`. stdout is one JSON envelope. When a result carries `visuals`, the CLI saves a model-sized copy of each image under `$TMPDIR/brainforge-visuals-XXXXXX/` and lists the paths in `visualFiles`; open them with your image reader. Agents author YAML by editing the files directly, then check `problems` via `spec.read`. More in [skills/brainforge/references/cli-setup.md](skills/brainforge/references/cli-setup.md).
 
 ## Project layout
 
@@ -102,7 +91,7 @@ bun run bf -- spec.schema --input '{"kind":"asset"}' --project /path/to/game
     current -> .releases/<export-id> # atomically switched
 ```
 
-You and agents author the YAML and references. Brainforge manages `work/`, `versions/` and `.state/`. They are durable project data, not caches: back up or move the whole `brainforge/` tree, or use `project_snapshot`, never copy an open database by hand.
+You and agents author the YAML and references. Brainforge manages `work/`, `versions/` and `.state/`. They are durable project data, not caches: back up or move the whole `brainforge/` tree, or use `project.snapshot`, never copy an open database by hand.
 
 ## How the pipeline works
 
@@ -124,18 +113,18 @@ flowchart LR
 
 ### Expected steps
 
-1. **Author.** Write `project.yaml` (art direction, sizing, fps, required assets, review policy), a style, and `assets/<id>/asset.yaml` (family, description, identity, deliverables). The YAML text is the image prompt: describe the picture in concrete, positive phrasing. Validate with `spec_validate` before saving; saves use `expectedHash` so concurrent edits surface as a conflict instead of overwriting.
-2. **Explore.** Plan a concept batch (`generation_plan` shows the exact prompt, counts and budget). A human grants a budget; then `generation_start`. Compare candidates, favorite, annotate with whole-image, pin or rectangle notes, and request revisions. Variations reuse a selected candidate as an identity reference.
+1. **Author.** Write `project.yaml` (art direction, sizing, fps, required assets, review policy), a style, and `assets/<id>/asset.yaml` (family, description, identity, deliverables). The YAML text is the image prompt: describe the picture in concrete, positive phrasing. Validate with `spec.validate` before saving; saves use `expectedHash` so concurrent edits surface as a conflict instead of overwriting.
+2. **Explore.** Plan a concept batch (`generation.plan` shows the exact prompt, counts and budget). A human grants a budget; then `generation.start`. Compare candidates, favorite, annotate with whole-image, pin or rectangle notes, and request revisions. Variations reuse a selected candidate as an identity reference.
 3. **Lock.** A human locks one concept output. This creates a **branch** and unlocks production. A lock is a choice, not a production version.
 4. **Reference deliverables.** Only what the family needs. A character gets a front/profile/rear construction sheet and pose guides; a static prop gets none. Each is generated, reviewed and approved before anything depends on it.
 5. **Produce.** Generate the required stills and, for animations, Wan clips bound to approved start/end guides. Motion produces **source frames**; those are not yet the deliverable.
-6. **Process.** `processing_plan` then `processing_start` crops, scales (one scale anchor per character), resamples to the playback fps, sets pivots and packs atlases. This creates a new, unapproved processed output. Reprocessing never overwrites originals. Corrected frames can round-trip through external editing via `candidate_export_cleanup` / `candidate_import_cleanup`.
+6. **Process.** `processing.plan` then `processing.start` crops, scales (one scale anchor per character), resamples to the playback fps, sets pivots and packs atlases. This creates a new, unapproved processed output. Reprocessing never overwrites originals. Corrected frames can round-trip through external editing via `candidate.export-cleanup` / `candidate.import-cleanup`.
 7. **Review.** Look at the processed result (light, dark and checkerboard backgrounds, frame stepping, actual atlas playback). Approve, reject, escalate or leave notes. Required notes block completion until resolved or waived by an authorized reviewer. Policy per step decides who may approve: `human`, `agent`, or `agent_with_escalation` (default for production review).
-8. **Promote.** `promotion_plan` lists every blocker for the whole bundle (missing deliverable, unresolved note, stale approval, requirements changed). `promotion_start` creates an immutable version. Promotion does not change what is active.
+8. **Promote.** `promotion.plan` lists every blocker for the whole bundle (missing deliverable, unresolved note, stale approval, requirements changed). `promotion.start` creates an immutable version. Promotion does not change what is active.
 9. **Activate.** A separate, human step selects which promoted version is active. Earlier versions can be restored; activating one that no longer matches current requirements needs an explicit acknowledgement.
-10. **Export.** `export_plan` then `export_start` publishes active versions to `assets/brainforge/current/...` as `generic` (PNGs, atlases, JSON metadata) or `godot4` (adds SpriteFrames, AtlasTexture, StyleBoxTexture, TileSet). The switch is one atomic symlink, so the game never sees a half-written export, and files you own in the destination are never overwritten.
+10. **Export.** `export.plan` then `export.start` publishes active versions to `assets/brainforge/current/...` as `generic` (PNGs, atlases, JSON metadata) or `godot4` (adds SpriteFrames, AtlasTexture, StyleBoxTexture, TileSet). The switch is one atomic symlink, so the game never sees a half-written export, and files you own in the destination are never overwritten.
 
-Throughout, `project_completeness` answers "what is left?" and `asset_impact` shows which steps need reassessment after a YAML edit. Editing an asset marks only affected steps; it never regenerates or touches a promoted version.
+Throughout, `project.completeness` answers "what is left?" and `asset.impact` shows which steps need reassessment after a YAML edit. Editing an asset marks only affected steps; it never regenerates or touches a promoted version.
 
 ### Humans and agents
 
@@ -145,11 +134,11 @@ Throughout, `project_completeness` answers "what is left?" and `asset_impact` sh
 |Grant budgets, confirm policy changes, set connection, propose-confirm preferences|Human only|
 |Lock concept, approve, promote, activate|Per policy; the default requires a human for lock, promotion and activation|
 
-Identity comes from the transport: the browser UI is the human, MCP and CLI calls are agents. This guards against accidents and cross-site requests on a trusted local machine; it is not a sandbox against hostile local code.
+Identity comes from the transport: the browser UI is the human, CLI calls are agents (`x-brainforge-agent: cli`). This guards against accidents and cross-site requests on a trusted local machine; it is not a sandbox against hostile local code.
 
 ### Asset families
 
-`character`, `creature`, `item`, `equipment`, `prop`, `environment`, `background`, `tile`, `ui`, `icon`, `effect`. All share the pipeline above; families differ in which deliverable kinds, alpha behaviour and motion they allow. See `family_list` and [skills/brainforge/references/families.md](skills/brainforge/references/families.md).
+`character`, `creature`, `item`, `equipment`, `prop`, `environment`, `background`, `tile`, `ui`, `icon`, `effect`. All share the pipeline above; families differ in which deliverable kinds, alpha behaviour and motion they allow. See `family.list` and [skills/brainforge/references/families.md](skills/brainforge/references/families.md).
 
 ## Repository layout
 
@@ -157,7 +146,6 @@ Identity comes from the transport: the browser UI is the human, MCP and CLI call
 |---|---|
 |`apps/server`|Bun + Hono API, durable scheduler, SSE, serves the web UI|
 |`apps/web`|React + Vite review workbench|
-|`apps/mcp`|MCP server for agents|
 |`apps/cli`|Operation CLI (`bun run bf`)|
 |`packages/contracts`|Zod schemas and operation registry (browser-safe)|
 |`packages/core`|Operation handlers, pipeline planning, review, branching, promotion|
@@ -178,7 +166,8 @@ Identity comes from the transport: the browser UI is the human, MCP and CLI call
 |`bun run test`|All package tests (`bun:test`; no live ComfyUI needed)|
 |`bun run typecheck`|`tsc` across workspaces|
 |`bun run bf -- <operation> ...`|Call any operation from the CLI|
-|`bun run audit`|Check every operation has handler, MCP tool, CLI, skill docs and tests|
+|`bun run install-cli`|Install the `brainforge` wrapper in `~/.local/bin` for this checkout|
+|`bun run audit`|Check every operation has a handler, CLI `--help`, a skill mention and a test reference|
 |`bun run recovery-smoke -- --source-project <dir> --scenario all`|Fault-injection scenarios on a temp copy: restart mid-collection, partial download, promotion and export failure|
 |`bun run feasibility -- --project <dir> --phase brief --plan`|Bounded art-proof harness used before the app existed|
 

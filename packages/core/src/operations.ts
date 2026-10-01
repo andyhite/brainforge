@@ -31,7 +31,7 @@ function fail(requestId: string, e: unknown): OperationResult<never> {
 }
 
 /**
- * The single execution path for HTTP, CLI, and MCP. Identity comes only from `context`, which the
+ * The single execution path for HTTP and CLI. Identity comes only from `context`, which the
  * server derives from the transport (Origin / agent header); nothing in the request can choose an actor.
  * Trust-the-local-machine model: this guards accidents and cross-site requests, not a hostile local process.
  */

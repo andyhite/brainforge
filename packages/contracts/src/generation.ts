@@ -14,8 +14,8 @@ export type StepId = z.infer<typeof StepId>;
 
 /**
  * A retrievable image attached to an operation result. Any `data.visuals` array is rendered by clients:
- * the web UI by `fileId` through `/api/projects/<id>/files/<fileId>`, the MCP server as image content blocks
- * (it fetches `?max=1568` for a model-sized derivative and keeps the original reference).
+ * the web UI by `fileId` through `/api/projects/<id>/files/<fileId>`, the CLI by saving a model-sized derivative
+ * (`?max=1568`) of each image to a temp file and listing it in `visualFiles`.
  */
 export const Visual = z.object({
   fileId: z.string(),

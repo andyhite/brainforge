@@ -1,6 +1,6 @@
 # `brainforge/project.yaml`
 
-Human-readable companion to `spec_schema {kind:"project"}`. `spec_schema` is authoritative; it wins on any conflict.
+Human-readable companion to `spec.schema {kind:"project"}`. `spec.schema` is authoritative; it wins on any conflict.
 
 Path: `<game root>/brainforge/project.yaml`. Exactly one per project. Schema `brainforge.project.v2`. Every object is `.strict()`: unknown keys are errors. All paths are relative to the game root. Non-portable values are rejected anywhere in this file: strings starting with `scheme://`, `/`, `~`, or `C:\`, and keys matching token/secret/password/api-key/bearer/credential.
 
@@ -19,19 +19,19 @@ Path: `<game root>/brainforge/project.yaml`. Exactly one per project. Schema `br
 |`familyDefaults`|no|map `family -> Defaults`; keys limited to asset families|
 |`layers`|no|`[{id: kebab, description?: string}]`|
 |`requirements.assets`|no|kebab asset ids that are required for completeness; default `[]`|
-|`approval`|no|requested policy; each of `conceptLock`, `productionReview`, `promotion`, `activation` is `human`\|`agent`\|`agent_with_escalation`. Defaults: human, agent_with_escalation, human, human. `promotion` governs `promotion_start` (publishing an immutable version), `activation` governs `version_activate` (making it current); they are independent. See [production-versions](production-versions.md)|
+|`approval`|no|requested policy; each of `conceptLock`, `productionReview`, `promotion`, `activation` is `human`\|`agent`\|`agent_with_escalation`. Defaults: human, agent_with_escalation, human, human. `promotion` governs `promotion.start` (publishing an immutable version), `activation` governs `version.activate` (making it current); they are independent. See [production-versions](production-versions.md)|
 |`automation`|no|`maxAttemptsPerStep` int>0 (3), `maxConcurrentGenerations` int>0 (1), `maxBatchCandidates` int>0 (4), `autoRegenerate` bool (false)|
 |`export`|yes|`preset` `generic`\|`godot4`; `destination` non-empty relative path (not inside `brainforge/`); `godotProjectRoot` relative path, default `.`. For `godot4` that folder must contain `project.godot` and the destination must be inside it; `res://` is derived from it. Layout, conflicts, recovery: [export](export.md)|
 
 Families: `character creature item equipment prop environment background tile ui icon effect`.
 
-Defaults block (used by `defaults`, each `familyDefaults.<family>`, asset `overrides`, deliverable `overrides`; all optional): `perspective` string (SENT; one short phrase); `palette` string (SENT; visual phrase); `sizing {width:int>0, height:int>0, subjectHeightPx?:number>0, displayScale?:number>0}`; `animation {playbackFps:number>0}` (omit for static projects; stills need no frame rate); `processing {resizeFilter?: "nearest"|"lanczos3"}` (the default resize filter of `processing_plan`; set `nearest` for pixel art so hard edges stay hard, otherwise `lanczos3` smooths; a request's `recipe.resizeFilter` still wins; no other key is read); `workflows` map string->string (workflow ids). Only `artDirection`, `perspective`, `palette` reach the model; everything else in this file does not.
+Defaults block (used by `defaults`, each `familyDefaults.<family>`, asset `overrides`, deliverable `overrides`; all optional): `perspective` string (SENT; one short phrase); `palette` string (SENT; visual phrase); `sizing {width:int>0, height:int>0, subjectHeightPx?:number>0, displayScale?:number>0}`; `animation {playbackFps:number>0}` (omit for static projects; stills need no frame rate); `processing {resizeFilter?: "nearest"|"lanczos3"}` (the default resize filter of `processing.plan`; set `nearest` for pixel art so hard edges stay hard, otherwise `lanczos3` smooths; a request's `recipe.resizeFilter` still wins; no other key is read); `workflows` map string->string (workflow ids). Only `artDirection`, `perspective`, `palette` reach the model; everything else in this file does not.
 
-`approval` is a REQUEST. Effective authority is the last human-confirmed snapshot; `settings_inspect` shows requested vs effective. Relaxing a policy in YAML does not take effect until the human confirms it in the UI.
+`approval` is a REQUEST. Effective authority is the last human-confirmed snapshot; `settings.inspect` shows requested vs effective. Relaxing a policy in YAML does not take effect until the human confirms it in the UI.
 
 ## Effective-settings precedence
 
-project `defaults` → project `familyDefaults.<family>` → asset `overrides` → deliverable `overrides` (plus the deliverable's `animation` block). Later wins. Scalars and arrays replace; objects merge key by key; omitted inherits. `settings_inspect {assetId?, deliverableId?}` returns each leaf with its source file/field/layer. Styles contribute ordered `palette` constraints; two styles that disagree on a concrete value appear under `conflicts`, never silently resolved.
+project `defaults` → project `familyDefaults.<family>` → asset `overrides` → deliverable `overrides` (plus the deliverable's `animation` block). Later wins. Scalars and arrays replace; objects merge key by key; omitted inherits. `settings.inspect {assetId?, deliverableId?}` returns each leaf with its source file/field/layer. Styles contribute ordered `palette` constraints; two styles that disagree on a concrete value appear under `conflicts`, never silently resolved.
 
 ## Minimal valid
 
@@ -104,7 +104,7 @@ export:
 |missing `export`|`export: Invalid input: expected object, received undefined`|
 |`approval.promotion: robot`|`approval.promotion: Invalid option: expected one of "human"\|"agent"\|"agent_with_escalation"`|
 
-Connection URLs (ComfyUI) never go in YAML; the human sets them in the UI. Use `spec_validate` to see these messages without writing.
+Connection URLs (ComfyUI) never go in YAML; the human sets them in the UI. `spec.read` shows these messages after an edit.
 
 ## On-disk layout
 
@@ -115,11 +115,11 @@ Connection URLs (ComfyUI) never go in YAML; the human sets them in the UI. Use `
     styles/<style-id>.yaml              author-owned (file name = id)
     assets/<asset-id>/
       asset.yaml                        author-owned (dir name = id)
-      references/<ref-id>/<file>        created by reference_import
+      references/<ref-id>/<file>        created by reference.import
       work/  versions/                  tool-managed, never hand-edit
-    references/<ref-id>/<file>          created by reference_import (project scope)
+    references/<ref-id>/<file>          created by reference.import (project scope)
     .state/project.sqlite               tool-managed, durable data, never delete or edit
   assets/brainforge/                    configured export destination (tool-managed)
 ```
 
-Authors own only `project.yaml`, `styles/*.yaml`, `assets/*/asset.yaml`. Only these locations are recognised by `spec_write`.
+Authors own only `project.yaml`, `styles/*.yaml`, `assets/*/asset.yaml`. Only these locations are recognised as authored specs.

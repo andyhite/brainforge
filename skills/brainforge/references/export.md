@@ -4,10 +4,10 @@ Export publishes IMMUTABLE promoted versions to the game-relative destination in
 
 ## Loop
 
-1. Each asset needs an ACTIVE version: `promotion_start`, then `version_activate` (see [production-versions](production-versions.md)). A missing active version is a blocker, not skipped.
-2. `export_plan {assetIds?, versions?, confirmEmpty?}`. Default = every asset with an active version. `versions: {assetId: versionId}` pins another promoted version; the plan shows it. Read `blockers`, `selection` (with `notes`), `leaving`, `leavingResourceKinds`, `warnings`, `fileCount`. `export_plan` is mutating (stores the plan) and needs a `requestId`.
-3. Show the plan to the user. `export_start {planId, planHash, requestId}`: a fresh `requestId` per export; the SAME one when retrying a lost response (`created:false` = already exists).
-4. `export_list` (history; which export is `current`), `export_inspect {exportId}` (manifest + externally modified owned files).
+1. Each asset needs an ACTIVE version: `promotion.start`, then `version.activate` (see [production-versions](production-versions.md)). A missing active version is a blocker, not skipped.
+2. `export.plan {assetIds?, versions?, confirmEmpty?}`. Default = every asset with an active version. `versions: {assetId: versionId}` pins another promoted version; the plan shows it. Read `blockers`, `selection` (with `notes`), `leaving`, `leavingResourceKinds`, `warnings`, `fileCount`. `export.plan` is mutating (stores the plan) and needs a `requestId`.
+3. Show the plan to the user. `export.start {planId, planHash, requestId}`: a fresh `requestId` per export; the SAME one when retrying a lost response (`created:false` = already exists).
+4. `export.list` (history; which export is `current`), `export.inspect {exportId}` (manifest + externally modified owned files).
 
 ## Layout
 
@@ -39,7 +39,7 @@ Public paths are always `<destination>/current/assets/...`. Game references NEVE
 ## Conflict rules
 
 - Unowned files (human-owned, Godot `.import`/UID sidecars, anything not in the previous manifest) are never overwritten or deleted; they are carried unchanged into the new release. A new managed path colliding with one → `EXPORT_CONFLICT`; move or rename the human file, re-plan.
-- Owned files modified on disk since export → `EXPORT_CONFLICT` (see `export_inspect` conflicts). Unowned `current` (directory or foreign symlink) or a pointer to an unknown release → `EXPORT_CONFLICT`; never adopted or deleted.
+- Owned files modified on disk since export → `EXPORT_CONFLICT` (see `export.inspect` conflicts). Unowned `current` (directory or foreign symlink) or a pointer to an unknown release → `EXPORT_CONFLICT`; never adopted or deleted.
 - Explicit subset or preset switch: the next snapshot contains exactly the selection; `leaving` / `leavingResourceKinds` list what disappears. An empty selection needs `confirmEmpty:true`.
 - After success only unchanged files listed in the PREVIOUS manifest are removed; modified owned files stay with a warning.
 - Environment aggregates export the member versions they pinned; a member selected directly at another version → `EXPORT_CONFLICT` ([environments](environments.md)). Still packaging per asset: `asset.yaml` `export.sprites` (`individual|atlas|both`) writes `sprites/atlas-<n>.png` + `sprites/sprites.json` ([ui-vfx](ui-vfx.md)).
@@ -49,7 +49,7 @@ Public paths are always `<destination>/current/assets/...`. Game references NEVE
 - Failure before the pointer switch: previous `current` still resolves to the prior complete export; retry.
 - Crash after the switch, lost response: same `requestId` returns the committed export (recovered at open); never a second export.
 - Export failure does not undo promotion or activation.
-- Moving the project: relative `current` link survives only if symlinks are preserved (`project_snapshot` does).
+- Moving the project: relative `current` link survives only if symlinks are preserved (`project.snapshot` does).
 - Consumers (Godot) reload after export; no hot-read guarantee.
 
 ## `export:` block in `project.yaml`
@@ -70,4 +70,4 @@ export:
   godotProjectRoot: .
 ```
 
-Preset or destination changes go through `spec_write`; the next `export_plan` shows what leaves current.
+Preset or destination changes are edits to `project.yaml`; the next `export.plan` shows what leaves current.

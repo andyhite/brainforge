@@ -1,6 +1,6 @@
 # `brainforge/styles/<style-id>.yaml`
 
-Human-readable companion to `spec_schema {kind:"style"}`; `spec_schema` wins on conflict.
+Human-readable companion to `spec.schema {kind:"style"}`; `spec.schema` wins on conflict.
 
 Schema `brainforge.style.v2`. `.strict()`. The `id` MUST equal the file name without `.yaml`. A style is referenced from project or asset `styleIds`. Styles are ordered named visual constraints; two styles disagreeing on a concrete value are reported as conflicts, not merged.
 

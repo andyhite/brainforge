@@ -1,8 +1,8 @@
 # `brainforge/assets/<asset-id>/asset.yaml`
 
-Human-readable companion to `spec_schema {kind:"asset"}`; `spec_schema` wins on conflict. Per-family kinds/required fields/templates: [families](families.md) (`family_list`, `family_template`); environments: [environments](environments.md); UI/icons/effects: [ui-vfx](ui-vfx.md).
+Human-readable companion to `spec.schema {kind:"asset"}`; `spec.schema` wins on conflict. Per-family kinds/required fields/templates: [families](families.md) (`family.list`, `family.template`); environments: [environments](environments.md); UI/icons/effects: [ui-vfx](ui-vfx.md).
 
-Schema `brainforge.asset.v2`. `.strict()` everywhere. `id` MUST equal the parent directory name (kebab-case, unique across the project). Create a new asset with `spec_write {path:"brainforge/assets/<id>/asset.yaml", expectedHash:null}`. Concept validity needs only `schema, id, name, family, description`; missing production fields only block the steps that need them. Display-name or family edits never move the directory.
+Schema `brainforge.asset.v2`. `.strict()` everywhere. `id` MUST equal the parent directory name (kebab-case, unique across the project). Create a new asset by writing `brainforge/assets/<id>/asset.yaml`. Concept validity needs only `schema, id, name, family, description`; missing production fields only block the steps that need them. Display-name or family edits never move the directory.
 
 ## Asset fields
 
@@ -43,7 +43,7 @@ Schema `brainforge.asset.v2`. `.strict()` everywhere. `id` MUST equal the parent
 
 Animation timing: exact generation size, required images and `4n+1` frame counts come from the workflow; `sourceFrameCount` must be `4n+1` (5..81). `animation.startReference`/`endReference` name a deliverable in `dependsOn`: a POSE for `character`/`creature` (e.g. `idle-rest`; default: the first approved pose dependency), a `pose`, `still`, `view` or `variant` for every other family. `animation.motion` is prompt-bearing: one concrete positive sentence of what moves. `animation.loop` defaults to `true` but MUST be written explicitly for `ui` and `effect` animations. `playbackFps` is the export rate (processing resamples, preserving duration). Full guide: [motion-processing](motion-processing.md).
 
-Precedence for settings: project `defaults` → `familyDefaults` → asset `overrides` → deliverable `overrides`. Scalars/arrays replace, objects merge. Check with `settings_inspect {assetId, deliverableId}`.
+Precedence for settings: project `defaults` → `familyDefaults` → asset `overrides` → deliverable `overrides`. Scalars/arrays replace, objects merge. Check with `settings.inspect {assetId, deliverableId}`.
 
 Prompt rules (full list: SKILL.md "Writing prompt-bearing YAML"): SENT = `description`, every `identity` value, effective `perspective`/`palette` from `overrides`, and, only when that deliverable is generated, that deliverable's own `description` (other deliverables' text is never sent, so each description MUST follow the same rules: concrete picture, positive phrasing). NEVER sent = `notes`, `name`, ids, other deliverables' fields. Describe the picture, no doc references/status/other characters' names; front/profile/rear wording only in the construction-sheet deliverable description. Changing a sent field invalidates art; `name` and `notes` do not.
 
@@ -148,4 +148,4 @@ deliverables:
 |seamless tile with different edge labels|`A tile that is seamless on x repeats onto itself, so its west (...) and east (...) connection labels must match.`|
 |missing production field, leftover `REPLACE:` text|WARNING only (`... needs animation.motion before it can be produced`, `Unfinished placeholder`); blocks that deliverable's step, not the file|
 
-Never put URLs or absolute machine paths in asset YAML: they are non-portable. Use `spec_validate` to see these messages without writing.
+Never put URLs or absolute machine paths in asset YAML: they are non-portable. `spec.read` shows these messages after an edit.

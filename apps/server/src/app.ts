@@ -60,7 +60,7 @@ export function createApp(deps: AppDeps): Hono {
 
   app.post("/api/operations/:name", async (c) => {
     // Identity comes only from the transport: an allow-listed Origin is the web UI (human); no Origin is an agent
-    // (MCP server, CLI, curl) named by `x-brainforge-agent`. This trusts the local machine: it guards against
+    // (CLI, curl) named by `x-brainforge-agent`. This trusts the local machine: it guards against
     // accidents and cross-site requests, not against a hostile local process that can forge headers.
     const context = c.req.header("origin") === undefined ? agentContext(c.req.header("x-brainforge-agent")) : HUMAN_CONTEXT;
     const name = c.req.param("name");

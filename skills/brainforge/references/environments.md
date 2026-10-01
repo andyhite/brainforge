@@ -1,6 +1,6 @@
 # Environments: collections, direction, aggregate promotion (M11)
 
-Bare operation names. An `environment` asset is a VISUAL collection: its locked concept sets shared direction; member assets (`background`, `tile`, `prop`) stay ordinary assets with their own pipelines and versions. There is no level graph, placed scene, collision or engine sync. Read [families](families.md) first for kinds and required fields; start from `family_template {family:"environment", id, name}` (it writes placeholder member ids you must replace with real asset ids).
+Bare operation names. An `environment` asset is a VISUAL collection: its locked concept sets shared direction; member assets (`background`, `tile`, `prop`) stay ordinary assets with their own pipelines and versions. There is no level graph, placed scene, collision or engine sync. Read [families](families.md) first for kinds and required fields; start from `family.template {family:"environment", id, name}` (it writes placeholder member ids you must replace with real asset ids).
 
 ## Authoring a collection
 
@@ -30,7 +30,7 @@ deliverables:
 
 - Only an `environment` may have `collection` (error otherwise). It may not list itself or list a member twice (errors). `styleId` is a style id. Membership is the ONLY thing that makes a child required, promoted and exported with the environment.
 - `required: true` members must have an ACTIVE version before the aggregate can be promoted; `required: false` members join only when you name a version for them.
-- `step_list {assetId}` on an environment also returns `collection`: per member `state` (`no-version` | `promoted` | `active`), `activeVersionId`, `latestVersionId`, and a `COLLECTION_INCOMPLETE` blocker naming what is missing.
+- `step.list {assetId}` on an environment also returns `collection`: per member `state` (`no-version` | `promoted` | `active`), `activeVersionId`, `latestVersionId`, and a `COLLECTION_INCOMPLETE` blocker naming what is missing.
 - Membership changes need a NEW aggregate version; earlier versions keep the membership they pinned.
 
 ## Child assets and the direction binding
@@ -60,9 +60,9 @@ deliverables:
       connections: { west: sky-grass, east: sky-grass }
 ```
 
-- `branchId` is the NAMED branch of the environment (from `branch_list {assetId:"flatlands"}` after the human locks its concept with `concept_lock`). There is no "latest concept": an unknown branch yields a `REFERENCE_MISSING` blocker on that step (recovery: `branch_list`, ask the user to lock). A binding to the asset itself is an ERROR; a value that is neither `{deliverableId, outputRole}` nor `{assetId, branchId, role: direction}` is an ERROR (`referenceRoles.<name> must be ...`).
+- `branchId` is the NAMED branch of the environment (from `branch.list {assetId:"flatlands"}` after the human locks its concept with `concept.lock`). There is no "latest concept": an unknown branch yields a `REFERENCE_MISSING` blocker on that step (recovery: `branch.list`, ask the user to lock). A binding to the asset itself is an ERROR; a value that is neither `{deliverableId, outputRole}` nor `{assetId, branchId, role: direction}` is an ERROR (`referenceRoles.<name> must be ...`).
 - Warnings (file stays valid): the named asset is not in this project; or it does not list this child in `collection.members` (then it will not require, promote or export the child).
-- At `generation_plan` time the binding resolves to the environment branch's locked concept output id + sha256 (`plan.directionPins`) and the child is conditioned on THAT image (`krea2-variation` takes one reference; with several bindings only the first is an image, the rest are pinned but unused). The pins enter the step fingerprint and the child's run.
+- At `generation.plan` time the binding resolves to the environment branch's locked concept output id + sha256 (`plan.directionPins`) and the child is conditioned on THAT image (`krea2-variation` takes one reference; with several bindings only the first is an image, the rest are pinned but unused). The pins enter the step fingerprint and the child's run.
 - If the environment later locks a different concept for that branch, or the binding is edited, the child step is flagged `needsReassessment` with a reason naming `<asset>/<branch>`. Nothing regenerates automatically; the child's old versions stay valid as history.
 - Same-asset bindings (`{deliverableId, outputRole}`) are the other form; both may coexist in one `referenceRoles` map.
 
@@ -107,12 +107,12 @@ deliverables:
 
 ## Seams, wrap and mirror-repeat
 
-Generated art does not tile by itself. If exact self-wrap is required, plan the processing with a mirror: `processing_plan {candidateId, recipe:{tileRepeat:"mirror-x"|"mirror-y"|"mirror-xy"}}`. The plan emits a `SYMMETRY` warning: one half is reflected onto the other so edges match, the picture becomes mirror-symmetric on that axis, and this is NOT evidence that the original art tiles. Tell the user and ask for a visual review of the seam. Default is `tileRepeat:"none"`. Never claim a seam is fixed from labels or a plan alone. Opaque backgrounds/tiles keep their full frame: the derived processing `fit` is `crop` ONLY when the deliverable states `output.alpha: opaque` (set it on every opaque deliverable, as the templates do).
+Generated art does not tile by itself. If exact self-wrap is required, plan the processing with a mirror: `processing.plan {candidateId, recipe:{tileRepeat:"mirror-x"|"mirror-y"|"mirror-xy"}}`. The plan emits a `SYMMETRY` warning: one half is reflected onto the other so edges match, the picture becomes mirror-symmetric on that axis, and this is NOT evidence that the original art tiles. Tell the user and ask for a visual review of the seam. Default is `tileRepeat:"none"`. Never claim a seam is fixed from labels or a plan alone. Opaque backgrounds/tiles keep their full frame: the derived processing `fit` is `crop` ONLY when the deliverable states `output.alpha: opaque` (set it on every opaque deliverable, as the templates do).
 
 ## Aggregate promotion
 
-1. Promote the children first (each: all required deliverables approved, `promotion_plan` → `promotion_start`, then `version_activate`), against the environment's locked direction.
-2. `promotion_plan {assetId:"flatlands", branchId?, members?}` for the environment. `members` is `{[memberAssetId]: versionId}` and pins a member to a specific promoted version. Defaults: REQUIRED members pin their ACTIVE version; OPTIONAL members join only when named in `members`. The plan's `members` rows show every pin (`source` `active`|`explicit`, `versionNumber`, `directionMatches`, `obsolete`).
+1. Promote the children first (each: all required deliverables approved, `promotion.plan` → `promotion.start`, then `version.activate`), against the environment's locked direction.
+2. `promotion.plan {assetId:"flatlands", branchId?, members?}` for the environment. `members` is `{[memberAssetId]: versionId}` and pins a member to a specific promoted version. Defaults: REQUIRED members pin their ACTIVE version; OPTIONAL members join only when named in `members`. The plan's `members` rows show every pin (`source` `active`|`explicit`, `versionNumber`, `directionMatches`, `obsolete`).
 3. Blockers (whole-aggregate; fix, re-plan, show the user):
 
 |Code|Meaning / fix|
@@ -124,7 +124,7 @@ Generated art does not tile by itself. If exact self-wrap is required, plan the 
 |`DIRECTION_MISMATCH`|The member version was generated against another output than THIS environment branch's locked concept: promote a member version made against this direction, or promote the environment branch it used|
 
    A member that no longer matches its own current requirements is shown `obsolete` and does NOT block; it is pinned as it was.
-4. `promotion_start {planId, planHash, requestId}` as for any asset. The aggregate manifest pins every selected member version (`dependencyVersions`, `members` with each child's declared structural metadata, `collectionMembers`). Children promote and activate independently; ACTIVATING the aggregate never changes a child's active pointer.
+4. `promotion.start {planId, planHash, requestId}` as for any asset. The aggregate manifest pins every selected member version (`dependencyVersions`, `members` with each child's declared structural metadata, `collectionMembers`). Children promote and activate independently; ACTIVATING the aggregate never changes a child's active pointer.
 
 ## Export expansion and EXPORT_CONFLICT
 

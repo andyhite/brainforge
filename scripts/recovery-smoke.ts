@@ -243,7 +243,7 @@ class Server {
     return `http://127.0.0.1:${this.port}`;
   }
 
-  /** `human` sends the browser's Origin header (fixture only); `agent` sends none, like the MCP server and CLI. */
+  /** `human` sends the browser's Origin header (fixture only); `agent` sends none, like the CLI. */
   async call<K extends OperationName>(name: K, input: unknown, opts: { as?: "human" | "agent"; requestId?: string; project?: false } = {}): Promise<OperationResult<OperationData<K>>> {
     const headers: Record<string, string> = { "content-type": "application/json" };
     if ((opts.as ?? "human") === "human") headers.origin = this.origin;

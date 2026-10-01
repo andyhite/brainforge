@@ -1,7 +1,9 @@
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { z } from "zod";
-import { ERROR_EXIT_CODE, OPERATIONS, OPERATION_NAMES, ErrorCode, isOperationName, type OperationResult } from "@brainforge/contracts";
-import { DEFAULT_TIMEOUT_MS, callOperation, failure } from "./client.ts";
+import { ERROR_EXIT_CODE, OPERATIONS, OPERATION_NAMES, ErrorCode, Visual, isOperationName, type OperationResult } from "@brainforge/contracts";
+import { DEFAULT_TIMEOUT_MS, callOperation, failure, fetchProjectFile, type CallOptions } from "./client.ts";
 
 export interface CliIo {
   stdout(text: string): void;
@@ -61,6 +63,48 @@ export function exitCodeFor(result: OperationResult): number {
 
 function emit(io: CliIo, value: unknown): void {
   io.stdout(`${JSON.stringify(value)}\n`);
+}
+
+/** Longest edge of the derivative fetched for each visual; sized for model image input. */
+const VISUAL_MAX_EDGE_PX = 1568;
+const IMAGE_EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif" };
+const VisualsData = z.object({ visuals: z.array(Visual).min(1) });
+const ExampleVisualsData = z.object({ examples: z.array(z.object({ visuals: z.array(Visual) })).min(1) });
+
+interface VisualFile { fileId: string; role: string; label: string; path?: string; error?: string }
+
+/**
+ * Saves a model-sized derivative of every image in `data.visuals` (or `data.examples[].visuals`) to a fresh temp
+ * directory so a file-reading agent can look at it. Failures are listed per visual, never dropped silently.
+ */
+async function saveVisuals(data: unknown, options: CallOptions): Promise<VisualFile[]> {
+  const direct = VisualsData.safeParse(data);
+  const examples = ExampleVisualsData.safeParse(data);
+  const visuals = direct.success ? direct.data.visuals : examples.success ? examples.data.examples.flatMap((e) => e.visuals) : [];
+  if (visuals.length === 0) return [];
+  const dir = mkdtempSync(join(tmpdir(), "brainforge-visuals-"));
+  const files: VisualFile[] = [];
+  for (const [index, { fileId, role, label, mediaType }] of visuals.entries()) {
+    const entry: VisualFile = { fileId, role, label };
+    files.push(entry);
+    if (IMAGE_EXT[mediaType] === undefined) {
+      entry.error = `${mediaType} is not an image`;
+      continue;
+    }
+    const fetched = await fetchProjectFile(fileId, { ...options, maxEdgePx: VISUAL_MAX_EDGE_PX });
+    if ("error" in fetched) {
+      entry.error = fetched.error;
+      continue;
+    }
+    const ext = IMAGE_EXT[fetched.mediaType];
+    if (ext === undefined) {
+      entry.error = `server returned ${fetched.mediaType}`;
+      continue;
+    }
+    entry.path = join(dir, `${String(index + 1).padStart(2, "0")}.${ext}`);
+    writeFileSync(entry.path, fetched.bytes);
+  }
+  return files;
 }
 
 /** Runs the CLI; stdout receives exactly one JSON document, diagnostics go to stderr. Returns the exit code. */
@@ -161,7 +205,9 @@ export async function run(argv: string[], env: Record<string, string | undefined
   const serverUrl = env.BF_SERVER_URL?.trim();
   if (serverUrl) callOptions.serverUrl = serverUrl;
   const result = await callOperation(args.op, callOptions);
+  const { requestId: _requestId, input: _input, ...fetchOptions } = callOptions;
+  const visualFiles = result.ok ? await saveVisuals(result.data, fetchOptions) : [];
   process.off("SIGINT", onSigint);
-  emit(io, result);
+  emit(io, visualFiles.length > 0 ? { ...result, visualFiles } : result);
   return exitCodeFor(result);
 }

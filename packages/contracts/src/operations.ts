@@ -18,7 +18,7 @@ export type ActorType = z.infer<typeof ActorType>;
 
 /**
  * Established by the server from the transport, never from request arguments. A request carrying an allowed browser
- * Origin is the web UI (human); any other client (MCP server, CLI, curl) is an agent. This is a trust-the-local-machine
+ * Origin is the web UI (human); any other client (CLI, curl) is an agent. This is a trust-the-local-machine
  * model: there are no credentials, so the distinction guards against accidents and cross-site requests, not a hostile local process.
  */
 export const OperationContext = z.object({
