@@ -7,10 +7,9 @@ export const newId = (prefix: string): string => `${prefix}-${randomBytes(5).toS
 
 /** Job states in which work is still owed by the scheduler (an `unresolved` job waits for a person). */
 export const ACTIVE_STATES = ["queued", "submitting", "running", "collecting"] as const satisfies readonly JobState[];
-export const TERMINAL_STATES = ["succeeded", "failed", "cancelled"] as const satisfies readonly JobState[];
 
 export interface JobError { stage: "upload" | "submit" | "execute" | "download" | "publish"; message: string; recovery: string[] }
-export interface JobUnresolved { reason: "no-match" | "multiple-matches" | "unreachable"; matches: string[]; supersededBy?: string }
+interface JobUnresolved { reason: "no-match" | "multiple-matches" | "unreachable"; matches: string[]; supersededBy?: string }
 
 export interface JobRow {
   job_id: string; run_id: string; asset_id: string; step_id: string; slot: number; attempt: number; label: string; identity: string;
@@ -29,12 +28,12 @@ export function jobError(row: JobRow): JobError | undefined {
   return row.error_json === null ? undefined : (JSON.parse(row.error_json) as JobError);
 }
 
-export function jobUnresolved(row: JobRow): JobUnresolved | undefined {
+function jobUnresolved(row: JobRow): JobUnresolved | undefined {
   return row.unresolved_json === null ? undefined : (JSON.parse(row.unresolved_json) as JobUnresolved);
 }
 
 /** True while the prompt is pending on ComfyUI (so deleting it is safe) or the job has not been submitted. */
-export const isCancellable = (row: JobRow): boolean => row.state === "queued" || (row.state === "running" && (row.queue_position ?? 0) > 0);
+const isCancellable = (row: JobRow): boolean => row.state === "queued" || (row.state === "running" && (row.queue_position ?? 0) > 0);
 
 function actionsFor(row: JobRow): NextAction[] {
   const error = jobError(row);
@@ -135,4 +134,25 @@ export async function patchJob(project: OpenProject, jobId: string, from: readon
 
 export function activeJobCount(db: ProjectHandle["db"]): number {
   return db.query<{ n: number }, []>(`SELECT COUNT(*) AS n FROM generation_jobs WHERE state IN (${ACTIVE_STATES.map((s) => `'${s}'`).join(",")})`).get()?.n ?? 0;
+}
+
+export interface NewCandidate {
+  candidateId: string; assetId: string; stepId: string; runId: string; jobId: string; parentCandidateId: string | null; branchId: string | null;
+  label: string; seed: number | null; prompt: string; createdAt: string;
+}
+
+/** Inserts the candidate row unless it exists; returns its `candidate.created` event, or undefined when it was already there. Call inside a transaction. */
+export function insertCandidate(db: ProjectHandle["db"], c: NewCandidate, actorId: string): { type: string; data: unknown; actorId: string } | undefined {
+  if (db.query("SELECT 1 FROM candidates WHERE candidate_id = ?").get(c.candidateId)) return undefined;
+  db.query("INSERT INTO candidates (candidate_id, asset_id, step_id, run_id, job_id, parent_candidate_id, branch_id, label, seed, prompt, favorite, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)")
+    .run(c.candidateId, c.assetId, c.stepId, c.runId, c.jobId, c.parentCandidateId, c.branchId, c.label, c.seed, c.prompt, c.createdAt);
+  return { type: "candidate.created", data: { candidateId: c.candidateId, assetId: c.assetId, stepId: c.stepId, runId: c.runId, jobId: c.jobId, ...(c.parentCandidateId ? { parentCandidateId: c.parentCandidateId } : {}) }, actorId };
+}
+
+/** Marks a `collecting` job succeeded; returns its `job.changed` event, or undefined when the job had already left `collecting`. Call inside a transaction. */
+export function markJobSucceeded(db: ProjectHandle["db"], jobId: string, candidateId: string, now: string, actorId: string): { type: string; data: unknown; actorId: string } | undefined {
+  const done = db.query("UPDATE generation_jobs SET state = 'succeeded', candidate_id = ?, collected_at = ?, updated_at = ?, queue_position = NULL, error_json = NULL WHERE job_id = ? AND state = 'collecting'").run(candidateId, now, now, jobId);
+  if (done.changes === 0) return undefined;
+  const job = jobRow(db, jobId);
+  return { type: "job.changed", data: { jobId, runId: job.run_id, assetId: job.asset_id, stepId: job.step_id, state: "succeeded", attempt: job.attempt, candidateId }, actorId };
 }

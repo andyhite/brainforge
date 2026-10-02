@@ -7,7 +7,6 @@
     "packages/*"
   ],
   "scripts": {
-    "feasibility": "bun scripts/feasibility.ts",
     "recovery-smoke": "bun scripts/recovery-smoke.ts",
     "audit": "bun scripts/audit-operations.ts",
     "bf": "bun apps/cli/src/main.ts",
@@ -23,11 +22,7 @@
     "turbo": "^2.5.0",
     "typescript": "^5.9.0",
     "@brainforge/contracts": "workspace:*",
-    "@brainforge/storage": "workspace:*",
     "@brainforge/comfy": "workspace:*",
-    "@brainforge/media": "workspace:*",
-    "@brainforge/core": "workspace:*",
-    "@brainforge/server": "workspace:*",
-    "zod": "^4.0.0"
+    "@brainforge/core": "workspace:*"
   }
 }

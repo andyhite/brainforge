@@ -4,7 +4,7 @@ import { profileFor } from "./profiles.ts";
 export const PLACEHOLDER = "REPLACE:";
 const MAX_PIXELS = 8192;
 
-export type Locate = (path: readonly (string | number)[]) => { line: number; column: number } | undefined;
+type Locate = (path: readonly (string | number)[]) => { line: number; column: number } | undefined;
 
 /** Value of a dotted path into any value, or undefined. */
 function valueAt(root: unknown, dotted: string): unknown {
@@ -17,7 +17,7 @@ function valueAt(root: unknown, dotted: string): unknown {
 }
 
 /** Required fields (per the family profile) that the deliverable lacks. `animation.loop` must be written, not defaulted. */
-export function missingFields(spec: AssetSpec, d: Deliverable, rawDeliverable?: unknown): string[] {
+function missingFields(spec: AssetSpec, d: Deliverable, rawDeliverable?: unknown): string[] {
   const required = profileFor(spec.family).requiredFields[d.kind] ?? [];
   return required.filter((path) => {
     if (path === "animation.loop") return rawDeliverable !== undefined && valueAt(rawDeliverable, path) === undefined;

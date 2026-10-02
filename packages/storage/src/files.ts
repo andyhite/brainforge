@@ -1,6 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rename, rm } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import { dirname } from "node:path";
+
+export const isFile = (path: string): Promise<boolean> => stat(path).then((s) => s.isFile(), () => false);
+
+/** fsync a directory so entries created or renamed inside it are durable. */
+export async function syncDir(abs: string): Promise<void> {
+  const fh = await open(abs, "r");
+  try { await fh.sync(); } finally { await fh.close(); }
+}
 
 export const sha256 = (data: Uint8Array | string): string => createHash("sha256").update(data).digest("hex");
 
@@ -36,8 +44,7 @@ export async function writeFileAtomic(abs: string, data: Uint8Array | string, op
     await rm(tmp, { force: true });
     throw e;
   }
-  const dir = await open(dirname(abs), "r");
-  try { await dir.sync(); } finally { await dir.close(); }
+  await syncDir(dirname(abs));
 }
 
 export const writeJsonAtomic = (abs: string, value: unknown) => writeFileAtomic(abs, JSON.stringify(value, null, 2) + "\n");

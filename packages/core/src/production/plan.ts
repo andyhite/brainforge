@@ -6,7 +6,8 @@ import { discoverAuthored, type AuthoredSet } from "../authored.ts";
 import { branchSpecHashes, resolveDefaultBranchId, savedInputs } from "../branches/basis.ts";
 import { assetInputDifferences } from "../branches/diff.ts";
 import { stylesFor } from "../generation/prompt.ts";
-import { normalizedHash } from "../operations.ts";
+import { loadPlanRow, normalizedHash } from "../operations.ts";
+import { agentDenial } from "../policy.ts";
 import { buildPipeline } from "../pipeline.ts";
 import { openFeedbackCount } from "../pipeline/steps.ts";
 import { recordedDirections } from "../environments/direction.ts";
@@ -28,7 +29,7 @@ export interface SourceFile {
   size: number;
 }
 
-export interface EvalRow {
+interface EvalRow {
   row: PromotionDeliverableRow;
   dependsOn: string[];
   decisionId?: string;
@@ -70,12 +71,7 @@ export interface Capability { policy: string; allowed: boolean; reason?: string;
 export function capabilityFor(view: PolicyView, field: "promotion" | "activation", actorType: ActorType): Capability {
   const policy = view.effective[field];
   if (actorType === "human" || policy !== "human") return { policy, allowed: true };
-  const requested = view.requested[field];
-  const pending = requested !== policy && view.pendingRelaxation && (requested === "agent" || requested === "agent_with_escalation");
-  const verb = field === "promotion" ? "promote" : "activate";
-  const denial = pending
-    ? { code: "POLICY_PENDING" as const, message: `project.yaml requests that agents may ${verb} (approval.${field}: ${requested}), but a human has not confirmed that change. Ask the user to confirm it in Settings.` }
-    : { code: "HUMAN_AUTHORIZATION_REQUIRED" as const, message: `Only the user may ${verb} under the current approval policy (${field}: ${policy}). Tell the user it is ready for them.` };
+  const denial = agentDenial(view, field, field === "promotion" ? "promote" : "activate", "Tell the user it is ready for them.");
   return { policy, allowed: false, reason: denial.message, denial };
 }
 
@@ -117,7 +113,7 @@ function outputFiles(open: OpenProject, out: FrameOutputRow, folder: string): So
 
 interface BranchRow { branch_id: string; asset_id: string; concept_candidate_id: string; concept_output_id: string; concept_output_hash: string; requirements_hash: string; input_mode: InputMode; spec_hashes_json: string }
 
-export function resolveBranch(open: OpenProject, assetId: string, branchId: string | undefined): BranchRow {
+function resolveBranch(open: OpenProject, assetId: string, branchId: string | undefined): BranchRow {
   if (branchId !== undefined) {
     const row = open.db.query<BranchRow, [string, string]>("SELECT * FROM branches WHERE branch_id = ? AND asset_id = ?").get(branchId, assetId);
     if (!row) throw new OperationFailure("NOT_FOUND", `Asset ${assetId} has no branch ${branchId}`, undefined, [action("List branches", "branch.list", { assetId })]);
@@ -328,8 +324,7 @@ export function storePlan(open: OpenProject, plan: PromotionPlan, actorId: strin
 }
 
 export function loadPlan(open: OpenProject, planId: string): { assetId: string; branchId: string; planHash: string; members: Record<string, string> } {
-  const row = open.db.query<{ asset_id: string; branch_id: string; plan_hash: string; plan_json: string }, [string]>("SELECT asset_id, branch_id, plan_hash, plan_json FROM promotion_plans WHERE plan_id = ?").get(planId);
-  if (!row) throw new OperationFailure("NOT_FOUND", `No promotion plan ${planId}`, undefined, [action("Plan the promotion", "promotion.plan")]);
+  const row = loadPlanRow<{ asset_id: string; branch_id: string; plan_hash: string; plan_json: string }>(open.db, "promotion_plans", planId, "promotion plan", action("Plan the promotion", "promotion.plan"));
   // Start re-evaluates with exactly the explicit member pins the plan showed.
   const stored: { members?: { assetId: string; versionId?: string; source?: string }[] } = JSON.parse(row.plan_json);
   const members = Object.fromEntries((stored.members ?? []).flatMap((m) => (m.source === "explicit" && m.versionId ? [[m.assetId, m.versionId] as const] : [])));

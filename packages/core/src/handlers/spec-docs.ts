@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { AssetSpec, ProjectSpec, StyleSpec } from "@brainforge/contracts";
 import { sha256 } from "@brainforge/storage";
-import { classifyAuthoredPath, parseAuthored, readAuthoredFile } from "../authored.ts";
-import { OperationFailure, type HandlerMap } from "../runtime.ts";
-import { requireOpen } from "./common.ts";
+import { parseAuthored, readAuthoredFile } from "../authored.ts";
+import type { HandlerMap } from "../runtime.ts";
+import { authoredPath } from "./common.ts";
 import { SPEC_EXAMPLES } from "./spec-examples.ts";
 
 const SCHEMAS = { project: ProjectSpec, style: StyleSpec, asset: AssetSpec } as const;
@@ -24,14 +24,8 @@ export const specDocHandlers: HandlerMap = {
     };
   },
 
-  "spec.validate": async ({ input, project }) => {
-    const open = requireOpen(project);
-    const c = classifyAuthoredPath(input.path);
-    if (!c) {
-      throw new OperationFailure("INVALID_INPUT", `${input.path} is not an authored file location`, {
-        allowed: ["brainforge/project.yaml", "brainforge/styles/<style-id>.yaml", "brainforge/assets/<asset-id>/asset.yaml"],
-      });
-    }
+  "spec.validate": async ({ input, project: open }) => {
+    const c = authoredPath(input.path);
     const parsed = parseAuthored(c.kind, c.path, c.id, input.text);
     const current = await readAuthoredFile(open.root, c.path);
     return {

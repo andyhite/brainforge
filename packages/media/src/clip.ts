@@ -1,8 +1,8 @@
 import type { ProcessingRecipe } from "@brainforge/contracts";
 import sharp from "sharp";
-import { buildAtlas, atlasLayout, type BuiltAtlas } from "./atlas.ts";
+import { buildAtlas, layoutSprites, type BuiltAtlas } from "./atlas.ts";
 import { decodeRgba, MediaError } from "./decode.ts";
-import { applyFraming, foregroundBounds, shiftCanvas, snapNearOpaque, type Bounds } from "./frame.ts";
+import { applyFraming, foregroundBounds, shiftCanvas, snapNearOpaque, touchesEdge, type Bounds } from "./frame.ts";
 import { fitFrame } from "./fit.ts";
 import { resample, type ResampledFrame } from "./resample.ts";
 
@@ -77,8 +77,6 @@ const union = (a: Bounds | undefined, b: Bounds): Bounds => {
   return { x, y, width: Math.max(a.x + a.width, b.x + b.width) - x, height: Math.max(a.y + a.height, b.y + b.height) - y };
 };
 
-const touchesEdge = (b: Bounds, w: number, h: number): boolean => b.x <= 0 || b.y <= 0 || b.x + b.width >= w || b.y + b.height >= h;
-
 /**
  * Executes a ProcessingRecipe on an ordered source frame sequence. One uniform scale comes from the recipe's scale
  * anchor and one fixed placement from its feet point; nothing is refit per frame or per clip. `crop` selects the
@@ -126,7 +124,7 @@ export async function processClip(sourceFrames: Uint8Array[], sourceFps: number,
     offsets.set(o.index, { dx: o.dx, dy: o.dy });
   }
   const packing = recipe.packaging === "frames" || opts.pack === false ? undefined : recipe.atlas;
-  if (packing) atlasLayout(output.width, output.height, schedule.length, packing);
+  if (packing) layoutSprites(schedule.map((_, i) => ({ id: String(i), width: output.width, height: output.height })), packing);
 
   const scale = anchor ? anchor.targetStandingHeightPx / anchor.sourceStandingHeightPx : output.width / crop.width;
   const transform = anchor ? {

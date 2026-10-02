@@ -1,13 +1,13 @@
 import { mkdir, lstat, open, readFile, readlink, rename, rm, stat, symlink, unlink } from "node:fs/promises";
 import path from "node:path";
-import { ExportManifest, type ExportOwnedFile } from "@brainforge/contracts";
+import { ExportManifest, type ExportIntent, type ExportOwnedFile } from "@brainforge/contracts";
 import { buildSnapshot, validateSnapshot } from "./generic.ts";
 import {
   ExportError, InjectedFault, copyInto, diffEntries, fsyncDirs, fsyncPath, hashEntries, isEnoent, removeVerifiedFiles, safeJoin,
   sha256Bytes, walkFiles,
 } from "./fs.ts";
 import { checkGodotRoot } from "./godot4.ts";
-import type { CommitResult, ExpectedCurrent, ExportFaults, ExportInput, ExportIntent, PrepareResult, RecoverResult } from "./types.ts";
+import type { CommitResult, ExpectedCurrent, ExportFault, ExportInput, PrepareResult, RecoverResult } from "./types.ts";
 
 const RELEASES = ".releases";
 const CURRENT = "current";
@@ -111,7 +111,7 @@ async function ensureReleasesDir(destinationAbs: string): Promise<void> {
 
 type CurrentState = { kind: "missing" } | { kind: "release"; exportId: string };
 
-async function readCurrent(destinationAbs: string): Promise<CurrentState> {
+export async function readCurrent(destinationAbs: string): Promise<CurrentState> {
   const link = path.join(destinationAbs, CURRENT);
   let st;
   try {
@@ -183,8 +183,8 @@ const sameEntries = (a: ExportOwnedFile[], b: ExportOwnedFile[]): boolean =>
  * carried-over unowned files), validates, fsyncs and renames it to `.releases/<export-id>`. `current` is not touched.
  * Throws {@link ExportError} (`EXPORT_CONFLICT`, `EXPORT_BLOCKED`, `INVALID_INPUT`, `IO_ERROR`).
  */
-export async function prepareExport(args: { destinationAbs: string; input: ExportInput; expectedCurrent?: ExpectedCurrent; faults?: ExportFaults }): Promise<PrepareResult> {
-  const { destinationAbs, input, expectedCurrent, faults = {} } = args;
+export async function prepareExport(args: { destinationAbs: string; input: ExportInput; expectedCurrent?: ExpectedCurrent; fault?: ExportFault }): Promise<PrepareResult> {
+  const { destinationAbs, input, expectedCurrent, fault } = args;
   if (input.preset === "godot4") {
     if (!input.godot) throw new ExportError("EXPORT_BLOCKED", "godot4 export requires a Godot target", { field: "godotProjectRoot" });
     const check = await checkGodotRoot({ godotProjectRootAbs: input.godot.projectRootAbs, destinationAbs });
@@ -214,7 +214,7 @@ export async function prepareExport(args: { destinationAbs: string; input: Expor
 
     await mkdir(staging);
     try {
-      const outcome = await buildSnapshot(input, staging, faults);
+      const outcome = await buildSnapshot(input, staging, fault);
       const owned = new Set(outcome.ownedFiles.map((f) => f.path));
       const carried: ExportOwnedFile[] = [];
       for (const file of previous?.unowned ?? []) {
@@ -303,8 +303,8 @@ async function removePreparedRelease(destinationAbs: string, intent: ExportInten
  * (the sole success boundary), then retires the previous release. Pre-switch failures leave the prior `current` untouched and
  * remove the prepared release; post-switch retirement problems are returned as warnings on a committed result.
  */
-export async function commitExport(args: { destinationAbs: string; intent: ExportIntent; faults?: ExportFaults }): Promise<CommitResult> {
-  const { destinationAbs, intent, faults = {} } = args;
+export async function commitExport(args: { destinationAbs: string; intent: ExportIntent; fault?: ExportFault }): Promise<CommitResult> {
+  const { destinationAbs, intent, fault } = args;
   return withDestinationLock(destinationAbs, async () => {
     const releaseAbs = path.join(destinationAbs, RELEASES, intent.exportId);
     const current = await readCurrent(destinationAbs);
@@ -315,13 +315,13 @@ export async function commitExport(args: { destinationAbs: string; intent: Expor
     }
     try {
       await verifyPrepared(destinationAbs, intent, current);
-      if (faults.failBeforeSwitch) throw new InjectedFault("failBeforeSwitch");
+      if (fault === "fail-before-switch") throw new InjectedFault(fault);
     } catch (e) {
       if (!(e instanceof InjectedFault)) await removePreparedRelease(destinationAbs, intent).catch(() => []);
       throw e;
     }
     await switchCurrent(destinationAbs, intent.exportId);
-    if (faults.failAfterSwitchBeforeRetire) throw new InjectedFault("failAfterSwitchBeforeRetire");
+    if (fault === "fail-after-switch") throw new InjectedFault(fault);
     const warnings = intent.previous ? await retirePrevious(destinationAbs, intent.previous) : [];
     return { status: "committed", manifestSha256: intent.manifestSha256, publicRoot: CURRENT, warnings };
   });

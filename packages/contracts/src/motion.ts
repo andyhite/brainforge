@@ -1,8 +1,7 @@
 import { z } from "zod";
+import { Sha256 } from "./authored.ts";
 import { PlanBlocker } from "./generation.ts";
 import { ProcessingRecipe } from "./processing.ts";
-
-const Sha256 = z.string().regex(/^[0-9a-f]{64}$/);
 
 /** One frame of a source sequence or a processed clip. `fileId` serves the PNG through the files route. */
 export const FrameInfo = z.object({

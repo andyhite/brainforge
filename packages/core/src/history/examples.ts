@@ -27,7 +27,7 @@ interface Ranked {
  * Pages of `limit` that keep up to half accepted and half rejected, filling the remainder from the side with more
  * left, each page in rank order; concatenated they are the one ordering that offset pagination slices.
  */
-export function balancedOrder<T extends { outcome: "accepted" | "rejected" }>(ranked: readonly T[], limit: number): T[] {
+function balancedOrder<T extends { outcome: "accepted" | "rejected" }>(ranked: readonly T[], limit: number): T[] {
   const left = [...ranked];
   const out: T[] = [];
   while (left.length > 0) {

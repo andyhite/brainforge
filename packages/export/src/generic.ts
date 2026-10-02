@@ -10,7 +10,7 @@ import {
 import { ExportError, InjectedFault, copyInto, fsyncPath, readPngSize, safeJoin, sha256Bytes, sha256File, writeSynced } from "./fs.ts";
 import { planGodotFiles, type GodotFile } from "./godot4.ts";
 import { SPRITE_ATLAS, planSprites, spriteAtlasPath, spriteRect, spritesDocument, spritesJsonPath, type SpritePlan, type SpritesDocument } from "./sprites.ts";
-import type { ExportAsset, ExportDeliverable, ExportFaults, ExportInput, ExportOutcome } from "./types.ts";
+import type { ExportAsset, ExportDeliverable, ExportFault, ExportInput, ExportOutcome } from "./types.ts";
 
 const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -125,7 +125,7 @@ function animationFile(asset: ExportAsset, d: AnimationDeliverable): { doc: Anim
   return { doc, copies, files };
 }
 
-function planFiles(input: ExportInput): Planned & { assets: ExportManifest["assets"] } {
+export function planFiles(input: ExportInput): Planned & { assets: ExportManifest["assets"] } {
   const godot = input.preset === "godot4" ? planGodotFiles(input) : [];
   const planned: Planned = { copies: [], texts: godot.map((g) => ({ path: g.path, text: g.text })), spriteAtlases: [] };
   const manifestAssets: ExportManifest["assets"] = [];
@@ -179,7 +179,7 @@ function planFiles(input: ExportInput): Planned & { assets: ExportManifest["asse
  * Writes the complete snapshot tree (generic files, Godot resources, then `manifest.json`) into `root`, which must be an
  * existing empty directory. Every file is fsynced and hashed. Pure given its input: no timestamps except `createdAt`.
  */
-export async function buildSnapshot(input: ExportInput, root: string, faults: ExportFaults = {}): Promise<ExportOutcome> {
+export async function buildSnapshot(input: ExportInput, root: string, fault?: ExportFault): Promise<ExportOutcome> {
   validateInput(input);
   const plan = planFiles(input);
   const owned: ExportOwnedFile[] = [];
@@ -198,7 +198,7 @@ export async function buildSnapshot(input: ExportInput, root: string, faults: Ex
 
   let written = 0;
   for (const copy of plan.copies) {
-    if (faults.failDuringStaging && written === 1) throw new InjectedFault("failDuringStaging");
+    if (fault === "fail-during-staging" && written === 1) throw new InjectedFault(fault);
     const size = await readPngSize(copy.source);
     if (copy.expect && (size.width !== copy.expect.width || size.height !== copy.expect.height)) {
       throw new ExportError("INVALID_INPUT", `${copy.source} is ${size.width}x${size.height}, expected ${copy.expect.width}x${copy.expect.height} for ${copy.dest}`, { reason: "dimension-mismatch", path: copy.source });
@@ -210,14 +210,14 @@ export async function buildSnapshot(input: ExportInput, root: string, faults: Ex
     written++;
   }
   for (const text of plan.texts) {
-    if (faults.failDuringStaging && written === 1) throw new InjectedFault("failDuringStaging");
+    if (fault === "fail-during-staging" && written === 1) throw new InjectedFault(fault);
     const abs = await place(text.path);
     await writeSynced(abs, text.text);
     await record(text.path, abs);
     written++;
   }
   for (const { asset, sprites } of plan.spriteAtlases) {
-    if (faults.failDuringStaging && written === 1) throw new InjectedFault("failDuringStaging");
+    if (fault === "fail-during-staging" && written === 1) throw new InjectedFault(fault);
     const sources: { id: string; png: Uint8Array }[] = [];
     for (const d of sprites.members) {
       const size = await readPngSize(d.media.sourcePath);
@@ -235,7 +235,7 @@ export async function buildSnapshot(input: ExportInput, root: string, faults: Ex
       written++;
     }
   }
-  if (faults.failDuringStaging) throw new InjectedFault("failDuringStaging");
+  if (fault === "fail-during-staging") throw new InjectedFault(fault);
 
   owned.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const manifest: ExportManifest = {
@@ -277,6 +277,15 @@ export async function validateSnapshot(root: string, expectedManifestSha256?: st
   return manifest;
 }
 
+/** Every declared atlas page must be an owned file with the declared dimensions. */
+async function checkAtlasPages(root: string, dir: string, pages: readonly { page: number; file: string; width: number; height: number }[], known: Set<string>, fail: (message: string) => never): Promise<void> {
+  for (const page of pages) {
+    if (!known.has(`${dir}/${page.file}`)) fail(`atlas page ${page.page} file ${page.file} does not exist`);
+    const size = await readPngSize(safeJoin(root, `${dir}/${page.file}`));
+    if (size.width !== page.width || size.height !== page.height) fail(`atlas page ${page.page} is ${size.width}x${size.height}, declared ${page.width}x${page.height}`);
+  }
+}
+
 async function validateAnimationFiles(root: string, animationRel: string, known: Set<string>): Promise<void> {
   const doc = JSON.parse(await readFile(safeJoin(root, animationRel), "utf8")) as AnimationDocument;
   const dir = path.posix.dirname(animationRel);
@@ -302,11 +311,7 @@ async function validateAnimationFiles(root: string, animationRel: string, known:
     }
     if (f.file === undefined && !f.atlas) fail(`frame ${i} has no image`);
   }
-  for (const page of doc.atlasPages ?? []) {
-    if (!known.has(`${dir}/${page.file}`)) fail(`atlas page ${page.page} file ${page.file} does not exist`);
-    const size = await readPngSize(safeJoin(root, `${dir}/${page.file}`));
-    if (size.width !== page.width || size.height !== page.height) fail(`atlas page ${page.page} is ${size.width}x${size.height}, declared ${page.width}x${page.height}`);
-  }
+  await checkAtlasPages(root, dir, doc.atlasPages ?? [], known, fail);
 }
 
 /** sprites.json must point at existing atlas pages and keep every rectangle inside its page. */
@@ -317,11 +322,7 @@ async function validateSpritesFile(root: string, spritesRel: string, known: Set<
     throw new ExportError("EXPORT_CONFLICT", `${spritesRel}: ${message}`, { reason: "sprites-mismatch", path: spritesRel });
   };
   if (doc.schema !== "brainforge.sprites.v2") fail(`unexpected schema ${String(doc.schema)}`);
-  for (const page of doc.atlasPages) {
-    if (!known.has(`${dir}/${page.file}`)) fail(`atlas page ${page.page} file ${page.file} does not exist`);
-    const size = await readPngSize(safeJoin(root, `${dir}/${page.file}`));
-    if (size.width !== page.width || size.height !== page.height) fail(`atlas page ${page.page} is ${size.width}x${size.height}, declared ${page.width}x${page.height}`);
-  }
+  await checkAtlasPages(root, dir, doc.atlasPages, known, fail);
   for (const s of doc.sprites) {
     const page = doc.atlasPages.find((p) => p.page === s.page);
     if (!page) fail(`sprite ${s.id} uses missing atlas page ${s.page}`);

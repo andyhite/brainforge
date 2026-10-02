@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import type { EffectiveLeaf } from "@brainforge/contracts";
 import { useOperation } from "../api/hooks.ts";
 import { specRoute } from "../lib/use-project.ts";
-import { Banner, ErrorBanner, NetworkProblem, Status } from "./ui.tsx";
+import { Banner, gate, Status } from "./ui.tsx";
 
 const LAYER_LABEL: Record<EffectiveLeaf["source"]["layer"], string> = {
   "project-defaults": "Project defaults",
@@ -23,11 +23,9 @@ export function EffectiveSettings({ assetId }: { assetId?: string }) {
   const query = useOperation("settings.inspect", assetId ? { assetId } : {});
   const [filter, setFilter] = useState("");
 
-  if (query.error) return <NetworkProblem error={query.error} />;
-  if (!query.data) return <p className="secondary">Loading effective settings…</p>;
-  if (!query.data.ok) return <ErrorBanner error={query.data.error} />;
-
-  const { effective, conflicts } = query.data.data;
+  const g = gate(query, "Loading effective settings…", false);
+  if ("node" in g) return g.node;
+  const { effective, conflicts } = g.data;
   const needle = filter.trim().toLowerCase();
   const rows = Object.entries(effective)
     .filter(([key]) => needle === "" || key.toLowerCase().includes(needle))

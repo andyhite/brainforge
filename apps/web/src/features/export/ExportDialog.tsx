@@ -1,8 +1,7 @@
-import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { ExportPlan, ExportRecord, OperationError } from "@brainforge/contracts";
-import { callOperation, newRequestId } from "../../api/client.ts";
+import { useMutationOperation } from "../../api/hooks.ts";
 import { Banner, ErrorBanner, Modal } from "../../components/ui.tsx";
 import { paths } from "../../lib/paths.ts";
 import { useProjectRoot } from "../../lib/project-context.tsx";
@@ -37,41 +36,35 @@ export function ExportDialog({ assets, onClose, onInspect }: {
   assets: Array<{ assetId: string; name?: string | undefined }>; onClose: () => void; onInspect: (exportId: string) => void;
 }) {
   const { root } = useProjectRoot();
-  const queryClient = useQueryClient();
+  const planM = useMutationOperation("export.plan");
+  const startM = useMutationOperation("export.start");
   const [subset, setSubset] = useState<string[] | null>(null);
   const [pins, setPins] = useState<Record<string, string>>({});
   const [confirmEmpty, setConfirmEmpty] = useState(false);
   const [plan, setPlan] = useState<ExportPlan | undefined>(undefined);
-  const [planning, setPlanning] = useState(false);
+  const planning = planM.isPending;
   const [planError, setPlanError] = useState<OperationError | undefined>(undefined);
   const [startError, setStartError] = useState<OperationError | undefined>(undefined);
-  const [network, setNetwork] = useState<string | undefined>(undefined);
-  const [starting, setStarting] = useState(false);
+  const network = planM.error?.message ?? startM.error?.message;
+  const starting = startM.isPending;
   const [done, setDone] = useState<ExportRecord | undefined>(undefined);
-  const pending = useRef<{ planId: string; planHash: string; requestId: string } | undefined>(undefined);
   const generation = useRef(0);
   const doneRef = useRef<HTMLDivElement>(null);
 
   const runPlan = useCallback(async () => {
     const mine = ++generation.current;
-    setPlanning(true);
     setPlanError(undefined);
-    setNetwork(undefined);
     try {
-      const result = await callOperation("export.plan", {
-        project: root,
+      const result = await planM.mutateAsync({
         input: { ...(subset ? { assetIds: subset } : {}), ...(Object.keys(pins).length > 0 ? { versions: pins } : {}), confirmEmpty },
       });
       if (mine !== generation.current) return;
-      if (result.ok) {
-        setPlan(result.data.plan);
-        pending.current = undefined;
-      } else setPlanError(result.error);
-    } catch (error) {
-      if (mine === generation.current) setNetwork(error instanceof Error ? error.message : "Request failed");
-    } finally {
-      if (mine === generation.current) setPlanning(false);
+      if (result.ok) setPlan(result.data.plan);
+      else setPlanError(result.error);
+    } catch {
+      // Network loss: shown via `network`.
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mutateAsync is stable
   }, [root, subset, pins, confirmEmpty]);
 
   useEffect(() => { if (root) void runPlan(); }, [root, runPlan]);
@@ -79,29 +72,15 @@ export function ExportDialog({ assets, onClose, onInspect }: {
 
   const start = async () => {
     if (!plan) return;
-    // One request id per plan: a retry after a lost response returns the same export instead of publishing twice.
-    if (pending.current?.planId !== plan.planId || pending.current.planHash !== plan.planHash) {
-      pending.current = { planId: plan.planId, planHash: plan.planHash, requestId: newRequestId() };
-    }
-    const { requestId } = pending.current;
-    setStarting(true);
     setStartError(undefined);
-    setNetwork(undefined);
     try {
-      const result = await callOperation("export.start", { project: root, requestId, input: { planId: plan.planId, planHash: plan.planHash, requestId } });
+      const result = await startM.mutateAsync({ input: { planId: plan.planId, planHash: plan.planHash } });
       if (result.ok) {
-        pending.current = undefined;
         setDone(result.data.export);
-        void queryClient.invalidateQueries({ queryKey: ["op"] });
         void runPlan();
-      } else {
-        pending.current = undefined;
-        setStartError(result.error);
-      }
-    } catch (error) {
-      setNetwork(error instanceof Error ? error.message : "Request failed");
-    } finally {
-      setStarting(false);
+      } else setStartError(result.error);
+    } catch {
+      // Network loss: shown via `network`; the mutation keeps its request id for the retry.
     }
   };
 

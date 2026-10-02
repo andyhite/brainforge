@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { AssetFamily, FamilyProfile } from "@brainforge/contracts";
+import type { FamilyProfile } from "@brainforge/contracts";
 import { useOperation } from "../../api/hooks.ts";
 
 /** The built-in family catalog (family.list needs no project). */
@@ -27,17 +27,6 @@ export const MOTION_TEXT: Record<FamilyProfile["motion"], string> = {
   optional: "Optional animation",
   none: "Static — no motion",
 };
-
-/** Short family-aware hint shown next to the family label in lists. */
-export function familyHint(profile: FamilyProfile | undefined): string {
-  if (!profile) return "";
-  return `${ALPHA_TEXT[profile.alpha]} · ${MOTION_TEXT[profile.motion]}`;
-}
-
-export function FamilyChip({ family, profile }: { family: AssetFamily | string | undefined; profile?: FamilyProfile | undefined }) {
-  if (!family) return <span className="secondary">—</span>;
-  return <span className="chip family-chip" title={profile ? `${profile.summary}\n${familyHint(profile)}` : undefined}>{profile?.label ?? family}</span>;
-}
 
 /** Warnings (REPLACE: placeholders, missing production fields) never make a file invalid; only errors count. */
 export function splitProblems<T extends { severity?: "error" | "warning" | undefined }>(problems: T[]): { errors: T[]; warnings: T[] } {

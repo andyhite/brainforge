@@ -2,25 +2,12 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { BranchPlan, InputMode } from "@brainforge/contracts";
 import { useMutationOperation, useOperation } from "../../api/hooks.ts";
-import { ActionLinks, Banner, ErrorBanner, formatTime, Modal, NetworkProblem, Status } from "../../components/ui.tsx";
+import { Blockers, formatTime, Modal, OpResult, Status } from "../../components/ui.tsx";
 import { DeliverableThumb } from "../production/DeliverableThumb.tsx";
 import { paths } from "../../lib/paths.ts";
 import { DifferencesTable, INPUT_MODE_TEXT, ReassessmentReasons } from "./shared.tsx";
 
 interface Source { assetId: string; candidateId: string; outputId: string | undefined }
-
-/** Opens the pre-generation screen for continuing from one candidate. Concepts lock; everything else branches. */
-export function ContinueButton({ assetId, candidateId, outputId, label = "Continue from here", ariaLabel, disabled, fixedMode }: Source & {
-  label?: string; ariaLabel?: string; disabled?: boolean; fixedMode?: InputMode;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <button type="button" disabled={disabled} aria-label={ariaLabel} onClick={() => setOpen(true)}>{label}</button>
-      {open ? <ContinueDialog assetId={assetId} candidateId={candidateId} outputId={outputId} fixedMode={fixedMode} onClose={() => setOpen(false)} /> : null}
-    </>
-  );
-}
 
 function PlanSections({ plan, assetId }: { plan: BranchPlan; assetId: string }) {
   // A carried note lives on a candidate; its room is the deliverable that candidate was reused for.
@@ -101,7 +88,6 @@ export function ContinueDialog({ assetId, candidateId, outputId, fixedMode, onCl
     { value: "saved", title: INPUT_MODE_TEXT.saved, body: savedFrom ? `The authored inputs this work was made with (branch ${savedFrom.name}, locked ${formatTime(savedFrom.lockedAt)}, requirements ${savedFrom.requirementsHash.slice(0, 12)}). Default.` : "The authored inputs this candidate was generated with. Default." },
     { value: "current", title: INPUT_MODE_TEXT.current, body: "The authored files as they are now. Anything that changed since marks the reused work for reassessment." },
   ];
-  const result = lock.data ?? create.data;
 
   return (
     <Modal open onOpenChange={(next) => { if (!next) onClose(); }} title={heading} description={rebase ? "Creates a new branch on the current authored inputs, reusing only work whose inputs are unchanged. The existing branch keeps all of its work." : concept ? "Locking starts production for this asset from this exact output." : "Creates a new branch from this output. The existing branch keeps all of its work."}>
@@ -121,8 +107,7 @@ export function ContinueDialog({ assetId, candidateId, outputId, fixedMode, onCl
         )}
 
         <div aria-live="polite" aria-busy={plan.isFetching}>
-          {plan.error ? <NetworkProblem error={plan.error} /> : null}
-          {plan.data && !plan.data.ok ? <ErrorBanner error={plan.data.error} /> : null}
+          <OpResult m={plan} />
           {!current && !plan.data && !plan.error ? <p className="secondary" role="status">Planning…</p> : null}
           {current ? (
             <div className="branch-plan">
@@ -138,12 +123,7 @@ export function ContinueDialog({ assetId, candidateId, outputId, fixedMode, onCl
                 ) : null}
               </section>
               <PlanSections plan={current} assetId={assetId} />
-              {current.blockers.map((blocker) => (
-                <Banner key={`${blocker.code}-${blocker.message}`} tone="warn" title={blocker.code.replaceAll("-", " ").replaceAll("_", " ")} actions={<ActionLinks actions={blocker.recoveryActions} />}>
-                  {blocker.message}
-                  {blocker.recoveryActions.filter((action) => !action.url && !(action.operation && action.input !== undefined)).map((action) => <div key={action.label} className="secondary">{action.label}</div>)}
-                </Banner>
-              ))}
+              <Blockers items={current.blockers} label="Branch blockers" />
               <p id="bp-auth" className="auth">
                 {concept ? <>Locking a concept needs <strong>{current.authorization.policy}</strong>.</> : <>Creating this branch needs <strong>{current.authorization.policy}</strong>.</>}{" "}
                 {current.authorization.allowed ? <Status tone="ok">You may do this</Status> : <><Status tone="warn">Not allowed</Status> {current.authorization.reason ?? "The effective policy does not permit you to do this."}</>}
@@ -160,9 +140,8 @@ export function ContinueDialog({ assetId, candidateId, outputId, fixedMode, onCl
           <label htmlFor="cont-reason">Reason (optional)</label>
           <textarea id="cont-reason" rows={2} maxLength={2000} value={reason} onChange={(event) => setReason(event.target.value)} style={{ width: "100%" }} />
         </div>
-        {lock.error ? <NetworkProblem error={lock.error} /> : null}
-        {create.error ? <NetworkProblem error={create.error} /> : null}
-        {result && !result.ok ? <ErrorBanner error={result.error} /> : null}
+        <OpResult m={lock} />
+        <OpResult m={create} />
         <div className="row end">
           <button type="button" onClick={onClose}>Cancel</button>
           <button type="submit" className="primary" disabled={!canStart} aria-describedby="bp-auth">

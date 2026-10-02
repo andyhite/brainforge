@@ -31,22 +31,8 @@ export interface FramingTransform {
   subjectHeightPx: number;
 }
 
-/**
- * Fixed transform calibrated from a neutral reference: uniform scale puts the
- * foreground's standing height at `subjectHeightPx`; the foreground bottom-centre
- * maps to `anchor` (default: centred horizontally, 12px above the bottom edge).
- */
-export function calibrateFraming(sourceBounds: Bounds, opts: {
-  subjectHeightPx: number; canvas: { width: number; height: number }; anchor?: { x: number; y: number };
-}): FramingTransform {
-  return {
-    scale: opts.subjectHeightPx / sourceBounds.height,
-    canvas: opts.canvas,
-    anchor: opts.anchor ?? { x: opts.canvas.width / 2, y: opts.canvas.height - 12 },
-    sourceBounds,
-    subjectHeightPx: opts.subjectHeightPx,
-  };
-}
+/** True when the foreground box reaches a canvas edge. */
+export const touchesEdge = (b: Bounds, w: number, h: number): boolean => b.x <= 0 || b.y <= 0 || b.x + b.width >= w || b.y + b.height >= h;
 
 /** Applies a calibrated transform to a same-sized source; throws `clipped` if foreground leaves the canvas. */
 export async function applyFraming(png: Uint8Array, t: FramingTransform): Promise<{ png: Uint8Array; clipped: boolean }> {
@@ -67,15 +53,7 @@ export async function applyFraming(png: Uint8Array, t: FramingTransform): Promis
   if (cw <= 0 || ch <= 0) throw new MediaError("clipped", "framing places the subject wholly outside the canvas");
   const piece = await sharp(scaled).extract({ left: sx, top: sy, width: cw, height: ch }).png().toBuffer();
   const out = await base.composite([{ input: piece, left: dx, top: dy }]).png().toBuffer();
-  // Clipped if any foreground touches a canvas edge.
-  const edge = await decodeRgba(out);
-  let clipped = false;
-  for (let x = 0; x < edge.width && !clipped; x++) {
-    if ((edge.data[x * 4 + 3] ?? 0) > 16 || (edge.data[((edge.height - 1) * edge.width + x) * 4 + 3] ?? 0) > 16) clipped = true;
-  }
-  for (let y = 0; y < edge.height && !clipped; y++) {
-    if ((edge.data[y * edge.width * 4 + 3] ?? 0) > 16 || (edge.data[(y * edge.width + edge.width - 1) * 4 + 3] ?? 0) > 16) clipped = true;
-  }
+  const clipped = await foregroundBounds(out).then((b) => touchesEdge(b, t.canvas.width, t.canvas.height), () => false); // no foreground: nothing touches an edge
   return { png: out, clipped };
 }
 
@@ -102,53 +80,6 @@ export async function snapNearOpaque(png: Uint8Array): Promise<Uint8Array> {
   const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   for (let i = 3; i < data.length; i += 4) if (data[i]! >= NEAR_OPAQUE_ALPHA) data[i] = 255;
   return sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png({ compressionLevel: 9, palette: false }).toBuffer();
-}
-
-export type FieldBackground = "dark" | "light" | "checker";
-
-async function backgroundField(kind: FieldBackground, width: number, height: number): Promise<Buffer> {
-  if (kind === "checker") {
-    const tile = 16;
-    const rects: string[] = [];
-    for (let y = 0; y < height; y += tile) for (let x = 0; x < width; x += tile) {
-      if (((x / tile) + (y / tile)) % 2 === 0) rects.push(`<rect x="${x}" y="${y}" width="${tile}" height="${tile}" fill="#b8b8b8"/>`);
-    }
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="#e6e6e6"/>${rects.join("")}</svg>`;
-    return sharp(Buffer.from(svg)).png().toBuffer();
-  }
-  const c = kind === "dark" ? { r: 34, g: 36, b: 42 } : { r: 236, g: 232, b: 222 };
-  return sharp({ create: { width, height, channels: 3, background: c } }).png().toBuffer();
-}
-
-/**
- * 1280x720 comparison field: the framed canvas displayed at several standing
- * heights side by side, feet on a shared baseline. `canvasSubjectHeightPx` is
- * the standing height inside the framed canvas (display scale = H / that).
- */
-export async function comparisonField(framed: Uint8Array, opts: {
-  background: FieldBackground; displayHeights: number[]; canvasSubjectHeightPx: number; canvasAnchorY: number; size?: { width: number; height: number };
-}): Promise<Uint8Array> {
-  const { width, height } = opts.size ?? { width: 1280, height: 720 };
-  const meta = await sharp(framed).metadata();
-  const cw = meta.width ?? 256, ch = meta.height ?? 256;
-  const baseline = height - 140;
-  const slot = width / opts.displayHeights.length;
-  const layers: sharp.OverlayOptions[] = [];
-  const labels: string[] = [];
-  for (const [i, H] of opts.displayHeights.entries()) {
-    const s = H / opts.canvasSubjectHeightPx;
-    const dw = Math.round(cw * s), dh = Math.round(ch * s);
-    // Nearest-neighbour keeps the displayed pixels honest for pixel-level review.
-    const img = await sharp(framed).resize(dw, dh, { kernel: "nearest" }).png().toBuffer();
-    layers.push({ input: img, left: Math.round(slot * i + slot / 2 - dw / 2), top: Math.round(baseline - opts.canvasAnchorY * s) });
-    const fill = opts.background === "dark" ? "#e8e8e8" : "#202020";
-    labels.push(`<text x="${Math.round(slot * i + slot / 2)}" y="${baseline + 40}" text-anchor="middle" font-family="Helvetica" font-size="20" fill="${fill}">${H}px standing height</text>`);
-  }
-  const fill = opts.background === "dark" ? "#888" : "#555";
-  labels.push(`<line x1="0" y1="${baseline}" x2="${width}" y2="${baseline}" stroke="${fill}" stroke-dasharray="6 6"/>`);
-  const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">${labels.join("")}</svg>`);
-  const bg = await backgroundField(opts.background, width, height);
-  return sharp(bg).composite([...layers, { input: svg, left: 0, top: 0 }]).png().toBuffer();
 }
 
 /** Composite RGBA onto an opaque colour (default light grey 216,216,216, matching the Krea concept backdrop). */

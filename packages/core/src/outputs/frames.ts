@@ -1,10 +1,11 @@
-import { mkdir, open as openFile, readFile, readdir, rename, rm } from "node:fs/promises";
+import { mkdir, readFile, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { z } from "zod";
 import type { Visual } from "@brainforge/contracts";
 import { MediaError, buildContactSheet, decodeImage } from "@brainforge/media";
-import { assertId, paths, resolveIn, sha256, writeFileAtomic } from "@brainforge/storage";
-import { newId } from "../generation/store.ts";
+import { assertId, paths, resolveIn, sha256, syncDir, writeFileAtomic } from "@brainforge/storage";
+import { insertCandidate, jobRow, markJobSucceeded, newId } from "../generation/store.ts";
+import { insertIntent, markIntentCommitted, markIntentFailed, preparedIntents } from "./intents.ts";
 import type { OpenProject } from "../project-runtime.ts";
 import { OperationFailure } from "../runtime.ts";
 
@@ -20,7 +21,7 @@ export const frameFileName = (index: number): string => `${String(index).padStar
 export const frameManifestHash = (frameHashes: readonly string[]): string => sha256(frameHashes.map((h, i) => `${i}:${h}`).join("\n"));
 
 /** Game-root-relative directory of a frames output. */
-export const frameOutputDir = (assetId: string, candidateId: string, stage: "source" | "processed", outputId: string): string =>
+const frameOutputDir = (assetId: string, candidateId: string, stage: "source" | "processed", outputId: string): string =>
   `${paths.candidateDir(assetId, candidateId)}/${stage === "source" ? "original" : "processed"}/${assertId("output", outputId, true)}`;
 
 // --------------------------------------------------------------------------- publication spec
@@ -61,7 +62,7 @@ export interface FrameOutputSpec {
 }
 
 /** A candidate created together with its outputs. Omit it to add outputs to an existing candidate. */
-export interface CandidateSpec {
+interface CandidateSpec {
   candidateId: string;
   runId: string;
   jobId: string;
@@ -123,7 +124,7 @@ const Payload = z.object({
 type Payload = z.infer<typeof Payload>;
 type PayloadOutput = z.infer<typeof PayloadOutput>;
 
-export const INTENT_KIND = "frame-sequence";
+const INTENT_KIND = "frame-sequence";
 
 async function imageSize(png: Uint8Array, label: string): Promise<{ width: number; height: number }> {
   try {
@@ -213,11 +214,6 @@ export async function onDiskManifestHash(open: Pick<OpenProject, "db" | "root">,
 
 // --------------------------------------------------------------------------- publication
 
-async function syncDir(abs: string): Promise<void> {
-  const fh = await openFile(abs, "r");
-  try { await fh.sync(); } finally { await fh.close(); }
-}
-
 async function writeAll(dir: string, entries: readonly { name: string; bytes: Uint8Array }[]): Promise<void> {
   await mkdir(dir, { recursive: true });
   for (const e of entries) await writeFileAtomic(join(dir, e.name), e.bytes);
@@ -243,10 +239,9 @@ function commit(open: OpenProject, intentId: string, payload: Payload): void {
   const events: { type: string; data: unknown; actorId: string }[] = [];
   open.transact(() => {
     const c = payload.candidate;
-    if (c && !open.db.query("SELECT 1 FROM candidates WHERE candidate_id = ?").get(c.candidateId)) {
-      open.db.query("INSERT INTO candidates (candidate_id, asset_id, step_id, run_id, job_id, parent_candidate_id, branch_id, label, seed, prompt, favorite, created_at) VALUES (?, ?, (SELECT step_id FROM generation_jobs WHERE job_id = ?), ?, ?, ?, ?, ?, ?, ?, 0, ?)")
-        .run(c.candidateId, payload.assetId, c.jobId, c.runId, c.jobId, c.parentCandidateId, c.branchId, c.label, c.seed, c.prompt, now);
-      events.push({ type: "candidate.created", data: { candidateId: c.candidateId, assetId: payload.assetId, runId: c.runId, jobId: c.jobId, ...(c.parentCandidateId ? { parentCandidateId: c.parentCandidateId } : {}) }, actorId: payload.actorId });
+    if (c) {
+      const created = insertCandidate(open.db, { ...c, assetId: payload.assetId, stepId: jobRow(open.db, c.jobId).step_id, createdAt: now }, payload.actorId);
+      if (created) events.push(created);
     }
     for (const o of payload.outputs) {
       if (open.db.query("SELECT 1 FROM candidate_outputs WHERE output_id = ?").get(o.outputId)) continue;
@@ -263,14 +258,10 @@ function commit(open: OpenProject, intentId: string, payload: Payload): void {
       events.push({ type: "output.published", data: { outputId: o.outputId, candidateId: payload.candidateId, assetId: payload.assetId, stage: o.stage, frameCount: o.frames.length }, actorId: payload.actorId });
     }
     if (c?.completesJob) {
-      const done = open.db.query("UPDATE generation_jobs SET state = 'succeeded', candidate_id = ?, collected_at = ?, updated_at = ?, queue_position = NULL, error_json = NULL WHERE job_id = ? AND state = 'collecting'")
-        .run(c.candidateId, now, now, c.jobId);
-      if (done.changes > 0) {
-        const job = open.db.query<{ run_id: string; step_id: string; attempt: number }, [string]>("SELECT run_id, step_id, attempt FROM generation_jobs WHERE job_id = ?").get(c.jobId);
-        events.push({ type: "job.changed", data: { jobId: c.jobId, runId: c.runId, assetId: payload.assetId, stepId: job?.step_id, state: "succeeded", attempt: job?.attempt, candidateId: c.candidateId }, actorId: payload.actorId });
-      }
+      const done = markJobSucceeded(open.db, c.jobId, c.candidateId, now, payload.actorId);
+      if (done) events.push(done);
     }
-    open.db.query("UPDATE publication_intents SET state = 'committed', resolved_at = ?, error = NULL WHERE intent_id = ?").run(now, intentId);
+    markIntentCommitted(open, intentId, now);
   }, events);
 }
 
@@ -338,8 +329,7 @@ export async function publishFrameSequence(open: OpenProject, spec: PublicationS
 
   await open.mutate(async () => {
     const stagingRel = paths.staging(intentId);
-    open.db.query("INSERT INTO publication_intents (intent_id, kind, payload_json, staging_path, state, created_at) VALUES (?, ?, ?, ?, 'prepared', ?)")
-      .run(intentId, INTENT_KIND, JSON.stringify(payload), stagingRel, new Date().toISOString());
+    insertIntent(open, intentId, INTENT_KIND, payload, stagingRel, new Date().toISOString());
     try {
       await faults.afterIntent?.();
       const stagingRoot = await resolveIn(open.root, stagingRel);
@@ -368,25 +358,23 @@ export interface RecoveryReport { committed: string[]; failed: { intentId: strin
  */
 export async function recoverPublications(open: OpenProject): Promise<RecoveryReport> {
   const report: RecoveryReport = { committed: [], failed: [] };
-  const intents = open.db.query<{ intent_id: string; payload_json: string }, [string]>("SELECT intent_id, payload_json FROM publication_intents WHERE kind = ? AND state = 'prepared' ORDER BY rowid").all(INTENT_KIND);
-  for (const intent of intents) {
+  for (const intent of preparedIntents(open, INTENT_KIND, Payload)) {
     await open.mutate(async () => {
-      const parsed = Payload.safeParse(JSON.parse(intent.payload_json));
-      if (!parsed.success) {
-        await failIntent(open, intent.intent_id, undefined, `payload unreadable: ${parsed.error.message}`);
-        report.failed.push({ intentId: intent.intent_id, error: "payload unreadable" });
+      if (intent.unreadable !== undefined) {
+        await failIntent(open, intent.intentId, undefined, intent.unreadable);
+        report.failed.push({ intentId: intent.intentId, error: "payload unreadable" });
         return;
       }
-      const payload = parsed.data;
+      const payload = intent.payload;
       try {
         const pending = payload.outputs.filter((o) => !open.db.query("SELECT 1 FROM candidate_outputs WHERE output_id = ?").get(o.outputId));
-        if (pending.length > 0) await moveIntoPlace(open, intent.intent_id, { ...payload, outputs: pending });
-        commit(open, intent.intent_id, payload);
-        report.committed.push(intent.intent_id);
+        if (pending.length > 0) await moveIntoPlace(open, intent.intentId, { ...payload, outputs: pending });
+        commit(open, intent.intentId, payload);
+        report.committed.push(intent.intentId);
       } catch (e) {
         const error = e instanceof Error ? e.message : String(e);
-        await failIntent(open, intent.intent_id, payload, error);
-        report.failed.push({ intentId: intent.intent_id, error });
+        await failIntent(open, intent.intentId, payload, error);
+        report.failed.push({ intentId: intent.intentId, error });
       }
     });
   }
@@ -402,12 +390,7 @@ async function failIntent(open: OpenProject, intentId: string, payload: Payload 
     }
   }
   await rm(await resolveIn(open.root, paths.staging(intentId)), { recursive: true, force: true });
-  open.db.query("UPDATE publication_intents SET state = 'failed', error = ?, resolved_at = ? WHERE intent_id = ?").run(error, new Date().toISOString(), intentId);
-}
-
-/** Directory listing helper for tests and diagnostics: names inside an output directory. */
-export async function listOutputDir(open: OpenProject, outputId: string): Promise<string[]> {
-  return readdir(await resolveIn(open.root, outputRow(open, outputId).path)).catch(() => []);
+  markIntentFailed(open, intentId, error);
 }
 
 // --------------------------------------------------------------------------- review visuals
@@ -419,7 +402,7 @@ interface DerivedRow { file_id: string; path: string; width: number | null; heig
  * from the verified frames, written next to the candidate's previews and registered. Idempotent: a second call finds
  * the row, and a crash between file and row only leaves a file that the next call rewrites byte-identically.
  */
-export async function ensureContactSheet(open: OpenProject, outputId: string): Promise<{ fileId: string; width: number; height: number }> {
+async function ensureContactSheet(open: OpenProject, outputId: string): Promise<{ fileId: string; width: number; height: number }> {
   const existing = open.db.query<DerivedRow, [string]>("SELECT file_id, path, width, height FROM output_files WHERE output_id = ? AND kind = 'contact-sheet'").get(outputId);
   if (existing?.width && existing.height) {
     const bytes = await readFile(await resolveIn(open.root, existing.path)).catch(() => undefined);

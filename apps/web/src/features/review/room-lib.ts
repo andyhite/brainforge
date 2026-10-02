@@ -1,4 +1,4 @@
-import type { Candidate, CandidateOutput, OutputApproval } from "@brainforge/contracts";
+import { AssetSpec, type Candidate, type CandidateOutput, type OutputApproval } from "@brainforge/contracts";
 
 /** What the person sees an output as: the game-ready clip or image, the transparent one, or the original. Never the raw role/stage words. */
 export type RoleKey = "processed" | "matted" | "untouched";
@@ -38,15 +38,11 @@ export function outputLike(candidate: Candidate, role: RoleKey | undefined): Can
 
 /** The deliverable's own description, loops flag and kind read from asset.inspect's loosely typed spec. */
 export function readDeliverable(spec: unknown, stepId: string): { description: string; loop: boolean | undefined } {
-  const root = spec && typeof spec === "object" ? (spec as Record<string, unknown>) : {};
-  if (stepId === "concept") return { description: typeof root.description === "string" ? root.description : "", loop: undefined };
-  const list = Array.isArray(root.deliverables) ? root.deliverables : [];
-  const found = list.find((d): d is Record<string, unknown> => !!d && typeof d === "object" && (d as Record<string, unknown>).id === stepId);
-  const animation = found?.animation && typeof found.animation === "object" ? (found.animation as Record<string, unknown>) : undefined;
-  return {
-    description: typeof found?.description === "string" ? found.description : "",
-    loop: animation && typeof animation.loop === "boolean" ? animation.loop : undefined,
-  };
+  const parsed = AssetSpec.safeParse(spec);
+  if (!parsed.success) return { description: "", loop: undefined };
+  if (stepId === "concept") return { description: parsed.data.description, loop: undefined };
+  const found = parsed.data.deliverables.find((d) => d.id === stepId);
+  return { description: found?.description ?? "", loop: found?.animation?.loop };
 }
 
 /** Who made a note or request, from the recorded actor id: you, the agent by name, or "An agent" when it gave none (`agent:local`). */

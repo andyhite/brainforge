@@ -1,7 +1,7 @@
 import { Link, useSearchParams } from "react-router-dom";
 import type { Candidate, CandidateOutput } from "@brainforge/contracts";
 import { useMutationOperation, useOperation } from "../../api/hooks.ts";
-import { ErrorBanner, NetworkProblem, Status } from "../../components/ui.tsx";
+import { OpResult, Status } from "../../components/ui.tsx";
 import { isSingleImage } from "../animation/timing.ts";
 import { ApprovalBadge } from "../review/ApprovalBadge.tsx";
 
@@ -46,7 +46,7 @@ export function OutputLineage({ candidate, assetId }: { candidate: Candidate; as
             {isSelected ? <> <Status tone="info">In use for this deliverable</Status></> : null}
           </div>
           <div className="row">
-            {output.stage === "processed" ? <ApprovalBadge approval={approval} compact /> : null}
+            {output.stage === "processed" ? <ApprovalBadge approval={approval} /> : null}
             <Link className="button sm" to={show(output.outputId)} aria-current={shown === output.outputId ? "true" : undefined}>{isSingleImage(output) ? "Show" : "Open in player"}</Link>
             {output.parentOutputId && ids.has(output.parentOutputId) ? <Link className="button sm" to={show(output.outputId, output.parentOutputId)}>Compare with source</Link> : null}
             {previous && previous.stage === "processed" && output.stage === "processed" ? <Link className="button sm" to={show(output.outputId, previous.outputId)}>Compare with previous</Link> : null}
@@ -68,8 +68,7 @@ export function OutputLineage({ candidate, assetId }: { candidate: Candidate; as
       <p className="secondary">Approval belongs to one exact output. A game-ready {stillsOnly ? "image" : "clip"} starts undecided and never inherits a decision; review it from the decision box.</p>
       <ol className="lineage-root" aria-label="Outputs by lineage">{roots.map((root) => renderNode(root, undefined))}</ol>
       {!outputs.some((o) => o.stage === "processed") ? <p className="secondary">No game-ready clip yet. Process the source frames in the Processing tab; the deliverable can’t be completed from source frames alone.</p> : null}
-      {select.error ? <NetworkProblem error={select.error} /> : null}
-      {select.data && !select.data.ok ? <ErrorBanner error={select.data.error} /> : null}
+      <OpResult m={select} />
     </section>
   );
 }

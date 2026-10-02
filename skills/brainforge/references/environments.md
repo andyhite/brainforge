@@ -124,7 +124,7 @@ Generated art does not tile by itself. If exact self-wrap is required, plan the 
 |`DIRECTION_MISMATCH`|The member version was generated against another output than THIS environment branch's locked concept: promote a member version made against this direction, or promote the environment branch it used|
 
    A member that no longer matches its own current requirements is shown `obsolete` and does NOT block; it is pinned as it was.
-4. `promotion.start {planId, planHash, requestId}` as for any asset. The aggregate manifest pins every selected member version (`dependencyVersions`, `members` with each child's declared structural metadata, `collectionMembers`). Children promote and activate independently; ACTIVATING the aggregate never changes a child's active pointer.
+4. `promotion.start {planId, planHash}` as for any asset. The aggregate manifest pins every selected member version (`dependencyVersions`, `members` with each child's declared structural metadata, `collectionMembers`). Children promote and activate independently; ACTIVATING the aggregate never changes a child's active pointer.
 
 ## Export expansion and EXPORT_CONFLICT
 

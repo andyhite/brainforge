@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { bindInputs, ComfyClient, ComfyDownloadError, ComfyHttpError, loadWorkflow, outputImages, pngProblem, preflight, workflowVersions } from "../src/index.ts";
+import { bindInputs, ComfyClient, ComfyDownloadError, ComfyHttpError, loadWorkflow, outputImages, pngProblem, preflight, workflowVersions, type HistoryEntry } from "../src/index.ts";
 import { createFakeComfy, type FakeComfy } from "../src/testing/index.ts";
 
 let fake: FakeComfy;
@@ -16,6 +16,15 @@ async function stillGraph(seed = 7) {
   return bindInputs(wf, { prompt: "a test subject", width: 512, height: 512, seed });
 }
 const extra = (identity: string) => ({ brainforge: { identity } });
+
+async function waitDone(id: string): Promise<HistoryEntry> {
+  for (let i = 0; i < 250; i++) {
+    const e = (await client.history(id))[id];
+    if (e?.status?.completed === true || e?.status?.status_str === "error") return e;
+    await Bun.sleep(20); // polls a real HTTP fake whose prompt completes on its own wall-clock latency; fake timers cannot advance it
+  }
+  throw new Error(`prompt ${id} did not finish`);
+}
 
 describe("ambiguous submission", () => {
   test("accepted-but-unseen submit is found exactly once by identity and not resubmitted", async () => {
@@ -42,7 +51,7 @@ describe("ambiguous submission", () => {
     const second = await client.submit(await stillGraph(2), "c", extra("dup"));
     const live = await client.findByIdentity("dup");
     expect(live.map((m) => m.where).sort()).toEqual(["pending", "running"]);
-    await client.waitForHistory(second, { intervalMs: 20, deadline: Date.now() + 5000 });
+    await waitDone(second);
     const done = await client.findByIdentity("dup");
     expect(done).toHaveLength(2);
     expect(done.every((m) => m.where === "history")).toBe(true);
@@ -63,7 +72,7 @@ describe("ambiguous submission", () => {
 describe("downloads", () => {
   async function generated() {
     const id = await client.submit(await stillGraph(3), "c", extra("dl"));
-    const entry = await client.waitForHistory(id, { intervalMs: 20, deadline: Date.now() + 5000 });
+    const entry = await waitDone(id);
     return { untouched: outputImages(entry, "9")[0]!, matted: outputImages(entry, "14")[0]! };
   }
 
@@ -146,7 +155,7 @@ describe("queue deletion", () => {
     const q = await client.queue();
     expect(q.queue_running.map((t) => t[1])).toEqual([running]);
     expect(q.queue_pending).toEqual([]);
-    const entry = await client.waitForHistory(running, { intervalMs: 20, deadline: Date.now() + 5000 });
+    const entry = await waitDone(running);
     expect(entry.status?.completed).toBe(true);
   });
 });
@@ -199,13 +208,13 @@ describe("preflight", () => {
     expect(refused.status).toBe(400);
     const png = await (async () => {
       const id = await client.submit(await stillGraph(), "c", extra("seed"));
-      const entry = await client.waitForHistory(id, { intervalMs: 20, deadline: Date.now() + 5000 });
+      const entry = await waitDone(id);
       return client.view(outputImages(entry, "9")[0]!);
     })();
     const ref = await client.uploadImage(png, "parent.png", "refs");
     expect(ref).toEqual({ filename: "parent.png", subfolder: "refs", type: "input" });
     const id = await client.submit(graph, "c", extra("v"));
-    const entry = await client.waitForHistory(id, { intervalMs: 20, deadline: Date.now() + 5000 });
+    const entry = await waitDone(id);
     expect(outputImages(entry, "13")).toHaveLength(1);
     expect(outputImages(entry, "18")).toHaveLength(1);
   });

@@ -9,7 +9,7 @@ const describe = (g: Geometry): string => (g.kind === "whole" ? "Whole image" : 
 /** UI frame numbers are one-based; stored ranges are zero-based source frames. */
 export const rangeLabel = (r: FrameRange): string => (r.start === r.end ? `source frame ${r.start + 1}` : `source frames ${r.start + 1}–${r.end + 1}`);
 
-export interface FrameContext {
+interface FrameContext {
   /** Zero-based source frame showing in the player. */
   sourceFrame: number;
   lastSourceFrame: number;

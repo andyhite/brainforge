@@ -15,10 +15,6 @@ export class ComfyDownloadError extends Error {
 
 export interface ImageRef { filename: string; subfolder: string; type: string }
 
-export interface SystemStats {
-  system?: { os?: string; comfyui_version?: string; python_version?: string };
-  devices?: { name: string; type: string; vram_total?: number }[];
-}
 export interface NodeInfo {
   input?: { required?: Record<string, unknown[]>; optional?: Record<string, unknown[]> };
   api_node?: boolean;
@@ -45,7 +41,6 @@ export interface IdentityMatch { promptId: string; where: "running" | "pending" 
  */
 export interface ComfyTransport {
   readonly baseUrl: string;
-  systemStats(): Promise<SystemStats>;
   objectInfo(): Promise<Record<string, NodeInfo>>;
   uploadImage(bytes: Uint8Array, filename: string, subfolder: string): Promise<ImageRef>;
   submit(graph: ComfyGraph, clientId: string, extraData: Record<string, unknown>): Promise<string>;
@@ -54,12 +49,11 @@ export interface ComfyTransport {
   view(ref: ImageRef): Promise<Uint8Array>;
   deleteQueued(promptId: string): Promise<void>;
   findByIdentity(identity: string): Promise<IdentityMatch[]>;
-  waitForHistory(promptId: string, opts: { intervalMs?: number; deadline: number; signal?: AbortSignal }): Promise<HistoryEntry>;
 }
 
+const DOWNLOAD_TIMEOUT_MS = 120_000;
+
 export interface ComfyClientOptions {
-  /** Timeout for JSON calls (default 15s); passed positionally as the constructor's second argument. */
-  downloadTimeoutMs?: number;
   maxDownloadBytes?: number;
   /** Extra attempts for idempotent GETs only (default 2). */
   getRetries?: number;
@@ -97,7 +91,7 @@ export class ComfyClient implements ComfyTransport {
   private readonly opts: Required<ComfyClientOptions>;
   constructor(baseUrl: string, private readonly jsonTimeoutMs = 15_000, opts: ComfyClientOptions = {}) {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
-    this.opts = { downloadTimeoutMs: 120_000, maxDownloadBytes: 64 * 1024 * 1024, getRetries: 2, retryDelayMs: 250, ...opts };
+    this.opts = { maxDownloadBytes: 64 * 1024 * 1024, getRetries: 2, retryDelayMs: 250, ...opts };
   }
 
   /** One HTTP exchange, no retry. A network failure/timeout throws a ComfyHttpError without `status`. */
@@ -135,7 +129,6 @@ export class ComfyClient implements ComfyTransport {
     return (await this.req(path, init)).json() as Promise<T>;
   }
 
-  systemStats() { return this.json<SystemStats>("/system_stats"); }
   objectInfo() { return this.json<Record<string, NodeInfo>>("/object_info"); }
 
   async uploadImage(bytes: Uint8Array, filename: string, subfolder: string): Promise<ImageRef> {
@@ -178,7 +171,7 @@ export class ComfyClient implements ComfyTransport {
   }
 
   private async download(path: string, ref: ImageRef): Promise<Uint8Array> {
-    const res = await this.once(path, undefined, this.opts.downloadTimeoutMs);
+    const res = await this.once(path, undefined, DOWNLOAD_TIMEOUT_MS);
     const cap = this.opts.maxDownloadBytes;
     const declared = Number(res.headers.get("content-length"));
     if (declared > cap) throw new ComfyDownloadError(`${ref.filename} is ${declared} bytes, over the ${cap} byte cap`, ref, "too-large");
@@ -224,18 +217,6 @@ export class ComfyClient implements ComfyTransport {
     for (const t of q.queue_pending) if (has(t[3])) out.push({ promptId: t[1], where: "pending" });
     for (const [id, e] of Object.entries(h)) if (has(e?.prompt?.[3])) out.push({ promptId: id, where: "history" });
     return out;
-  }
-
-  /** Poll history until the prompt finishes; returns its entry. */
-  async waitForHistory(promptId: string, opts: { intervalMs?: number; deadline: number; signal?: AbortSignal }): Promise<HistoryEntry> {
-    for (;;) {
-      if (opts.signal?.aborted) throw new ComfyHttpError("aborted");
-      const h = await this.history(promptId);
-      const e = h[promptId];
-      if (e?.status?.completed === true || e?.status?.status_str === "error") return e;
-      if (Date.now() > opts.deadline) throw new ComfyHttpError(`Timed out waiting for prompt ${promptId}`);
-      await Bun.sleep(opts.intervalMs ?? 2000);
-    }
   }
 }
 

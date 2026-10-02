@@ -5,6 +5,7 @@ import { assertId } from "@brainforge/storage";
 import { publishFrameSequence, type PublicationFaults } from "../outputs/frames.ts";
 import { readProcessingSource } from "./source.ts";
 import type { OpenProject } from "../project-runtime.ts";
+import { assertPlanHash } from "../operations.ts";
 import { OperationFailure } from "../runtime.ts";
 import { loadReferenceImage } from "./anchor.ts";
 import { outputDetail } from "./detail.ts";
@@ -32,9 +33,7 @@ export function startProcessing(open: OpenProject, actorId: string, input: Parse
 
 async function execute(open: OpenProject, actorId: string, input: ParsedOperationInput<"processing.start">, faults: PublicationFaults): Promise<OutputDetail> {
   const { plan, startedOutputId } = storedProcessingPlan(open, input.planId);
-  if (plan.planHash !== input.planHash) {
-    throw new OperationFailure("REVISION_CONFLICT", "planHash does not match the plan that was inspected under this planId", { expected: plan.planHash, got: input.planHash }, [{ label: "Plan processing again", operation: "processing.plan", input: { candidateId: plan.candidateId, outputId: plan.sourceOutputId } }]);
-  }
+  assertPlanHash(plan.planHash, input.planHash, [{ label: "Plan processing again", operation: "processing.plan", input: { candidateId: plan.candidateId, outputId: plan.sourceOutputId } }]);
   const existing = startedOutputId ?? outputOfPlan(open, plan.planId);
   if (existing) {
     // The same plan never produces a second output: a retry (or a crash finished by startup recovery) gets the one it made.

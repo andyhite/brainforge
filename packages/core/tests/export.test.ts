@@ -109,7 +109,7 @@ async function world(options: Options = {}): Promise<World> {
 
 async function promote(w: World, requestId = "promote-0001"): Promise<string> {
   const plan = expectOk(await w.call("promotion.plan", { assetId: "cortex" })).plan;
-  return expectOk(await w.call("promotion.start", { planId: plan.planId, planHash: plan.planHash, requestId })).version.versionId;
+  return expectOk(await w.call("promotion.start", { planId: plan.planId, planHash: plan.planHash }, undefined, requestId)).version.versionId;
 }
 
 async function activate(w: World, versionId: string): Promise<void> {
@@ -125,7 +125,7 @@ async function active(w: World): Promise<string> {
 }
 
 const planExport = async (w: World, input: Record<string, unknown> = {}): Promise<ExportPlan> => expectOk(await w.call("export.plan", input)).plan;
-const startExport = (w: World, p: ExportPlan, requestId = "export-0001") => w.call("export.start", { planId: p.planId, planHash: p.planHash, requestId });
+const startExport = (w: World, p: ExportPlan, requestId = "export-0001") => w.call("export.start", { planId: p.planId, planHash: p.planHash }, undefined, requestId);
 const dest = (w: World): string => join(w.root, "assets/brainforge");
 const rowsOf = (w: World, table: string): number => w.open.db.query<{ n: number }, []>(`SELECT COUNT(*) AS n FROM ${table}`).get()!.n;
 const readJson = async (path: string): Promise<Record<string, unknown>> => JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
@@ -227,7 +227,7 @@ describe("export.start", () => {
 
     // The same request returns the same export; nothing is exported twice.
     const again = expectOk(await startExport(w, plan));
-    expect(again).toMatchObject({ created: false, export: { exportId: result.export.exportId } });
+    expect(again).toEqual(result);
     expect(await releases(w)).toEqual([result.export.exportId]);
     expect(rowsOf(w, "asset_versions")).toBe(1);
     expect(expectOk(await w.call("export.list", {}))).toMatchObject({ destination: "assets/brainforge", publicRoot: "assets/brainforge/current", exports: [{ exportId: result.export.exportId, current: true }] });
@@ -281,7 +281,7 @@ describe("export.start", () => {
     const w = await world();
     await active(w);
     const plan = await planExport(w);
-    const bad = await w.call("export.start", { planId: plan.planId, planHash: "0".repeat(64), requestId: "export-0009" });
+    const bad = await w.call("export.start", { planId: plan.planId, planHash: "0".repeat(64) }, undefined, "export-0009");
     expect(bad.ok === false && bad.error.code).toBe("REVISION_CONFLICT");
   });
 

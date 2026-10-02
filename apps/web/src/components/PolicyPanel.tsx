@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { OperationError } from "@brainforge/contracts";
 import { useMutationOperation, useOperation } from "../api/hooks.ts";
-import { Banner, ErrorBanner, formatTime, NetworkProblem, Status } from "./ui.tsx";
+import { Banner, ErrorBanner, formatTime, gate, NetworkProblem, Status } from "./ui.tsx";
 
 const FIELDS = ["conceptLock", "productionReview", "promotion", "activation"] as const;
 const FIELD_LABEL: Record<(typeof FIELDS)[number], string> = { conceptLock: "Concept lock", productionReview: "Production review", promotion: "Promotion", activation: "Activation" };
@@ -14,10 +14,9 @@ export function PolicyPanel() {
   const authorize = useMutationOperation("policy.authorize");
   const [outcome, setOutcome] = useState<Outcome>();
 
-  if (query.error) return <NetworkProblem error={query.error} />;
-  if (!query.data) return <p className="secondary">Loading approval policy…</p>;
-  if (!query.data.ok) return <ErrorBanner error={query.data.error} />;
-  const policy = query.data.data.policy;
+  const g = gate(query, "Loading approval policy…", false);
+  if ("node" in g) return g.node;
+  const policy = g.data.policy;
   const differing: Record<string, true> = Object.fromEntries(policy.diff.map((item) => [item.field, true]));
   const hasDiff = policy.diff.length > 0;
 

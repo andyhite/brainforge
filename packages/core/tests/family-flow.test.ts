@@ -36,7 +36,7 @@ export async function game(): Promise<GenerationFixture> {
   return f;
 }
 
-const call = <K extends OperationName>(f: GenerationFixture, name: K, input: unknown) => f.h.call(name, input, { project: f.root });
+const call = <K extends OperationName>(f: GenerationFixture, name: K, input: unknown, requestId?: string) => f.h.call(name, input, { project: f.root, ...(requestId ? { requestId } : {}) });
 const succeeded = (jobs: { state: string }[]) => jobs.length > 0 && jobs.every((j) => j.state === "succeeded");
 const concrete = (text: string): string => text.replace(/"REPLACE: [^"]*"/g, '"A concrete sentence of art."');
 
@@ -110,7 +110,7 @@ export async function produce(f: GenerationFixture, assetId: string, text: strin
 export async function promoteAndActivate(f: GenerationFixture, assetId: string, branchId: string, requestId = `promote-${assetId}-0001`): Promise<string> {
   const plan = expectOk(await call(f, "promotion.plan", { assetId, branchId })).plan;
   expect(plan.blockers).toEqual([]);
-  const versionId = expectOk(await call(f, "promotion.start", { planId: plan.planId, planHash: plan.planHash, requestId })).version.versionId;
+  const versionId = expectOk(await call(f, "promotion.start", { planId: plan.planId, planHash: plan.planHash }, requestId)).version.versionId;
   const { active } = expectOk(await call(f, "version.list", { assetId }));
   expectOk(await call(f, "version.activate", { versionId, expectedRevision: active.revision, acknowledgeObsolete: true }));
   return versionId;
@@ -122,7 +122,7 @@ export async function exportBoth(f: GenerationFixture, input: Record<string, unk
     await put(f.root, "brainforge/project.yaml", PROJECT(preset));
     const plan: ExportPlan = expectOk(await call(f, "export.plan", input)).plan;
     expect(plan.blockers).toEqual([]);
-    expectOk(await call(f, "export.start", { planId: plan.planId, planHash: plan.planHash, requestId }));
+    expectOk(await call(f, "export.start", { planId: plan.planId, planHash: plan.planHash }, requestId));
     return root;
   };
   const generic = await run("generic", "export-generic-0001");

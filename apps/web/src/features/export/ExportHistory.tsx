@@ -1,6 +1,6 @@
 import type { ExportRecord } from "@brainforge/contracts";
 import { useOperation } from "../../api/hooks.ts";
-import { Banner, ErrorBanner, NetworkProblem, Status, formatTime, timeAgo, type Tone } from "../../components/ui.tsx";
+import { Banner, gate, Status, formatTime, timeAgo, type Tone } from "../../components/ui.tsx";
 import { whoLabel } from "../review/room-lib.ts";
 
 const STATE: Record<ExportRecord["state"], { tone: Tone; text: string }> = {
@@ -11,10 +11,9 @@ const STATE: Record<ExportRecord["state"], { tone: Tone; text: string }> = {
 
 function ExportInspect({ exportId }: { exportId: string }) {
   const query = useOperation("export.inspect", { exportId });
-  if (query.error) return <NetworkProblem error={query.error} />;
-  if (!query.data) return <p className="secondary" role="status">Loading export…</p>;
-  if (!query.data.ok) return <ErrorBanner error={query.data.error} />;
-  const { export: record, manifest, conflicts } = query.data.data;
+  const g = gate(query, "Loading export…");
+  if ("node" in g) return g.node;
+  const { export: record, manifest, conflicts } = g.data;
   return (
     <div className="rel-detail" role="region" aria-label={`Export ${exportId.slice(0, 8)} details`}>
       <dl className="kv">
@@ -45,14 +44,13 @@ function ExportInspect({ exportId }: { exportId: string }) {
 /** Past exports, newest first. Exported files are copies; the current export is what the stable path resolves to. */
 export function ExportHistory({ selected, onSelect: setSelected }: { selected: string | undefined; onSelect: (exportId: string | undefined) => void }) {
   const query = useOperation("export.list", { limit: 20 });
-  if (query.error) return <NetworkProblem error={query.error} />;
-  if (!query.data) return <p className="secondary" role="status">Loading past exports…</p>;
-  if (!query.data.ok) return <ErrorBanner error={query.data.error} />;
-  if (query.data.data.exports.length === 0) return <p className="secondary">Nothing has been exported yet.</p>;
+  const g = gate(query, "Loading past exports…");
+  if ("node" in g) return g.node;
+  if (g.data.exports.length === 0) return <p className="secondary">Nothing has been exported yet.</p>;
   return (
     <>
       <ul className="rows rel-history" aria-label="Exports, newest first">
-        {query.data.data.exports.map((record) => {
+        {g.data.exports.map((record) => {
           const state = STATE[record.state];
           const open = selected === record.exportId;
           return (

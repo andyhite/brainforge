@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
-import type { Branch, CollectionState } from "@brainforge/contracts";
+import { AssetSpec, type Branch, type CollectionState } from "@brainforge/contracts";
 import { useOperation } from "../../api/hooks.ts";
-import { ActionLinks, Banner, Status, type Tone } from "../../components/ui.tsx";
+import { Banner, Blockers, Status, type Tone } from "../../components/ui.tsx";
 import { paths } from "../../lib/paths.ts";
 import "./families.css";
 import { DeliverableThumb } from "../production/DeliverableThumb.tsx";
@@ -17,12 +17,11 @@ interface Binding { bound: number; total: number; branches: string[] }
 /** How many of a member's deliverables bind this environment's direction, read from its authored definition. */
 function readBinding(spec: unknown, environmentId: string): Binding {
   const out: Binding = { bound: 0, total: 0, branches: [] };
-  if (typeof spec !== "object" || spec === null || !("deliverables" in spec) || !Array.isArray(spec.deliverables)) return out;
-  for (const d of spec.deliverables as unknown[]) {
-    if (typeof d !== "object" || d === null) continue;
+  const parsed = AssetSpec.safeParse(spec);
+  if (!parsed.success) return out;
+  for (const d of parsed.data.deliverables) {
     out.total += 1;
-    const roles = "referenceRoles" in d && typeof d.referenceRoles === "object" && d.referenceRoles !== null ? Object.values(d.referenceRoles) : [];
-    const hit = roles.find((r) => typeof r === "object" && r !== null && "assetId" in r && r.assetId === environmentId && "role" in r && r.role === "direction");
+    const hit = Object.values(d.referenceRoles).find((r) => typeof r === "object" && r !== null && "assetId" in r && r.assetId === environmentId && "role" in r && r.role === "direction");
     if (hit && typeof hit === "object" && "branchId" in hit) {
       out.bound += 1;
       if (typeof hit.branchId === "string" && !out.branches.includes(hit.branchId)) out.branches.push(hit.branchId);
@@ -111,13 +110,7 @@ export function CollectionView({ assetId, collection, branches }: { assetId: str
             <Banner tone="warn" title="Collection is incomplete">
               The environment cannot go into the game until every required member has an active version (or you pin a specific version when promoting) and each member follows this environment’s locked concept.
             </Banner>
-            <ul className="plain-list">
-              {collection.blockers.map((blocker) => (
-                <li key={`${blocker.code}-${blocker.message}`}>
-                  <Banner tone="warn" title="Needs attention" actions={<ActionLinks actions={blocker.recoveryActions} />}>{blocker.message}</Banner>
-                </li>
-              ))}
-            </ul>
+            <Blockers items={collection.blockers} label="Collection blockers" title="Needs attention" />
           </div>
         )
       ) : null}

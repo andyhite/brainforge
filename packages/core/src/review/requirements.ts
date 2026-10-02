@@ -21,10 +21,10 @@ export type FingerprintStage = "source" | "processed";
 export interface Fingerprint { hash: string; legacy: string }
 
 /** Where a fingerprint resolves its authored inputs: the branch's recorded versions, or always the files now. */
-export type InputBasis = "branch" | "current";
+type InputBasis = "branch" | "current";
 
 /** The output that stands for a candidate when none is named: the matted result if there is one, else the first output. */
-export function primaryOutput(db: Database, candidateId: string): { outputId: string; sha256: string } | undefined {
+function primaryOutput(db: Database, candidateId: string): { outputId: string; sha256: string } | undefined {
   const rows = db.query<{ output_id: string; role: string; sha256: string }, [string]>(
     "SELECT output_id, role, sha256 FROM candidate_outputs WHERE candidate_id = ? ORDER BY rowid",
   ).all(candidateId);

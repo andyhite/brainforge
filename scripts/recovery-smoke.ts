@@ -141,7 +141,7 @@ async function authoredHash(): Promise<string> {
 async function withLocalProject<T>(fx: Fixture, fn: (api: LocalApi) => Promise<T>): Promise<T> {
   const machine = createMachineStore({ configDir: join(fx.dir, "setup-cfg") });
   const registry = createProjectRegistry();
-  const runtime: OperationRuntime = { projects: registry, machine, workflowsDir: join(REPO, "packages/comfy/workflows"), publicUrl: "http://127.0.0.1:1" };
+  const runtime: OperationRuntime = { projects: registry, machine, publicUrl: "http://127.0.0.1:1" };
   let seq = 0;
   const api: LocalApi = {
     call: (name, input, project = fx.root) => executeOperation(runtime, projectHandlers, HUMAN_CONTEXT, name, {
@@ -384,13 +384,19 @@ async function partialDownload(fx: Fixture): Promise<void> {
 
 // --------------------------------------------------------------------------- scenarios: processing
 
+/** Open the fixture project through real operations and authorize its policy; returns the open handle. */
+async function openAuthorized(api: LocalApi, fx: Fixture) {
+  must(await api.call("project.open", { path: fx.root }, null), "project.open");
+  const open = api.open();
+  const policy = must(await api.call("settings.inspect", {}), "settings.inspect").policy.requestedPolicyHash;
+  must(await api.call("policy.authorize", { requestedPolicyHash: policy }), "policy.authorize");
+  return open;
+}
+
 /** A locked concept for fixture-walker plus a 33-frame source walk, seeded like the core processing tests. */
 async function seedWalker(fx: Fixture): Promise<void> {
   await withLocalProject(fx, async (api) => {
-    must(await api.call("project.open", { path: fx.root }, null), "project.open");
-    const open = api.open();
-    const policy = must(await api.call("settings.inspect", {}), "settings.inspect").policy.requestedPolicyHash;
-    must(await api.call("policy.authorize", { requestedPolicyHash: policy }), "policy.authorize");
+    const open = await openAuthorized(api, fx);
     const run = (runId: string, jobId: string, stepId: string, planJson: unknown) => {
       open.db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, started_by, created_at) VALUES (?, 'fixture-walker', ?, 'x', ?, 'recovery-smoke', ?)").run(runId, stepId, JSON.stringify(planJson), NOW);
       open.db.query("INSERT INTO generation_jobs (job_id, run_id, asset_id, step_id, slot, label, identity, state, submission_json, created_at, updated_at) VALUES (?, ?, 'fixture-walker', ?, 1, 'x', ?, 'succeeded', '{}', ?, ?)").run(jobId, runId, stepId, `id-${jobId}`, NOW, NOW);
@@ -457,10 +463,7 @@ async function processingRestart(fx: Fixture): Promise<void> {
 /** fixture-prop with a locked concept and an approved `hero` still (candidates inserted directly, review through real operations). */
 async function seedProp(fx: Fixture): Promise<void> {
   await withLocalProject(fx, async (api) => {
-    must(await api.call("project.open", { path: fx.root }, null), "project.open");
-    const open = api.open();
-    const policy = must(await api.call("settings.inspect", {}), "settings.inspect").policy.requestedPolicyHash;
-    must(await api.call("policy.authorize", { requestedPolicyHash: policy }), "policy.authorize");
+    const open = await openAuthorized(api, fx);
     let shade = 20;
     const still = async (id: string, stepId: string, branchId: string | undefined) => {
       const png = makePng(16, 16, [shade++, 60, 60]);
@@ -480,9 +483,9 @@ async function seedProp(fx: Fixture): Promise<void> {
   });
 }
 
-const promote = async (server: Server, requestId: string) => {
-  const plan = must(await server.call("promotion.plan", { assetId: "fixture-prop" }), "promotion.plan").plan;
-  return server.call("promotion.start", { planId: plan.planId, planHash: plan.planHash, requestId });
+const promote = async (server: Server, requestId: string, plan?: { planId: string; planHash: string }) => {
+  const p = plan ?? must(await server.call("promotion.plan", { assetId: "fixture-prop" }), "promotion.plan").plan;
+  return server.call("promotion.start", { planId: p.planId, planHash: p.planHash }, { requestId });
 };
 
 const versionsOf = async (server: Server) => must(await server.call("version.list", { assetId: "fixture-prop" }), "version.list");
@@ -524,11 +527,13 @@ async function promotionFailure(fx: Fixture): Promise<void> {
     await invariants("after the restart", server);
 
     await faultsFile(fx, null);
-    const retried = must(await promote(server, "recovery-promote-2"), "retry with the same requestId");
+    const plan2 = must(await server.call("promotion.plan", { assetId: "fixture-prop" }), "promotion.plan").plan;
+    const retried = must(await promote(server, "recovery-promote-2", plan2), "retry with the same requestId");
     check(s, "retrying the same requestId produced version 2", retried.created && retried.version.versionNumber === 2, `versionNumber ${retried.version.versionNumber}`);
-    const replay = must(await promote(server, "recovery-promote-2"), "replay of the same requestId");
+    // A connection-interruption retry repeats the exact request; the envelope store answers with the original result.
+    const replay = must(await promote(server, "recovery-promote-2", plan2), "replay of the same request");
     const final = await versionsOf(server);
-    check(s, "replaying it again returns the same version and creates nothing", !replay.created && replay.version.versionId === retried.version.versionId && final.versions.length === 2 && (await listDir(versionsDir)).length === 2, `versions ${final.versions.length}`);
+    check(s, "replaying the same request returns the original result and creates nothing", JSON.stringify(replay) === JSON.stringify(retried) && final.versions.length === 2 && (await listDir(versionsDir)).length === 2, `versions ${final.versions.length}`);
     check(s, "promotion still did not move the active selection", final.active.versionId === v1);
   } finally {
     await server.stop();
@@ -545,7 +550,7 @@ async function exportFailure(fx: Fixture): Promise<void> {
     const exportOnce = async (srv: Server, requestId: string) => {
       const plan = must(await srv.call("export.plan", { assetIds: ["fixture-prop"] }), "export.plan").plan;
       if (plan.blockers.length > 0) throw new Error(`export plan blocked: ${plan.blockers.map((b) => b.message).join(" ")}`);
-      return srv.call("export.start", { planId: plan.planId, planHash: plan.planHash, requestId });
+      return srv.call("export.start", { planId: plan.planId, planHash: plan.planHash }, { requestId });
     };
     const first = must(await exportOnce(server, "recovery-export-1"), "first export").export;
     const snapshot = async () => {

@@ -3,7 +3,7 @@ import { useState, type ChangeEvent, type FormEvent } from "react";
 import type { OperationData } from "@brainforge/contracts";
 import { fileUrl, useMutationOperation, useOperation } from "../../api/hooks.ts";
 import { Viewer } from "../../components/Viewer.tsx";
-import { ErrorBanner, Modal, NetworkProblem, Status } from "../../components/ui.tsx";
+import { Modal, OpResult, Status } from "../../components/ui.tsx";
 import "../families/families.css";
 import { useProject } from "../../lib/use-project.ts";
 
@@ -73,8 +73,7 @@ export function ReferencesStep({ assetId, inspect }: { assetId: string; inspect:
         <h2 id="asset-ref-list">References</h2>
         {referencesDir ? <span className="secondary">{referencesDir.fileCount} {referencesDir.fileCount === 1 ? "file" : "files"} on disk</span> : null}
       </div>
-      {list.error ? <NetworkProblem error={list.error} /> : null}
-      {list.data && !list.data.ok ? <ErrorBanner error={list.data.error} /> : null}
+      <OpResult m={list} />
       {list.data?.ok && references.length === 0 ? <p className="secondary">No references yet. Import an image the model should look at.</p> : null}
       {references.length > 0 ? (
         <ul className="ref-list">
@@ -113,8 +112,7 @@ export function ReferencesStep({ assetId, inspect }: { assetId: string; inspect:
             </div>
           </fieldset>
           {readError ? <p role="alert"><Status tone="bad">{readError}</Status></p> : null}
-          {importReference.error ? <NetworkProblem error={importReference.error} /> : null}
-          {result && !result.ok ? <ErrorBanner error={result.error} /> : null}
+          <OpResult m={importReference} />
           {result?.ok ? (
             <p role="status">
               <Status tone="ok">Imported {result.data.label}</Status>

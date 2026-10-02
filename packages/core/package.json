@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "exports": { ".": "./src/index.ts" },
-  "scripts": { "typecheck": "tsc -p .", "test": "bun test tests --pass-with-no-tests" },
+  "scripts": { "typecheck": "tsc -p .", "test": "bun test --preload ../../scripts/test-tmpdir.ts tests --pass-with-no-tests" },
   "dependencies": {
     "@brainforge/contracts": "workspace:*",
     "@brainforge/storage": "workspace:*",

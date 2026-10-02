@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const Sha256 = z.string().regex(/^[0-9a-f]{64}$/);
+
 export const KebabId = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "must be lowercase kebab-case");
 
 export const AssetFamily = z.enum(["character", "creature", "item", "equipment", "prop", "environment", "background", "tile", "ui", "icon", "effect"]);

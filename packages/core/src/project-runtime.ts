@@ -2,9 +2,9 @@ import { realpathSync } from "node:fs";
 import { realpath } from "node:fs/promises";
 import { basename } from "node:path";
 import {
-  acquireProjectLease, appendEvents, openProjectDb, readEventsAfter, type ProjectDb, type ProjectLease, type StoredEvent,
+  acquireProjectLease, appendEvents, openProjectDb, readEventsAfter, type DurableIdempotencyStore, type ProjectDb, type ProjectLease, type StoredEvent,
 } from "@brainforge/storage";
-import { OperationFailure, type IdempotencyStore, type ProjectHandle, type ProjectRegistry } from "./runtime.ts";
+import { OperationFailure, type ProjectHandle, type ProjectRegistry } from "./runtime.ts";
 import { GenerationScheduler, type SchedulerOptions } from "./generation/scheduler.ts";
 import { recoverPublications } from "./outputs/frames.ts";
 import { recoverPromotions } from "./production/publish.ts";
@@ -39,11 +39,7 @@ export interface OpenableProjectRegistry extends ProjectRegistry {
   getOpen(root: string): OpenProject | undefined;
 }
 
-export function isOpenableRegistry(reg: ProjectRegistry): reg is OpenableProjectRegistry {
-  return "open" in reg && typeof reg.open === "function" && "close" in reg && typeof reg.close === "function";
-}
-
-function slug(value: string): string {
+export function slug(value: string): string {
   const s = value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   return s || "project";
 }
@@ -86,7 +82,7 @@ type Listener = (event: StoredEvent) => void;
 class Project implements OpenProject {
   state: ProjectState = "open";
   quiesced = false;
-  readonly idempotency: IdempotencyStore;
+  readonly idempotency: DurableIdempotencyStore;
   private readonly listeners = new Set<Listener>();
   private readonly gate = new MutationGate();
   private probe: () => number = () => 0;
@@ -314,8 +310,4 @@ export function createProjectRegistry(options: ProjectRegistryOptions = {}): Ope
     },
   };
   return registry;
-}
-
-export function isOpenProject(handle: ProjectHandle): handle is OpenProject {
-  return "mutate" in handle && typeof handle.mutate === "function" && "exclusive" in handle;
 }

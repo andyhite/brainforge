@@ -48,7 +48,7 @@ Not done literally: step 11 was exercised with a fps change on the same approved
 
 1. SKILL.md names tools with underscores (`spec_schema`); the CLI wants dots (`spec.schema`) and the skill never says the CLI exists. The CLI cannot set an agent name; every call is `agent:cli`.
 2. The `spec_schema` asset example has no `regions[].view`, `referenceStrength` or `referenceRoles`, and no walk-contact example; they appear only in `family.template` and `references/asset-yaml.md`.
-3. `promotion.start` and `export.start` need `requestId` inside the input as well as the envelope; the skill lists it but does not say so.
+3. `promotion.start` and `export.start` needed `requestId` inside the input as well as the envelope. Resolved: they now take it from the envelope only.
 4. (Historical) Budgets were per step id and a human had to grant six for the character. Budgets no longer exist; this finding is resolved by removal.
 5. Nothing tells the agent that front and profile may come back identical, nor that identity-edit variation ignores "make X bigger" at the default `referenceStrength`; both needed the generated images to notice.
 6. A Chrome DevTools endpoint shared by several agents hands back the same page to every `browser.open`; create a private page (`PUT /json/new`) and attach with `target`. (My first open navigated another agent's tab.)

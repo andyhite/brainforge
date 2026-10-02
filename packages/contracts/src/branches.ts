@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Sha256 } from "./authored.ts";
 import { Branch, InputMode, PlanBlocker, StepId } from "./generation.ts";
 
 /** One effective setting that differs between the saved basis and the current authored files. */
@@ -13,7 +14,7 @@ export type FieldDifference = z.infer<typeof FieldDifference>;
 
 export const BranchPlan = z.object({
   /** Deterministic hash of everything below; `branch.create` presents it back. */
-  planHash: z.string().regex(/^[0-9a-f]{64}$/),
+  planHash: Sha256,
   assetId: z.string(),
   /** `continue` = explore from a reference/animation candidate; `rebase` = move a saved-input branch onto current inputs. */
   kind: z.enum(["continue", "rebase"]),

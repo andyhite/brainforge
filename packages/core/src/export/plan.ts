@@ -2,12 +2,11 @@ import { readFile, readdir } from "node:fs/promises";
 import { join, posix, sep } from "node:path";
 import { z } from "zod";
 import { ExportManifest, type ExportPlan, type ExportPreset, type ExportSelectionRow, type PlanBlocker, type RecoveryAction } from "@brainforge/contracts";
-import { ExportError, animationJsonPath, assetJsonPath, atlasPagePath, checkGodotRoot, framePath, planGodotFiles, planSprites, spriteAtlasPath, spritesJsonPath, stillPath, type ExportAsset, type ExportInput, type GodotTarget } from "@brainforge/export";
+import { ExportError, checkGodotRoot, planFiles, spriteAtlasPath, type ExportAsset, type ExportInput, type GodotTarget } from "@brainforge/export";
 import { resolveIn } from "@brainforge/storage";
 import { discoverAuthored } from "../authored.ts";
-import { normalizedHash } from "../operations.ts";
+import { loadPlanRow, normalizedHash } from "../operations.ts";
 import type { OpenProject } from "../project-runtime.ts";
-import { OperationFailure } from "../runtime.ts";
 import { activeSelection, compareToCurrent, readManifest, verifyVersion, type VersionRow } from "../production/versions.ts";
 import { ownedFileFindings, readCurrentView } from "./current.ts";
 import { GatherProblem, gatherVersion } from "./gather.ts";
@@ -45,7 +44,7 @@ const action = (label: string, operation: string, input?: Record<string, unknown
 const fixProject = (what: string): RecoveryAction => action(`Read project.yaml, then correct ${what} with spec.write`, "spec.read", { path: "brainforge/project.yaml" });
 
 /** The committed, not-yet-retired export a destination currently holds according to project state. */
-export function currentExportRow(open: OpenProject, destination: string): ExportRow | undefined {
+function currentExportRow(open: OpenProject, destination: string): ExportRow | undefined {
   return open.db.query<ExportRow | null, [string]>(
     "SELECT * FROM exports WHERE destination = ? AND state = 'committed' AND retired_at IS NULL ORDER BY rowid DESC LIMIT 1",
   ).get(destination) ?? undefined;
@@ -75,28 +74,13 @@ function godotKindsIn(manifest: ExportManifest | undefined): string[] {
   return [...kinds].sort();
 }
 
-/** Snapshot-relative paths the next export will write, per the documented layout. */
-function plannedPaths(e: ExportEvaluation, godotPaths: string[]): string[] {
-  const out = ["manifest.json", ...godotPaths];
-  for (const asset of e.assets) {
-    out.push(assetJsonPath(asset.assetId));
-    const sprites = planSprites(asset);
-    const atlasOnly = new Set(sprites?.packaging === "atlas" ? sprites.members.map((m) => m.deliverableId) : []);
-    for (const d of asset.deliverables) {
-      if (d.media.kind === "still") {
-        if (!atlasOnly.has(d.deliverableId)) out.push(stillPath(asset.assetId, d.deliverableId));
-        continue;
-      }
-      out.push(animationJsonPath(asset.assetId, d.deliverableId));
-      if (d.media.packaging !== "atlas") for (const f of d.media.frames) out.push(framePath(asset.assetId, d.deliverableId, f.index));
-      if (d.media.packaging !== "frames") (d.media.atlasPages ?? []).forEach((_, page) => out.push(atlasPagePath(asset.assetId, d.deliverableId, page)));
-    }
-    if (sprites) {
-      out.push(spritesJsonPath(asset.assetId));
-      sprites.layout.pages.forEach((_, page) => out.push(spriteAtlasPath(asset.assetId, page)));
-    }
-  }
-  return out;
+/** Snapshot-relative paths the next export writes: the plan `buildSnapshot` executes, plus the sprite atlas pages it builds. */
+function plannedPaths(e: ExportEvaluation, projectId: string, withGodot: boolean): string[] {
+  const plan = planFiles({ ...toInput(e, projectId, "plan", ""), preset: withGodot ? "godot4" : "generic" });
+  return [
+    "manifest.json", ...plan.copies.map((c) => c.dest), ...plan.texts.map((t) => t.path),
+    ...plan.spriteAtlases.flatMap(({ asset, sprites }) => sprites.layout.pages.map((_, page) => spriteAtlasPath(asset.assetId, page))),
+  ];
 }
 
 /** Unowned files in the current release that a managed path equals, sits under, or contains (same rule as publication). */
@@ -312,18 +296,18 @@ export async function evaluateExport(open: OpenProject, request: ExportRequest):
     }
   }
 
-  evaluation.fileCount = countFiles(evaluation);
-  if (evaluation.godot && blockers.length === 0) {
-    try {
-      evaluation.fileCount += planGodotFiles(toInput(evaluation, open.projectId, "plan", "")).length;
-    } catch (e) {
-      if (!(e instanceof ExportError)) throw e;
-      blockers.push({ code: "EXPORT_BLOCKED", message: `Godot resources cannot be written: ${e.message}`, recoveryActions: [action("Inspect the asset definition", "asset.inspect")] });
-    }
+  const withGodot = evaluation.godot !== undefined && blockers.length === 0;
+  let planned: string[];
+  try {
+    planned = plannedPaths(evaluation, open.projectId, withGodot);
+  } catch (e) {
+    if (!withGodot || !(e instanceof ExportError)) throw e;
+    blockers.push({ code: "EXPORT_BLOCKED", message: `Godot resources cannot be written: ${e.message}`, recoveryActions: [action("Inspect the asset definition", "asset.inspect")] });
+    planned = plannedPaths(evaluation, open.projectId, false);
   }
+  evaluation.fileCount = planned.length;
   if (evaluation.current && !blockers.some((b) => b.code === "EXPORT_CONFLICT")) {
-    const godotPaths = evaluation.godot && blockers.length === 0 ? planGodotFiles(toInput(evaluation, open.projectId, "plan", "")).map((f) => f.path) : [];
-    const clash = await unownedCollisions(join(destinationAbs, ".releases", evaluation.current.exportId), plannedPaths(evaluation, godotPaths));
+    const clash = await unownedCollisions(join(destinationAbs, ".releases", evaluation.current.exportId), planned);
     for (const path of clash) {
       blockers.push({
         code: "EXPORT_CONFLICT",
@@ -334,9 +318,6 @@ export async function evaluateExport(open: OpenProject, request: ExportRequest):
   }
   return evaluation;
 }
-
-/** Files the generic layout writes (Godot resources are counted separately). One definition with the collision check. */
-const countFiles = (e: ExportEvaluation): number => plannedPaths(e, []).length;
 
 export function toInput(e: ExportEvaluation, projectId: string, exportId: string, createdAt: string): ExportInput {
   return { projectId, exportId, preset: e.preset, createdAt, ...(e.godot ? { godot: e.godot } : {}), assets: e.assets };
@@ -369,7 +350,6 @@ export function storeExportPlan(open: OpenProject, plan: ExportPlan, request: Ex
 }
 
 export function loadExportPlan(open: OpenProject, planId: string): { planHash: string; request: ExportRequest } {
-  const row = open.db.query<{ plan_hash: string; plan_json: string }, [string]>("SELECT plan_hash, plan_json FROM export_plans WHERE plan_id = ?").get(planId);
-  if (!row) throw new OperationFailure("NOT_FOUND", `No export plan ${planId}`, undefined, [action("Plan the export", "export.plan")]);
+  const row = loadPlanRow<{ plan_hash: string; plan_json: string }>(open.db, "export_plans", planId, "export plan", action("Plan the export", "export.plan"));
   return { planHash: row.plan_hash, request: StoredPlan.parse(JSON.parse(row.plan_json)).request };
 }

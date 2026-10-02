@@ -26,6 +26,21 @@ export function NumberField({ id, label, value, onCommit, min, max, step = 1, in
   );
 }
 
+/** Select over a closed set of values; `children` (e.g. a FieldSource) render under it. */
+export function SelectField<T extends string>({ id, label, value, options, onChange, children }: {
+  id: string; label: string; value: T; options: ReadonlyArray<readonly [T, string]>; onChange: (next: T) => void; children?: ReactNode;
+}) {
+  return (
+    <div className="field compact">
+      <label htmlFor={id}>{label}</label>
+      <select id={id} value={value} onChange={(event) => onChange(event.target.value as T)}>
+        {options.map(([option, text]) => <option key={option} value={option}>{text}</option>)}
+      </select>
+      {children}
+    </div>
+  );
+}
+
 /** Where a recipe field's value came from, with a way back to the default once the user changed it. */
 export function FieldSource({ edited, source, onReset }: { edited: boolean; source: string | undefined; onReset: () => void }) {
   return (

@@ -5,12 +5,10 @@ import { Icon } from "../../components/Icon.tsx";
 import { ActionLinks } from "../../components/ui.tsx";
 import { paths } from "../../lib/paths.ts";
 import { STEP_STATE_TEXT, kindLabel } from "../../lib/steps.ts";
-import { upstreamPending } from "../../lib/next.ts";
+import { upstreamPending, plural } from "../../lib/next.ts";
 import { OutputArt } from "../../components/OutputArt.tsx";
 import { GenerateDialog, type GenerateRequest } from "./GenerateDialog.tsx";
 import "./generation.css";
-
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** The newest candidate with a rejected output: the natural thing to vary. */
 function newestRejected(candidates: Candidate[]): Candidate | undefined {

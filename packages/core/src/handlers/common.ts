@@ -1,17 +1,19 @@
 import { stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type { AssetSummary } from "@brainforge/contracts";
-import { isOpenProject, type OpenProject } from "../project-runtime.ts";
-import type { AuthoredSet } from "../authored.ts";
-import { OperationFailure, type ProjectHandle } from "../runtime.ts";
+import { isFile } from "@brainforge/storage";
+import { classifyAuthoredPath, type AuthoredSet } from "../authored.ts";
+import { OperationFailure } from "../runtime.ts";
 
-export function requireOpen(project: ProjectHandle | undefined): OpenProject {
-  if (!project || !isOpenProject(project)) throw new OperationFailure("PROJECT_NOT_OPEN", "This operation requires an opened project");
-  return project;
-}
-
-export async function isFile(path: string): Promise<boolean> {
-  return stat(path).then((s) => s.isFile(), () => false);
+/** Classify an authored path, or fail naming the locations that are allowed. */
+export function authoredPath(path: string) {
+  const c = classifyAuthoredPath(path);
+  if (!c) {
+    throw new OperationFailure("INVALID_INPUT", `${path} is not an authored file location`, {
+      allowed: ["brainforge/project.yaml", "brainforge/styles/<style-id>.yaml", "brainforge/assets/<asset-id>/asset.yaml"],
+    });
+  }
+  return c;
 }
 
 /**

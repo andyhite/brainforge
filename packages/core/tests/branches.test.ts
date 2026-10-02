@@ -47,7 +47,7 @@ interface World {
   open: OpenProject;
   /** The first locked branch (A). */
   branchId: string;
-  call<K extends OperationName>(name: K, input: unknown, as?: OperationContext): Promise<OperationResult<OperationData<K>>>;
+  call<K extends OperationName>(name: K, input: unknown, as?: OperationContext, requestId?: string): Promise<OperationResult<OperationData<K>>>;
 }
 
 const worlds: World[] = [];
@@ -98,7 +98,7 @@ async function world(): Promise<World> {
   await put(root, "brainforge/assets/cortex/asset.yaml", assetYaml());
   expectOk(await h.call("project.open", { path: root }));
   const open = h.registry.get(root) as OpenProject;
-  const call: World["call"] = (name, input, as) => h.call(name, input, { project: root, ...(as ? { context: as } : {}) });
+  const call: World["call"] = (name, input, as, requestId) => h.call(name, input, { project: root, ...(as ? { context: as } : {}), ...(requestId ? { requestId } : {}) });
   expectOk(await call("policy.authorize", { requestedPolicyHash: expectOk(await call("settings.inspect", {})).policy.requestedPolicyHash }));
   const w: World = { h, root, open, branchId: "", call };
   worlds.push(w);
@@ -260,7 +260,7 @@ describe("continue and rebase", () => {
   test("concept B is locked by a human on saved inputs; promotion refuses it with the diff until it is rebased onto current, and A keeps its work and its active version", async () => {
     const w = await world();
     const a = await produce(w, w.branchId, "a");
-    const v1 = expectOk(await w.call("promotion.start", { ...(({ planId, planHash }) => ({ planId, planHash }))(await promotionPlan(w, w.branchId)), requestId: "promote-a-0001" })).version;
+    const v1 = expectOk(await w.call("promotion.start", await promotionPlan(w, w.branchId).then(({ planId, planHash }) => ({ planId, planHash })), undefined, "promote-a-0001")).version;
     expectOk(await w.call("version.activate", { versionId: v1.versionId, expectedRevision: expectOk(await w.call("version.list", { assetId: "cortex" })).active.revision }));
 
     // concept B was generated from today's files; then the walk is changed on purpose
@@ -293,7 +293,7 @@ describe("continue and rebase", () => {
     expect(mismatch?.code).toBe("STEP_BLOCKED");
     expect(mismatch?.message).toContain("deliverables.walk.animation.motion");
     expect(mismatch?.recoveryActions.map((x) => x.operation)).toEqual(expect.arrayContaining(["branch.plan", "branch.create"]));
-    expect(errorOf(await w.call("promotion.start", { planId: blocked.planId, planHash: blocked.planHash, requestId: "promote-b-0001" })).code).toBe("STEP_BLOCKED");
+    expect(errorOf(await w.call("promotion.start", { planId: blocked.planId, planHash: blocked.planHash }, undefined, "promote-b-0001")).code).toBe("STEP_BLOCKED");
 
     // the rebase plan
     const rebase = await plan(w, bIds.proc, "current");
@@ -330,7 +330,7 @@ describe("continue and rebase", () => {
 
     const ready = await promotionPlan(w, b3.branchId);
     expect(ready.blockers).toEqual([]);
-    const v2 = expectOk(await w.call("promotion.start", { planId: ready.planId, planHash: ready.planHash, requestId: "promote-b3-0001" })).version;
+    const v2 = expectOk(await w.call("promotion.start", { planId: ready.planId, planHash: ready.planHash }, undefined, "promote-b3-0001")).version;
     expect(v2.versionNumber).toBe(2);
     const listed = expectOk(await w.call("version.list", { assetId: "cortex" }));
     expect(listed.active.versionId).toBe(v1.versionId);
@@ -340,7 +340,7 @@ describe("continue and rebase", () => {
   test("changing only A's walk reuses the approved idle in a new coherent version", async () => {
     const w = await world();
     const a = await produce(w, w.branchId, "a");
-    const v1 = expectOk(await w.call("promotion.start", { ...(({ planId, planHash }) => ({ planId, planHash }))(await promotionPlan(w, w.branchId)), requestId: "promote-a-0001" })).version;
+    const v1 = expectOk(await w.call("promotion.start", await promotionPlan(w, w.branchId).then(({ planId, planHash }) => ({ planId, planHash })), undefined, "promote-a-0001")).version;
     expectOk(await w.call("version.activate", { versionId: v1.versionId, expectedRevision: expectOk(await w.call("version.list", { assetId: "cortex" })).active.revision }));
 
     await edit(w, "brainforge/assets/cortex/asset.yaml", assetYaml({ motion: "walk with a heavy stomp" }));
@@ -358,7 +358,7 @@ describe("continue and rebase", () => {
     expect(next.blockers).toEqual([]);
     expect(next.deliverables.find((d) => d.deliverableId === "idle-rest")).toMatchObject({ candidateId: a.idle, reusesVersionId: v1.versionId });
     expect(next.deliverables.find((d) => d.deliverableId === "walk")).toMatchObject({ candidateId: "proc_a2" });
-    const v2 = expectOk(await w.call("promotion.start", { planId: next.planId, planHash: next.planHash, requestId: "promote-a-0002" })).version;
+    const v2 = expectOk(await w.call("promotion.start", { planId: next.planId, planHash: next.planHash }, undefined, "promote-a-0002")).version;
     expect(v2.versionNumber).toBe(2);
     expect(w.open.db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM candidates WHERE step_id = 'idle-rest'").get()?.n).toBe(1);
     expectOk(await w.call("version.activate", { versionId: v2.versionId, expectedRevision: expectOk(await w.call("version.list", { assetId: "cortex" })).active.revision }));

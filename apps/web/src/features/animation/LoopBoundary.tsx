@@ -1,15 +1,15 @@
 import { useState } from "react";
 import { useOperation, fileUrl } from "../../api/hooks.ts";
 import { useProject } from "../../lib/use-project.ts";
-import { Seg } from "../../components/ui.tsx";
-import { FrameCanvas, hasAtlas, type Background } from "./FrameCanvas.tsx";
+import { BackdropPicker, type Backdrop } from "../generation/media.tsx";
+import { FrameCanvas, hasAtlas } from "./FrameCanvas.tsx";
 import { warningText } from "./timing.ts";
 
 /** Last played frame beside the first: what the player sees at the loop seam. Also the contact sheet when one exists. */
 export function LoopBoundary({ outputId }: { outputId: string }) {
   const project = useProject();
   const query = useOperation("output.inspect", { outputId });
-  const [background, setBackground] = useState<Background>("checker");
+  const [background, setBackground] = useState<Backdrop>("checker");
   const projectId = project.data?.project.projectId;
   if (!projectId || !query.data?.ok) return null;
   const d = query.data.data.output;
@@ -21,7 +21,7 @@ export function LoopBoundary({ outputId }: { outputId: string }) {
   return (
     <section className="loop-boundary" aria-label="Loop boundary">
       <h3>{d.loop === false ? "First and last frame" : "Loop seam"}</h3>
-      <Seg label="Boundary background" value={background} onChange={setBackground} options={[{ value: "checker", label: "Checker" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} />
+      <BackdropPicker value={background} onChange={setBackground} />
       <div className="seam-row">
         {[last, 0].map((i, n) => (
           <figure key={i} className="clip-fig">

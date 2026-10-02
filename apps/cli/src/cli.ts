@@ -133,6 +133,35 @@ export async function run(argv: string[], env: Record<string, string | undefined
     return 0;
   }
 
+  if (args.help && args.op === undefined) {
+    emit(io, {
+      ok: true,
+      data: {
+        usage: "brainforge <operation> [options]",
+        summary: "Run Brainforge operations through the local server.",
+        options: {
+          "--help, -h": "Show CLI help, or an operation's input JSON Schema when an operation is given.",
+          "--list": "List all operations and their summaries.",
+          "--input <json|->": "JSON input (default {}); use - to read stdin.",
+          "--input-file <path>": "Read JSON input from a file instead of --input.",
+          "--project <absolute dir>": "Override discovery of the nearest ancestor containing brainforge/project.yaml.",
+          "--request-id <id>": "Set the idempotency key; reuse it with identical input when retrying.",
+          "--timeout <seconds>": `Stop waiting after this many seconds (default ${DEFAULT_TIMEOUT_MS / 1000}); does not cancel server work.`,
+          "--json": "Accepted for compatibility; stdout is always one JSON envelope.",
+        },
+        environment: { BF_SERVER_URL: "Server URL (default http://127.0.0.1:3210)." },
+        examples: [
+          "brainforge --list",
+          "brainforge spec.read --help",
+          `brainforge spec.read --input '{"path":"brainforge/project.yaml"}'`,
+        ],
+      },
+      nextActions: [],
+      warnings: [],
+    });
+    return 0;
+  }
+
   if (args.op === undefined) {
     emit(io, failure("", "INVALID_INPUT", "Missing operation name.", [{ label: "List operations: bf --list" }]));
     return 2;

@@ -2,9 +2,9 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import type { OperationData, StepState } from "@brainforge/contracts";
 import { fileUrl, useOperation } from "../../api/hooks.ts";
-import { Banner, ErrorBanner, NetworkProblem } from "../../components/ui.tsx";
+import { Banner, gate } from "../../components/ui.tsx";
 import { Icon, type IconName } from "../../components/Icon.tsx";
-import { OutputArt } from "../../components/OutputArt.tsx";
+import { OutputArt, isPixelArt, useCandidateOutput } from "../../components/OutputArt.tsx";
 import { useReviewQueue } from "../../lib/attention.ts";
 import { hasOpenFeedback, upstreamPending, waitsOnlyForUpstream } from "../../lib/next.ts";
 import { paths } from "../../lib/paths.ts";
@@ -30,10 +30,9 @@ function useCandidate(candidateId: string | undefined) {
 }
 
 function ArtImg({ pick, name }: { pick: OutputPick; name: string }) {
-  const { projectId, candidate } = useCandidate(pick.candidateId);
-  const output = candidate?.outputs.find((item) => item.outputId === pick.outputId) ?? candidate?.outputs.find((item) => item.role === "matted") ?? candidate?.outputs[0];
+  const { projectId, candidate, output } = useCandidateOutput(pick.candidateId, pick.outputId);
   if (!projectId || !candidate || !output) return null;
-  return <img src={fileUrl(projectId, output.fileId, 256)} alt={`${name}, ${candidate.label}`} loading="lazy" decoding="async" className={output.width <= 128 && output.height <= 128 ? "px" : undefined} />;
+  return <img src={fileUrl(projectId, output.fileId, 256)} alt={`${name}, ${candidate.label}`} loading="lazy" decoding="async" className={isPixelArt(output) ? "px" : undefined} />;
 }
 
 interface Clip { projectId: string | undefined; label: string | undefined; frames: OperationData<"output.inspect">["output"]["frames"]; fps: number | undefined }
@@ -215,11 +214,10 @@ export function AssetSheet() {
   if (inspect.data?.ok && !inspect.data.data.summary.valid) {
     return <Banner tone="warn" title="Nothing to build until the definition is valid">Open the <Link to={paths.assetDefinition(assetId)}>Definition tab</Link> to see what is missing.</Banner>;
   }
-  if (steps.error) return <NetworkProblem error={steps.error} />;
-  if (steps.data && !steps.data.ok) return <ErrorBanner error={steps.data.error} />;
-  if (!steps.data?.ok) return <p className="secondary" role="status">Loading the sheet…</p>;
+  const g = gate(steps, "Loading the sheet…");
+  if ("node" in g) return g.node;
 
-  const list = steps.data.data.steps;
+  const list = g.data.steps;
   const ctx: CellContext = { assetId, branchId: view.branchId, branchParam: view.branchParam, steps: list, queue: queue.items, marked };
   const deliverables = list.filter((step) => step.stepId !== "concept");
   const references = deliverables.filter(isReference);
@@ -264,7 +262,7 @@ export function AssetSheet() {
         {family === "environment" ? (
           <details className="collection" open>
             <summary>Environment collection</summary>
-            <CollectionView assetId={assetId} collection={steps.data.data.collection} branches={view.branches} />
+            <CollectionView assetId={assetId} collection={g.data.collection} branches={view.branches} />
           </details>
         ) : null}
       </div>

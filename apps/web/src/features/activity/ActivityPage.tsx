@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { Job } from "@brainforge/contracts";
 import { useOperation } from "../../api/hooks.ts";
-import { EmptyState, ErrorBanner, NetworkProblem, PageHeader, Seg } from "../../components/ui.tsx";
+import { EmptyState, gate, PageHeader, Seg } from "../../components/ui.tsx";
 import { jobNeedsAttention, JOB_IS_ACTIVE } from "../../lib/attention.ts";
 import { paths } from "../../lib/paths.ts";
 import { useProjectRoot } from "../../lib/project-context.tsx";
@@ -51,11 +51,9 @@ function JobsView() {
   const [assetFilter, setAssetFilter] = useState("all");
   const [shown, setShown] = useState(RECENT_PAGE);
 
-  if (query.error) return <NetworkProblem error={query.error} />;
-  if (!query.data) return <p className="secondary" role="status">Loading jobs…</p>;
-  if (!query.data.ok) return <ErrorBanner error={query.data.error} />;
-
-  const jobs = [...query.data.data.jobs].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const g = gate(query, "Loading jobs…");
+  if ("node" in g) return g.node;
+  const jobs = [...g.data.jobs].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   if (jobs.length === 0) {
     return (
       <EmptyState title="Nothing has run yet">

@@ -4,7 +4,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import type { HistoryExample, JudgmentSummary } from "@brainforge/contracts";
 import { fileUrl, useOperation, type Envelope } from "../../api/hooks.ts";
 import type { NetworkError } from "../../api/client.ts";
-import { Art, ErrorBanner, NetworkProblem, Status, timeAgo, formatTime } from "../../components/ui.tsx";
+import { Art, gate, NetworkProblem, Status, timeAgo, formatTime } from "../../components/ui.tsx";
 import { paths } from "../../lib/paths.ts";
 import { kindLabel } from "../../lib/steps.ts";
 import { useProject } from "../../lib/use-project.ts";
@@ -44,6 +44,7 @@ export function DecisionsView({ mode }: { mode: "decisions" | "preferences" }) {
 
   if (project.networkError) return <NetworkProblem error={project.networkError} />;
 
+  const g = gate(examples, "Loading decisions…");
   const loaded = examples.data?.ok ? examples.data.data : undefined;
   const list = loaded?.examples ?? [];
   const projectId = project.data?.project.projectId;
@@ -78,9 +79,7 @@ export function DecisionsView({ mode }: { mode: "decisions" | "preferences" }) {
             </div>
             <p className="secondary">What the same asset, then the same style and family, then the same family decided before. Only this page is loaded; it isn’t the complete log.</p>
             {assetId === "" ? <p className="secondary">This project has no assets yet, so there is no history.</p>
-              : examples.error ? <NetworkProblem error={examples.error} />
-              : !examples.data ? <p className="secondary" role="status">Loading decisions…</p>
-              : !examples.data.ok ? <ErrorBanner error={examples.data.error} />
+              : "node" in g ? g.node
               : (
                 <>
                   <div className="dec-cols">
@@ -157,11 +156,8 @@ function ExampleGroup({ title, outcome, examples, projectId, nameOf, empty }: {
 }
 
 function Judgments({ query }: { query: UseQueryResult<Envelope<"history.judgments">, NetworkError> }) {
-  let body;
-  if (query.error) body = <NetworkProblem error={query.error} />;
-  else if (!query.data) body = <p className="secondary" role="status">Loading judgments…</p>;
-  else if (!query.data.ok) body = <ErrorBanner error={query.data.error} />;
-  else body = <JudgmentBody summary={query.data.data.summary} />;
+  const g = gate(query, "Loading judgments…");
+  const body = "node" in g ? g.node : <JudgmentBody summary={g.data.summary} />;
   return (
     <section aria-labelledby="h-judgments">
       <div className="section-head"><h2 id="h-judgments">Agent calls vs your decisions</h2></div>

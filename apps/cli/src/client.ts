@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   OPERATIONS,
   isOperationName,
+  isOperationResult,
   type ErrorCode,
   type OperationError,
   type OperationResult,
@@ -65,15 +66,6 @@ export function resolveServerUrl(explicit?: string): string {
   return (explicit?.trim() || process.env.BF_SERVER_URL?.trim() || DEFAULT_SERVER_URL).replace(/\/+$/, "");
 }
 
-const WireResult = z.union([
-  z.object({ ok: z.literal(true), data: z.unknown(), nextActions: z.array(z.unknown()).default([]), warnings: z.array(z.string()).default([]) }).passthrough(),
-  z.object({
-    ok: z.literal(false),
-    error: z.object({ code: z.string(), message: z.string(), recoveryActions: z.array(z.unknown()).default([]) }).passthrough(),
-    requestId: z.string().optional(),
-  }).passthrough(),
-]);
-
 const InputObject = z.record(z.string(), z.unknown());
 
 async function post(
@@ -110,12 +102,11 @@ async function post(
   } catch {
     return failure(requestId, "IO_ERROR", `Server at ${serverUrl} returned HTTP ${response.status} with a non-JSON body.`);
   }
-  const wire = WireResult.safeParse(json);
-  if (!wire.success) {
+  if (!isOperationResult(json)) {
     return failure(requestId, "IO_ERROR", `Server at ${serverUrl} returned HTTP ${response.status} with an unrecognised response shape.`);
   }
   // The server is the authority; pass its envelope through untouched.
-  return wire.data as OperationResult;
+  return json;
 }
 
 /**

@@ -6,45 +6,20 @@
  *   bun packages/export/scripts/godot-verify.ts [--keep]
  */
 import { createHash } from "node:crypto";
-import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { commitExport, checkGodotRoot, prepareExport, type ExpectedCurrent, type ExportInput } from "../src/index.ts";
 import { animationDeliverable, characterAsset, makeInput, stillDeliverable } from "../tests/fixtures.ts";
+import { GODOT, RES, check, errorLines, failures, godot, keep } from "./godot-common.ts";
 
-const GODOT = process.env.GODOT_BIN ?? "/Applications/Godot.app/Contents/MacOS/Godot";
-const keep = process.argv.includes("--keep");
-const RES = "res://assets/brainforge";
 const CURRENT_RES = `${RES}/current/assets/cortex/godot`;
-
-if (!(await access(GODOT).then(() => true, () => false))) {
-  console.log(`SKIP: Godot not found at ${GODOT} (set GODOT_BIN); resource-open verification was not run.`);
-  process.exit(0);
-}
 
 const base = await mkdtemp(path.join(tmpdir(), "bf-godot-"));
 const project = path.join(base, "game");
 const sourceDir = path.join(base, "src");
 const dest = path.join(project, "assets", "brainforge");
-let failures = 0;
 
-const check = (ok: boolean, what: string, detail?: unknown): void => {
-  console.log(`${ok ? "PASS" : "FAIL"}  ${what}${ok || detail === undefined ? "" : `  (${JSON.stringify(detail)})`}`);
-  if (!ok) failures++;
-};
-
-async function godot(args: string[]): Promise<string> {
-  const proc = Bun.spawn([GODOT, "--headless", "--path", project, ...args], { stdout: "pipe", stderr: "pipe" });
-  const timer = setTimeout(() => proc.kill(), 120_000);
-  const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
-  await proc.exited;
-  clearTimeout(timer);
-  return `${out}${err}`;
-}
-
-// Headless --script runs print engine shutdown leak diagnostics for any scene/texture a script touched; those are not resource errors.
-const SHUTDOWN_NOISE = /leaked at exit|still in use at exit/;
-const errorLines = (text: string): string[] => text.split("\n").filter((l) => /(^|\s)(ERROR|SCRIPT ERROR|Parse Error|BF_ERROR)/.test(l) && !SHUTDOWN_NOISE.test(l));
 const sha = async (file: string): Promise<string> => createHash("sha256").update(await readFile(file)).digest("hex");
 
 async function walk(dir: string, rel = ""): Promise<string[]> {
@@ -143,10 +118,10 @@ interface Result {
 }
 
 async function importAndLoad(label: string): Promise<Result> {
-  const imp = await godot(["--import"]);
+  const imp = await godot(project, ["--import"]);
   console.log(`--- godot --import (${label}) ---\n${imp.trim()}\n`);
   check(errorLines(imp).length === 0, `${label}: headless import reports no errors`, errorLines(imp));
-  const run = await godot(["--script", "res://check.gd"]);
+  const run = await godot(project, ["--script", "res://check.gd"]);
   console.log(`--- godot --script check.gd (${label}) ---\n${run.trim()}\n`);
   const line = run.split("\n").find((l) => l.startsWith("BF_RESULT "));
   check(line !== undefined && errorLines(run).length === 0, `${label}: resources load in Godot`, errorLines(run));

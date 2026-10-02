@@ -14,6 +14,18 @@ const FIELDS = ["conceptLock", "productionReview", "promotion", "activation"] as
 
 export const policyHash = (policy: ApprovalPolicy): string => normalizedHash(policy);
 
+/**
+ * Why an agent may not act under the effective `field` policy: POLICY_PENDING when project.yaml requests a
+ * relaxation a human has not confirmed yet, else HUMAN_AUTHORIZATION_REQUIRED. `tail` tells the agent what to hand the user.
+ */
+export function agentDenial(view: PolicyView, field: "productionReview" | "promotion" | "activation", verb: string, tail: string): { code: "POLICY_PENDING" | "HUMAN_AUTHORIZATION_REQUIRED"; message: string } {
+  const requested = view.requested[field];
+  const pending = requested !== view.effective[field] && view.pendingRelaxation && (requested === "agent" || requested === "agent_with_escalation");
+  return pending
+    ? { code: "POLICY_PENDING", message: `Policy requests that agents may ${verb} (${field}: ${requested}), but a human has not confirmed that change. Ask the user to confirm it in Settings.` }
+    : { code: "HUMAN_AUTHORIZATION_REQUIRED", message: `Only the user may ${verb} under the current approval policy (${field}: ${view.effective[field]}). ${tail}` };
+}
+
 interface SnapshotRow { policy_json: string; confirmed_by: string; confirmed_at: string }
 
 /** Latest human-authorized snapshot, if any. */

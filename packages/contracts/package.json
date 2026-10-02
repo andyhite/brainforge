@@ -4,6 +4,6 @@
   "private": true,
   "type": "module",
   "exports": { ".": "./src/index.ts" },
-  "scripts": { "typecheck": "tsc -p .", "test": "bun test tests --pass-with-no-tests" },
+  "scripts": { "typecheck": "tsc -p ." },
   "dependencies": { "zod": "^4.0.0" }
 }

@@ -2,7 +2,7 @@ import { Fragment } from "react";
 import { Link } from "react-router-dom";
 import type { Candidate, CandidateOutput, OperationData, RevisionRequest } from "@brainforge/contracts";
 import { fileUrl, useOperation } from "../../api/hooks.ts";
-import { ErrorBanner, formatTime, NetworkProblem } from "../../components/ui.tsx";
+import { formatTime, gate } from "../../components/ui.tsx";
 import { paths } from "../../lib/paths.ts";
 import { LoopBoundary } from "../animation/LoopBoundary.tsx";
 import { OutputsList } from "../animation/OutputsList.tsx";
@@ -97,10 +97,9 @@ const REGION_ORDER = ["front", "profile", "rear"];
 /** View crops of a reference sheet: derived from the sheet's exact bytes and pinned with it, never decided separately. */
 function DerivedCrops({ candidate, output, projectId }: { candidate: Candidate; output: CandidateOutput; projectId: string }) {
   const material = useOperation("review.material", { candidateId: candidate.candidateId, outputIds: [output.outputId] });
-  if (material.error) return <NetworkProblem error={material.error} />;
-  if (!material.data) return <p className="secondary" role="status">Loading crops…</p>;
-  if (!material.data.ok) return <ErrorBanner error={material.data.error} />;
-  const crops = material.data.data.visuals
+  const g = gate(material, "Loading crops…");
+  if ("node" in g) return g.node;
+  const crops = g.data.visuals
     .filter((v) => v.role === "crop")
     .sort((a, b) => (REGION_ORDER.indexOf(a.label) + 1 || 99) - (REGION_ORDER.indexOf(b.label) + 1 || 99));
   if (crops.length === 0) return <p className="secondary">No view crops are published for this sheet.</p>;

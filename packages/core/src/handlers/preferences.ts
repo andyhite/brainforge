@@ -1,8 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { discoverAuthored } from "../authored.ts";
 import { preferenceRow, toPreference, type PreferenceRow } from "../preferences/store.ts";
-import { OperationFailure, type HandlerMap, type ProjectHandle } from "../runtime.ts";
-import { requireOpen } from "./common.ts";
+import type { OpenProject } from "../project-runtime.ts";
+import { OperationFailure, type HandlerMap } from "../runtime.ts";
 
 /** Only a proposal can be decided; a confirmed or rejected one is final (propose a new one to change course). */
 function requireProposed(row: PreferenceRow | undefined, preferenceId: string): PreferenceRow {
@@ -13,8 +13,7 @@ function requireProposed(row: PreferenceRow | undefined, preferenceId: string): 
   return row;
 }
 
-function decide(project: ProjectHandle | undefined, actorId: string, preferenceId: string, status: "confirmed" | "rejected", text: string | undefined, note: string | undefined) {
-  const open = requireOpen(project);
+function decide(open: OpenProject, actorId: string, preferenceId: string, status: "confirmed" | "rejected", text: string | undefined, note: string | undefined) {
   const row = requireProposed(preferenceRow(open.db, preferenceId), preferenceId);
   const { revision } = open.transact(() => {
     open.db.query("UPDATE preferences SET status = ?, text = ?, decided_by = ?, decided_at = ?, note = ? WHERE preference_id = ?")
@@ -26,8 +25,7 @@ function decide(project: ProjectHandle | undefined, actorId: string, preferenceI
 }
 
 export const preferenceHandlers: HandlerMap = {
-  "preference.propose": async ({ input, project, context }) => {
-    const open = requireOpen(project);
+  "preference.propose": async ({ input, project: open, context }) => {
     const text = input.text.trim();
     if (text === "") throw new OperationFailure("INVALID_INPUT", "A preference needs text");
     if (input.scope === "project" && input.styleId !== undefined) throw new OperationFailure("INVALID_INPUT", "A project preference has no styleId; use scope \"style\" to attach it to a style");
@@ -56,8 +54,7 @@ export const preferenceHandlers: HandlerMap = {
     return { data: { preference: toPreference(row) }, revision, nextActions: [{ label: "Ask the user to confirm or correct it in the History view; it changes nothing until they do" }] };
   },
 
-  "preference.list": async ({ input, project }) => {
-    const { db } = requireOpen(project);
+  "preference.list": async ({ input, project: { db } }) => {
     const where: string[] = [];
     const args: string[] = [];
     if (input.status !== undefined) { where.push("status = ?"); args.push(input.status); }

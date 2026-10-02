@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import type { Candidate, CandidateOutput, OperationData } from "@brainforge/contracts";
 import { useMutationOperation } from "../../api/hooks.ts";
-import { Banner, ErrorBanner, NetworkProblem } from "../../components/ui.tsx";
+import { Banner, OpResult } from "../../components/ui.tsx";
 import { paths } from "../../lib/paths.ts";
 
 type Exported = OperationData<"candidate.export-cleanup">;
@@ -120,8 +120,7 @@ export function CleanupPanel({ candidate, frameOutputs, assetId }: { candidate: 
       <div className="row">
         <button type="button" disabled={!output || exportOp.isPending} onClick={() => void doExport()}>{exportOp.isPending ? "Exporting…" : "Export for cleanup"}</button>
       </div>
-      {exportOp.error ? <NetworkProblem error={exportOp.error} /> : null}
-      {exportOp.data && !exportOp.data.ok ? <ErrorBanner error={exportOp.data.error} /> : null}
+      <OpResult m={exportOp} />
       {exported ? (
         <div role="status" className="stack">
           <p>
@@ -175,8 +174,7 @@ export function CleanupPanel({ candidate, frameOutputs, assetId }: { candidate: 
           <input id="cleanup-effort" type="number" min={0} step={1} value={effort} onChange={(event) => setEffort(event.target.value)} />
         </div>
         {inputError ? <p role="alert" className="field-error">{inputError}</p> : null}
-        {importOp.error ? <NetworkProblem error={importOp.error} /> : null}
-        {importOp.data && !importOp.data.ok ? <ErrorBanner error={importOp.data.error} /> : null}
+        <OpResult m={importOp} />
         {created ? <Banner tone="ok" title="Imported as a new candidate">{created.label} is undecided and linked to this candidate. <Link to={paths.step(assetId, candidate.stepId, { ...(candidate.branchId ? { branch: candidate.branchId } : {}), candidate: created.candidateId })}>Open it</Link></Banner> : null}
         <div className="row end">
           <button type="submit" disabled={!output || importOp.isPending}>{importOp.isPending ? "Importing…" : "Import as a new candidate"}</button>

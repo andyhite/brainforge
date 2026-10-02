@@ -1,10 +1,10 @@
-import * as Dialog from "@radix-ui/react-dialog";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type SyntheticEvent } from "react";
 import { Link, NavLink } from "react-router-dom";
-import { runRecoveryOperation } from "../api/client.ts";
+import { callOperation } from "../api/client.ts";
 import { useProjectRoot } from "../lib/project-context.tsx";
-import type { NextAction, OperationError, Problem, RecoveryAction } from "@brainforge/contracts";
+import { paths } from "../lib/paths.ts";
+import type { NextAction, OperationError, OperationName, OperationResult, Problem, RecoveryAction } from "@brainforge/contracts";
 import { Icon, type IconName } from "./Icon.tsx";
 
 export type Tone = "ok" | "warn" | "bad" | "info" | "idle";
@@ -36,37 +36,84 @@ export function NetworkProblem({ error }: { error: { message: string } }) {
   return <Banner tone="bad" title="Can’t reach the Brainforge server">{error.message} Start it with <code>bun run server</code>, then retry.</Banner>;
 }
 
-/** Server-provided next or recovery actions, run exactly as the server described them. */
-export function ActionLinks({ actions, primary }: { actions: Array<RecoveryAction | NextAction>; primary?: boolean }) {
+interface QueryLike<D> { error: { message: string } | null; data: OperationResult<D> | undefined }
+
+/** The query gate: a node to render while there is no ok data (offline, loading, server error), else the data. */
+export function gate<D>(q: QueryLike<D>, loading: string, status = true): { node: ReactNode } | { data: D } {
+  if (q.error) return { node: <NetworkProblem error={q.error} /> };
+  if (!q.data) return { node: <p className="secondary" role={status ? "status" : undefined}>{loading}</p> };
+  if (!q.data.ok) return { node: <ErrorBanner error={q.data.error} /> };
+  return { data: q.data.data };
+}
+
+/** The tail of a mutation: offline or the server's own error, nothing otherwise. */
+export function OpResult({ m }: { m: { error: { message: string } | null; data?: OperationResult | undefined } }) {
+  return (
+    <>
+      {m.error ? <NetworkProblem error={m.error} /> : null}
+      {m.data && !m.data.ok ? <ErrorBanner error={m.data.error} /> : null}
+    </>
+  );
+}
+
+/** Runs server-described actions in order, stopping at the first failure. `busy.step` is the action running now. */
+export function useRunAction() {
   const queryClient = useQueryClient();
   const { root } = useProjectRoot();
-  const [busy, setBusy] = useState<string | undefined>(undefined);
+  const [busy, setBusy] = useState<{ label: string; step: number } | undefined>(undefined);
   const [failure, setFailure] = useState<string | undefined>(undefined);
-  const visible = actions.filter((action) => action.url || (action.operation && action.input !== undefined));
-  if (visible.length === 0) return null;
-  const run = async (action: RecoveryAction | NextAction) => {
-    if (!action.operation) return;
-    setBusy(action.label);
+  const run = async (label: string, actions: Array<RecoveryAction | NextAction>) => {
     setFailure(undefined);
     try {
-      const result = await runRecoveryOperation(action.operation, root, action.input);
-      if (result.ok) void queryClient.invalidateQueries({ queryKey: ["op"] });
-      else setFailure(result.error.message);
+      for (const [step, action] of actions.entries()) {
+        if (!action.operation) continue;
+        setBusy({ label, step });
+        // Operation name and input arrive from the server, not from client logic.
+        const result = await callOperation(action.operation as OperationName, { project: root, input: action.input as never });
+        if (!result.ok) { setFailure(result.error.message); return; }
+      }
     } catch (error) {
       setFailure(error instanceof Error ? error.message : "Request failed");
     } finally {
       setBusy(undefined);
+      void queryClient.invalidateQueries({ queryKey: ["op"] });
     }
   };
+  return { busy, failure, run };
+}
+
+/** An action with something to run; the rest is guidance, shown as words. */
+export const isRunnable = (action: RecoveryAction | NextAction): boolean => Boolean(action.url || (action.operation && action.input !== undefined));
+
+/** Actions whose point is their answer (a plan, a list): run in place they would show nothing, so they open the page that shows it. */
+function pageFor(action: RecoveryAction | NextAction): string | undefined {
+  const input: unknown = action.input;
+  const assetId = typeof input === "object" && input !== null && "assetId" in input && typeof input.assetId === "string" ? input.assetId : undefined;
+  if (!assetId) return undefined;
+  if (action.operation === "promotion.plan") return paths.assetVersions(assetId, { plan: true });
+  if (action.operation === "version.list") return paths.assetVersions(assetId);
+  return undefined;
+}
+
+/** Server-provided next or recovery actions, run as the server described them or opened where their answer shows. */
+export function ActionLinks({ actions, primary }: { actions: Array<RecoveryAction | NextAction>; primary?: boolean }) {
+  const { busy, failure, run } = useRunAction();
+  const runnable = actions.filter(isRunnable);
+  const words = actions.filter((action) => !isRunnable(action));
+  if (actions.length === 0) return null;
   return (
     <>
-      {visible.map((action, index) =>
-        action.url ? (
+      {runnable.map((action, index) => {
+        const page = pageFor(action);
+        return action.url ? (
           <a key={`${action.label}-${action.url}`} className={`button sm${primary && index === 0 ? " primary" : ""}`} href={action.url}>{action.label}</a>
+        ) : page ? (
+          <Link key={action.label} className={`button sm${primary && index === 0 ? " primary" : ""}`} to={page}>{action.label}</Link>
         ) : (
-          <button key={action.label} type="button" className={`sm${primary && index === 0 ? " primary" : ""}`} onClick={() => void run(action)} disabled={busy !== undefined}>{busy === action.label ? "Working…" : action.label}</button>
-        ),
-      )}
+          <button key={action.label} type="button" className={`sm${primary && index === 0 ? " primary" : ""}`} onClick={() => void run(action.label, [action])} disabled={busy !== undefined}>{busy?.label === action.label ? "Working…" : action.label}</button>
+        );
+      })}
+      {words.map((action) => <div key={action.label} className="secondary">{action.label}</div>)}
       {failure ? <span role="alert" className="status bad"><Icon name="bad" /><span>{failure}</span></span> : null}
     </>
   );
@@ -74,17 +121,30 @@ export function ActionLinks({ actions, primary }: { actions: Array<RecoveryActio
 
 /** Operation error with the server's own recovery actions: nothing is re-derived client-side. */
 export function ErrorBanner({ error, extra }: { error: OperationError; extra?: ReactNode }) {
-  const guidance = error.recoveryActions.filter((action) => !action.url && !(action.operation && action.input !== undefined));
   const words = error.code.replaceAll("_", " ").toLowerCase();
   return (
     <Banner tone="bad" title={words.charAt(0).toUpperCase() + words.slice(1)} actions={<><ActionLinks actions={error.recoveryActions} />{extra}</>}>
       <div>{error.message}</div>
-      {guidance.length > 0 ? (
-        <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
-          {guidance.map((action) => <li key={action.label}>{action.label}</li>)}
-        </ul>
-      ) : null}
     </Banner>
+  );
+}
+
+/** Plan blockers as warn banners; the server's recovery actions run, and the ones with nothing to run read as words. */
+export function Blockers<B extends { code: string; message: string; recoveryActions: RecoveryAction[] }>({ items, label, title, actions, children }: {
+  items: B[]; label: string; title?: string; actions?: (blocker: B) => ReactNode; children?: (blocker: B) => ReactNode;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <ul className="rel-blockers plain-list" aria-label={label}>
+      {items.map((blocker) => (
+        <li key={`${blocker.code}-${blocker.message}`}>
+          <Banner tone="warn" title={title ?? blocker.code.replaceAll(/[-_]/g, " ").toLowerCase()} actions={<>{actions?.(blocker)}<ActionLinks actions={blocker.recoveryActions} /></>}>
+            {blocker.message}
+            {children?.(blocker)}
+          </Banner>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -153,46 +213,53 @@ export function EmptyState({ title, children }: { title: string; children: React
   );
 }
 
-/** Radix dialog with focus trap and focus restoration to the opener. */
-export function Modal({ open, onOpenChange, title, description, children, dismissible = true, wide = false }: {
-  open: boolean; onOpenChange: (open: boolean) => void; title: string; description: ReactNode; children: ReactNode; dismissible?: boolean; wide?: boolean;
-}) {
-  const opener = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null);
+/**
+ * Opens the dialog modally while `open`; Esc or a click on the backdrop calls `onClose`, and closing returns focus
+ * to whatever opened it. Spread the result onto the `<dialog>`.
+ */
+export function useModalDialog(open: boolean, onClose: () => void) {
+  const ref = useRef<HTMLDialogElement>(null);
+  // A drag that starts inside and ends on the backdrop also clicks the dialog itself; only a press that began there closes.
+  const pressedBackdrop = useRef(false);
   useEffect(() => {
-    if (open) return;
-    // Dialogs are opened by state, not a Trigger: remember the last focused control so closing returns there.
-    const remember = (event: FocusEvent) => {
-      if (event.target instanceof HTMLElement) opener.current = event.target;
+    const dialog = ref.current;
+    if (!open || !dialog) return;
+    const opener = document.activeElement;
+    dialog.showModal();
+    return () => {
+      dialog.close();
+      if (opener instanceof HTMLElement) opener.focus();
     };
-    document.addEventListener("focusin", remember);
-    return () => document.removeEventListener("focusin", remember);
   }, [open]);
+  return {
+    ref,
+    onCancel: (event: SyntheticEvent) => { event.preventDefault(); onClose(); },
+    onPointerDown: (event: ReactMouseEvent) => { pressedBackdrop.current = event.target === event.currentTarget; },
+    onClick: (event: ReactMouseEvent) => { if (pressedBackdrop.current && event.target === event.currentTarget) onClose(); },
+  };
+}
+
+/** Native modal dialog: Esc and a click on the backdrop close it; focus is trapped and restored by the browser. */
+export function Modal({ open, onOpenChange, title, description, children, wide = false }: {
+  open: boolean; onOpenChange: (open: boolean) => void; title: string; description: ReactNode; children: ReactNode; wide?: boolean;
+}) {
+  const id = useId();
+  const dialog = useModalDialog(open, () => onOpenChange(false));
   return (
-    <Dialog.Root open={open} onOpenChange={(next) => { if (next || dismissible) onOpenChange(next); }}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="dialog-overlay" />
-        <Dialog.Content
-          className={`dialog${wide ? " wide" : ""}`}
-          onCloseAutoFocus={(event) => {
-            event.preventDefault();
-            opener.current?.focus();
-          }}
-        >
-          <Dialog.Title className="dialog-title">{title}</Dialog.Title>
-          <Dialog.Description className="dialog-description">{description}</Dialog.Description>
-          {dismissible ? (
-            <Dialog.Close asChild>
-              <button type="button" className="icon-button sm dialog-close" aria-label="Close"><Icon name="close" /></button>
-            </Dialog.Close>
-          ) : null}
+    <dialog {...dialog} className={`dialog${wide ? " wide" : ""}`} aria-labelledby={`${id}-title`} aria-describedby={`${id}-description`}>
+      {open ? (
+        <div className="dialog-body">
+          <h2 className="dialog-title" id={`${id}-title`}>{title}</h2>
+          <div className="dialog-description" id={`${id}-description`}>{description}</div>
+          <button type="button" className="icon-button sm dialog-close" aria-label="Close" onClick={() => onOpenChange(false)}><Icon name="close" /></button>
           {children}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        </div>
+      ) : null}
+    </dialog>
   );
 }
 
-export interface MenuItem {
+interface MenuItem {
   label: ReactNode;
   description?: ReactNode;
   icon?: IconName;

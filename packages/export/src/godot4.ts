@@ -29,7 +29,7 @@ class Raw {
 const quote = (s: string): string => JSON.stringify(s);
 
 /** Godot reads `12` as an int and `12.0` as a float; durations and speeds must be floats. */
-export function float(n: number): string {
+function float(n: number): string {
   const rounded = Number(n.toFixed(9));
   return Number.isInteger(rounded) ? `${rounded}.0` : String(rounded);
 }

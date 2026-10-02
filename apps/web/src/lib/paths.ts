@@ -27,7 +27,8 @@ export const paths = {
   /** The asset sheet. `step` marks the cell to select (the one you came back from). */
   asset: (assetId: string, options: { branch?: string; step?: string } = {}) => `/assets/${seg(assetId)}${query({ branch: options.branch, step: options.step })}`,
   assetDefinition: (assetId: string, options: { section?: string } = {}) => `/assets/${seg(assetId)}/definition${query({ section: options.section })}`,
-  assetVersions: (assetId: string, options: { version?: string } = {}) => `/assets/${seg(assetId)}/versions${query({ version: options.version })}`,
+  /** `plan` opens with a promotion already planned, for actions that promise one. */
+  assetVersions: (assetId: string, options: { version?: string; plan?: boolean } = {}) => `/assets/${seg(assetId)}/versions${query({ version: options.version, plan: options.plan ? "1" : undefined })}`,
   /** One room per deliverable: review, compare, notes and generation for that step. */
   step: (assetId: string, stepId: string, location: StepLocation = {}) => `/assets/${seg(assetId)}/steps/${seg(stepId)}${query({ branch: location.branch, candidate: location.candidate, output: location.output, compare: location.compare ? "1" : undefined })}`,
   /** The room in queue mode: every candidate waiting for a decision, or only one asset's. Optionally opened on one candidate. */

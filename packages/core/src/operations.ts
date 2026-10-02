@@ -1,9 +1,12 @@
 import { createHash } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import {
-  OPERATIONS, isOperationName, type OperationContext, type OperationData, type OperationName, type OperationRequest, type OperationResult,
+  OPERATIONS, isOperationName, type OperationContext, type OperationData, type OperationName, type OperationRequest, type OperationResult, type RecoveryAction,
 } from "@brainforge/contracts";
-import { OperationFailure, type HandlerArgs, type HandlerMap, type IdempotencyStore, type OperationRuntime, type ProjectHandle } from "./runtime.ts";
+import type { Database } from "bun:sqlite";
+import type { DurableIdempotencyStore } from "@brainforge/storage";
+import type { OpenProject } from "./project-runtime.ts";
+import { OperationFailure, type HandlerArgs, type HandlerMap, type OperationRuntime } from "./runtime.ts";
 
 /** Stable JSON: sorted keys, so semantically equal payloads hash equally. */
 export function normalizedHash(value: unknown): string {
@@ -12,6 +15,18 @@ export function normalizedHash(value: unknown): string {
     : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, x]) => [k, norm(x)]))
     : v;
   return createHash("sha256").update(JSON.stringify(norm(value))).digest("hex");
+}
+
+/** A presented planHash must equal the stored one; otherwise the plan moved since it was inspected. */
+export function assertPlanHash(stored: string, presented: string, replan: RecoveryAction[], message = "planHash does not match the plan that was inspected under this planId"): void {
+  if (stored !== presented) throw new OperationFailure("REVISION_CONFLICT", message, { expected: stored, got: presented }, replan);
+}
+
+/** The stored plan row `id` from `table`, or NOT_FOUND `No <label> <id>` pointing at the planning operation. */
+export function loadPlanRow<T>(db: Database, table: string, id: string, label: string, recovery: RecoveryAction): T {
+  const row = db.query<T, [string]>(`SELECT * FROM ${table} WHERE plan_id = ?`).get(id);
+  if (!row) throw new OperationFailure("NOT_FOUND", `No ${label} ${id}`, undefined, [recovery]);
+  return row;
 }
 
 async function canonical(path: string): Promise<string> {
@@ -56,8 +71,8 @@ export async function executeOperation<K extends OperationName>(
     return fail(requestId, new OperationFailure("HUMAN_AUTHORIZATION_REQUIRED", "This action is reserved for the person using the Brainforge UI; ask the user to do it there"));
   }
 
-  let project: ProjectHandle | undefined;
-  let idempotency: IdempotencyStore | undefined;
+  let project: OpenProject | undefined;
+  let idempotency: DurableIdempotencyStore | undefined;
   try {
     // --- resolve the addressed project and authorize
     if (def.needsProject) {
@@ -81,7 +96,7 @@ export async function executeOperation<K extends OperationName>(
       if (reservation.kind === "in-flight") throw new OperationFailure("REVISION_CONFLICT", `requestId ${requestId} is still executing`);
     }
 
-    const args: HandlerArgs<K> = { context, requestId, input: parsed.data as HandlerArgs<K>["input"], project, runtime };
+    const args = { context, requestId, input: parsed.data, project, runtime } as HandlerArgs<K>;
     const out = await (handler as (a: HandlerArgs<K>) => Promise<{ data: OperationData<K>; nextActions?: never[]; warnings?: string[]; revision?: number }>)(args);
     const result: OperationResult<OperationData<K>> = {
       ok: true, data: out.data, revision: out.revision ?? project?.revision(), nextActions: out.nextActions ?? [], warnings: out.warnings ?? [],

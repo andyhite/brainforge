@@ -6,13 +6,11 @@ import { startGeneration } from "../generation/start.ts";
 import { ACTIVE_STATES, jobRow, toJob, type JobRow } from "../generation/store.ts";
 import { candidateRow, requirementsResolver, toCandidate } from "../review/records.ts";
 import { OperationFailure, type HandlerMap } from "../runtime.ts";
-import { requireOpen } from "./common.ts";
 
 export const generationHandlers: HandlerMap = {
-  "generation.plan": async ({ input, project, runtime, context }) => {
-    const open = requireOpen(project);
+  "generation.plan": async ({ input, project: open, runtime, context }) => {
     const comfy = transportOf(runtime);
-    const plan = await createPlan({ project: open, workflowsDir: runtime.workflowsDir, comfy, comfyHost: comfy ? new URL(comfy.baseUrl).host : undefined, actorId: context.actorId }, input);
+    const plan = await createPlan({ project: open, comfy, comfyHost: comfy ? new URL(comfy.baseUrl).host : undefined, actorId: context.actorId }, input);
     const { revision } = await open.mutate(async () =>
       open.transact(() => {
         open.db.query("INSERT INTO generation_plans (plan_id, plan_hash, plan_json, branch_id, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)")
@@ -28,17 +26,15 @@ export const generationHandlers: HandlerMap = {
     };
   },
 
-  "generation.start": async ({ input, project, runtime, context }) => {
-    const open = requireOpen(project);
-    const started = await startGeneration({ project: open, workflowsDir: runtime.workflowsDir, comfy: transportOf(runtime), actorId: context.actorId }, input);
+  "generation.start": async ({ input, project: open, runtime, context }) => {
+    const started = await startGeneration({ project: open, comfy: transportOf(runtime), actorId: context.actorId }, input);
     return {
       data: started,
       nextActions: [{ label: "Watch the jobs (they run in the background and survive closing the browser)", operation: "job.list", input: { activeOnly: true } }],
     };
   },
 
-  "job.list": async ({ input, project }) => {
-    const open = requireOpen(project);
+  "job.list": async ({ input, project: open }) => {
     const where: string[] = [];
     const args: (string | number)[] = [];
     if (input.assetId !== undefined) { where.push("asset_id = ?"); args.push(input.assetId); }
@@ -50,15 +46,13 @@ export const generationHandlers: HandlerMap = {
     return { data: { jobs: rows.map(toJob) } };
   },
 
-  "job.inspect": async ({ input, project }) => {
-    const open = requireOpen(project);
+  "job.inspect": async ({ input, project: open }) => {
     const row = jobRow(open.db, input.jobId);
     const cand = row.candidate_id === null ? undefined : candidateRow(open.db, row.candidate_id);
     return { data: { job: toJob(row), ...(cand ? { candidate: toCandidate(open.db, cand, await requirementsResolver(open, cand.asset_id)) } : {}) } };
   },
 
-  "job.reconcile": async ({ input, project, runtime }) => {
-    const open = requireOpen(project);
+  "job.reconcile": async ({ input, project: open, runtime }) => {
     const scheduler = schedulerOf(open);
     const row = jobRow(open.db, input.jobId);
     if (row.state === "running") return { data: { job: toJob(row), outcome: "still-running" } };
@@ -74,8 +68,7 @@ export const generationHandlers: HandlerMap = {
     return { data: { job: toJob(job), outcome }, nextActions: toJob(job).availableActions };
   },
 
-  "job.retry": async ({ input, project, context }) => {
-    const open = requireOpen(project);
+  "job.retry": async ({ input, project: open, context }) => {
     const row = jobRow(open.db, input.jobId);
     if (input.mode === "new-attempt" && context.actorType !== "human") {
       throw new OperationFailure("HUMAN_AUTHORIZATION_REQUIRED", "A new attempt resubmits to ComfyUI, and the original submission may still be running there, so a second prompt could duplicate it; ask the user to do it in the Brainforge UI after they have looked at the unresolved job.", { jobId: row.job_id }, [
@@ -87,8 +80,7 @@ export const generationHandlers: HandlerMap = {
     return { data: { job: toJob(job) }, nextActions: toJob(job).availableActions };
   },
 
-  "job.cancel": async ({ input, project, runtime, context }) => {
-    const open = requireOpen(project);
+  "job.cancel": async ({ input, project: open, runtime, context }) => {
     const job = await cancelJob(open, jobRow(open.db, input.jobId), transportOf(runtime), context.actorId);
     schedulerOf(open)?.kick();
     return { data: { job: toJob(job) } };

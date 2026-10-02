@@ -1,11 +1,9 @@
-import { useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { AssetVersion, OperationError, PromotionDeliverableRow, PromotionPlan } from "@brainforge/contracts";
-import { callOperation, newRequestId } from "../../api/client.ts";
-import { ActionLinks, Banner, ErrorBanner, Status, type Tone } from "../../components/ui.tsx";
+import { useMutationOperation } from "../../api/hooks.ts";
+import { Banner, Blockers, ErrorBanner, Status, type Tone } from "../../components/ui.tsx";
 import { paths } from "../../lib/paths.ts";
-import { useProjectRoot } from "../../lib/project-context.tsx";
 import { DeliverableThumb } from "./DeliverableThumb.tsx";
 import { BasisMismatch } from "../branches/BasisMismatch.tsx";
 import { MemberPins } from "../families/MemberPins.tsx";
@@ -26,64 +24,46 @@ function isStalePlan(error: OperationError): boolean {
 }
 
 /** Promotion: plan first (exactly what will be bundled), then start. It never activates and never exports. */
-export function PromotePanel({ assetId, branchId, activeVersionId, onActivate, showHeading = true }: {
+export function PromotePanel({ assetId, branchId, activeVersionId, onActivate, showHeading = true, autoPlan = false }: {
   assetId: string; branchId: string | undefined; activeVersionId: string | null | undefined; onActivate: (version: AssetVersion) => void; showHeading?: boolean;
+  /** Plan on arrival: the page was opened by a "Plan promotion of …" action. */
+  autoPlan?: boolean;
 }) {
-  const { root } = useProjectRoot();
-  const queryClient = useQueryClient();
+  const planM = useMutationOperation("promotion.plan");
+  const startM = useMutationOperation("promotion.start");
   const [plan, setPlan] = useState<PromotionPlan | undefined>(undefined);
-  const [planning, setPlanning] = useState(false);
-  const [starting, setStarting] = useState(false);
+  const planning = planM.isPending;
+  const starting = startM.isPending;
   const [planError, setPlanError] = useState<OperationError | undefined>(undefined);
   const [startError, setStartError] = useState<OperationError | undefined>(undefined);
-  const [network, setNetwork] = useState<string | undefined>(undefined);
+  const network = planM.error?.message ?? startM.error?.message;
   const [promoted, setPromoted] = useState<AssetVersion | undefined>(undefined);
   const [pins, setPins] = useState<Record<string, string>>({});
-  // One request id per plan: a retry after a lost response must reuse it so only one version is created.
-  const pending = useRef<{ planId: string; planHash: string; requestId: string } | undefined>(undefined);
-
   const runPlan = async (nextPins: Record<string, string> = pins) => {
-    setPlanning(true);
     setPlanError(undefined);
     setStartError(undefined);
-    setNetwork(undefined);
     try {
-      const result = await callOperation("promotion.plan", { project: root, input: { assetId, ...(branchId ? { branchId } : {}), ...(Object.keys(nextPins).length > 0 ? { members: nextPins } : {}) } });
-      if (result.ok) {
-        setPlan(result.data.plan);
-        pending.current = undefined;
-      } else setPlanError(result.error);
-    } catch (error) {
-      setNetwork(error instanceof Error ? error.message : "Request failed");
-    } finally {
-      setPlanning(false);
+      const result = await planM.mutateAsync({ input: { assetId, ...(branchId ? { branchId } : {}), ...(Object.keys(nextPins).length > 0 ? { members: nextPins } : {}) } });
+      if (result.ok) setPlan(result.data.plan);
+      else setPlanError(result.error);
+    } catch {
+      // Network loss: shown via `network`.
     }
   };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (autoPlan) void runPlan(); }, []);
 
   const start = async () => {
     if (!plan) return;
-    if (pending.current?.planId !== plan.planId || pending.current.planHash !== plan.planHash) {
-      pending.current = { planId: plan.planId, planHash: plan.planHash, requestId: newRequestId() };
-    }
-    const { requestId } = pending.current;
-    setStarting(true);
     setStartError(undefined);
-    setNetwork(undefined);
     try {
-      const result = await callOperation("promotion.start", { project: root, requestId, input: { planId: plan.planId, planHash: plan.planHash, requestId } });
+      const result = await startM.mutateAsync({ input: { planId: plan.planId, planHash: plan.planHash } });
       if (result.ok) {
-        pending.current = undefined;
         setPromoted(result.data.version);
         setPlan(undefined);
-        void queryClient.invalidateQueries({ queryKey: ["op"] });
-      } else {
-        pending.current = undefined;
-        setStartError(result.error);
-      }
-    } catch (error) {
-      setNetwork(error instanceof Error ? error.message : "Request failed");
-    } finally {
-      setStarting(false);
+      } else setStartError(result.error);
+    } catch {
+      // Network loss: shown via `network`; the mutation keeps its request id for the retry.
     }
   };
 
@@ -157,19 +137,9 @@ export function PromotePanel({ assetId, branchId, activeVersionId, onActivate, s
               void runPlan(next);
             }}
           />
-          {plan.blockers.length > 0 ? (
-            <ul className="rel-blockers plain-list" aria-label="Promotion blockers">
-              {plan.blockers.map((blocker) => (
-                <li key={`${blocker.code}-${blocker.message}`}>
-                  <Banner tone="warn" title={blocker.code.replaceAll("-", " ").replaceAll("_", " ").toLowerCase()} actions={<ActionLinks actions={blocker.recoveryActions} />}>
-                    {blocker.message}
-                    {blocker.code === "requirements-basis-mismatch" || blocker.message.includes("requirements-basis-mismatch") ? <BasisMismatch assetId={assetId} branchId={plan.branchId} /> : null}
-                    {blocker.recoveryActions.filter((action) => !action.url && !(action.operation && action.input !== undefined)).map((action) => <div key={action.label} className="secondary">{action.label}</div>)}
-                  </Banner>
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          <Blockers items={plan.blockers} label="Promotion blockers">
+            {(blocker) => blocker.code === "requirements-basis-mismatch" || blocker.message.includes("requirements-basis-mismatch") ? <BasisMismatch assetId={assetId} branchId={plan.branchId} /> : null}
+          </Blockers>
           <div className="rel-decision">
             <button type="button" className="primary" disabled={blocked || starting || planning} aria-describedby="promote-why" onClick={() => void start()}>
               {starting ? "Promoting…" : `Promote version ${plan.nextVersionNumber}`}

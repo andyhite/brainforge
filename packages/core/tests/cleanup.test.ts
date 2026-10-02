@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { deflateSync } from "node:zlib";
+import { encodePng } from "@brainforge/comfy/testing";
 import type { CleanupSidecar, OperationResult } from "@brainforge/contracts";
 import type { OpenProject } from "../src/project-runtime.ts";
 import { importCleanup } from "../src/cleanup/import.ts";
@@ -21,34 +21,10 @@ afterEach(async () => {
 
 const sha = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
 
-function crc32(buf: Uint8Array): number {
-  let c = ~0;
-  for (const byte of buf) {
-    c ^= byte;
-    for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
-  }
-  return ~c >>> 0;
-}
-
 /** A valid RGBA PNG; `rgba` is one pixel colour, `colorType` 2 writes an opaque RGB file instead. */
 function png(width: number, height: number, rgba: [number, number, number, number], colorType: 6 | 2 = 6): Buffer {
-  const chunk = (type: string, data: Buffer): Buffer => {
-    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
-    const out = Buffer.alloc(body.length + 8);
-    out.writeUInt32BE(data.length, 0);
-    body.copy(out, 4);
-    out.writeUInt32BE(crc32(body), body.length + 4);
-    return out;
-  };
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(width, 0);
-  ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8;
-  ihdr[9] = colorType;
   const px = colorType === 6 ? rgba : rgba.slice(0, 3);
-  const row = Buffer.concat([Buffer.from([0]), Buffer.from(Array.from({ length: width }, () => px).flat())]);
-  const raw = Buffer.concat(Array.from({ length: height }, () => row));
-  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", ihdr), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
+  return Buffer.from(encodePng(width, height, colorType === 6 ? 4 : 3, Uint8Array.from(Array.from({ length: width * height }, () => px).flat())));
 }
 
 const W = 8, H = 6;

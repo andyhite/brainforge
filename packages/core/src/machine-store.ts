@@ -3,7 +3,8 @@ import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { OperationContext } from "@brainforge/contracts";
-import type { IdempotencyStore, MachineStore } from "./runtime.ts";
+import { applyMigrations, createIdempotencyStore } from "@brainforge/storage";
+import type { MachineStore } from "./runtime.ts";
 
 /**
  * Identity is derived from the transport, not from credentials. This is a trust-the-local-machine model:
@@ -65,16 +66,8 @@ function migrate(db: Database): void {
   if (current > latest) {
     throw new Error(`machine.sqlite schema version ${current} is newer than this build (${latest}); upgrade Brainforge`);
   }
-  for (const m of MIGRATIONS) {
-    if (m.version <= current) continue;
-    db.transaction(() => {
-      db.exec(m.sql);
-      db.exec(`PRAGMA user_version = ${m.version}`);
-    })();
-  }
+  applyMigrations(db, MIGRATIONS, current);
 }
-
-type Reservation = { kind: "new" } | { kind: "replay"; resultJson: string } | { kind: "in-flight" } | { kind: "conflict" };
 
 export interface MachineStoreOptions {
   configDir?: string;
@@ -104,30 +97,7 @@ export function createMachineStore(opts: MachineStoreOptions = {}): LocalMachine
   // A reservation left by a dead process can never complete; machine operations are single statements, so retry is safe.
   db.exec("DELETE FROM idempotency WHERE status = 'reserved'");
 
-  const idempotency: IdempotencyStore = {
-    reserve(key) {
-      return db.transaction((): Reservation => {
-        const row = db.query<{ payload_hash: string; status: string; result_json: string | null }, [string, string]>(
-          "SELECT payload_hash, status, result_json FROM idempotency WHERE actor_id = ? AND request_id = ?",
-        ).get(key.actorId, key.requestId);
-        if (row) {
-          if (row.payload_hash !== key.payloadHash) return { kind: "conflict" };
-          if (row.status === "done" && row.result_json !== null) return { kind: "replay", resultJson: row.result_json };
-          return { kind: "in-flight" };
-        }
-        db.query("INSERT INTO idempotency (actor_id, request_id, operation, payload_hash, status, created_at) VALUES (?, ?, ?, ?, 'reserved', ?)")
-          .run(key.actorId, key.requestId, key.operation, key.payloadHash, iso());
-        return { kind: "new" };
-      }).immediate();
-    },
-    complete(key, resultJson) {
-      db.query("UPDATE idempotency SET status = 'done', result_json = ?, completed_at = ? WHERE actor_id = ? AND request_id = ?")
-        .run(resultJson, iso(), key.actorId, key.requestId);
-    },
-    release(key) {
-      db.query("DELETE FROM idempotency WHERE actor_id = ? AND request_id = ? AND status = 'reserved'").run(key.actorId, key.requestId);
-    },
-  };
+  const idempotency = createIdempotencyStore(db, "idempotency", clock);
 
   return {
     configDir,

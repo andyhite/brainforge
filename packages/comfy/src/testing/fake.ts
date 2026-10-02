@@ -24,14 +24,14 @@ const SEQUENCE_SIZE = 128;
 const SEQUENCE_MAX_FRAMES = 81;
 /** Downloads that `view-truncate-late` serves intact before it starts cutting them short. */
 const LATE_VIEWS = 4;
+/** Per-request delay while the `slow` fault is armed. */
+const SLOW_MS = 1500;
 
 export interface FakeComfyOptions {
   /** Default 0 = any free port. */
   port?: number;
   /** Time a prompt spends `running` before completing. Default 300ms. */
   latencyMs?: number;
-  /** Per-request delay while the `slow` fault is armed. Default 1500ms. */
-  slowMs?: number;
   faults?: FaultName[];
 }
 
@@ -71,17 +71,13 @@ export interface FakeComfy {
   readonly port: number;
   injectFault(name: FaultName): void;
   clearFault(name?: FaultName): void;
-  faults(): FaultName[];
   prompts(): FakePrompt[];
   /** Prompts the server accepted (including ones whose response the client never saw). */
   submissionCount(): number;
   /** Requests received so far, optionally filtered; faulted/failed requests are included. */
   requestCount(method: string, path: string): number;
-  setLatency(ms: number): void;
   hideNode(classType: string): void;
   hideModel(filename: string): void;
-  /** Loses all prompts, queue, history, files and uploads, like a ComfyUI process restart. */
-  restart(): void;
   stop(): Promise<void>;
 }
 
@@ -129,8 +125,7 @@ export async function createFakeComfy(options: FakeComfyOptions = {}): Promise<F
   const hiddenModels = new Set<string>();
   const requests: { method: string; path: string }[] = [];
   const hung: (() => void)[] = [];
-  let latencyMs = options.latencyMs ?? 300;
-  const slowMs = options.slowMs ?? 1500;
+  const latencyMs = options.latencyMs ?? 300;
   let state = emptyState();
 
   const nodeHidden = (cls: string) => hiddenNodes.has(cls) || (faults.has("object-info-missing-node") && cls === "Krea2EditModelPatch");
@@ -327,7 +322,7 @@ export async function createFakeComfy(options: FakeComfyOptions = {}): Promise<F
   async function handle(req: Request): Promise<Response> {
     const url = new URL(req.url);
     requests.push({ method: req.method, path: url.pathname });
-    if (faults.has("slow")) await Bun.sleep(slowMs);
+    if (faults.has("slow")) await Bun.sleep(SLOW_MS);
     if (fire("server-restart")) restart();
     const { pathname } = url;
     if (req.method === "GET") {
@@ -372,14 +367,11 @@ export async function createFakeComfy(options: FakeComfyOptions = {}): Promise<F
       if (!name || name === "view-truncate-late") lateViews = 0;
       if (name) faults.delete(name); else faults.clear();
     },
-    faults: () => [...faults],
     prompts: () => [...state.entries.values()].map((e) => ({ ...e.prompt })),
     submissionCount: () => state.accepted,
     requestCount: (method, path) => requests.filter((r) => r.method === method && r.path === path).length,
-    setLatency(ms) { latencyMs = ms; },
     hideNode(cls) { hiddenNodes.add(cls); },
     hideModel(file) { hiddenModels.add(file); },
-    restart,
     async stop() {
       clearTimeout(state.timer);
       for (const release of hung) release();

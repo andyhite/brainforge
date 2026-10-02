@@ -43,7 +43,7 @@ Open <http://127.0.0.1:3210>. The server only accepts requests whose `Host` is l
 
 ### Point it at ComfyUI
 
-Set the URL once in the UI (Settings → ComfyUI connection). It is a machine setting, never stored in the project. For scripts and the feasibility CLI you can use `BF_COMFY_URL=http://127.0.0.1:8188`.
+Set the URL once in the UI (Settings → ComfyUI connection). It is a machine setting, never stored in the project. For scripts you can use `BF_COMFY_URL=http://127.0.0.1:8188`.
 
 Loopback does not mean free or local compute. The ComfyUI server may be a remote GPU behind a tunnel. Workflows list their compute location and cost description, and every generation plan discloses it before you start. There are no budgets: what you ask for is the scope, and only the batch size and concurrency caps in `project.yaml` limit a run.
 
@@ -235,7 +235,7 @@ Identity comes from the transport: the browser UI is the human, CLI calls are ag
 |`packages/media`|Decode, framing, processing, resampling, atlas packing|
 |`packages/export`|Generic and Godot 4 export, atomic publication|
 |`skills/brainforge`|Agent skill and YAML references|
-|`scripts`|`feasibility`, `recovery-smoke`, `audit-operations`|
+|`scripts`|`recovery-smoke`, `audit-operations`, `install-cli`|
 
 ## Scripts
 
@@ -248,9 +248,8 @@ Identity comes from the transport: the browser UI is the human, CLI calls are ag
 |`bun run typecheck`|`tsc` across workspaces|
 |`bun run bf -- <operation> ...`|Call any operation from the CLI|
 |`bun run install-cli`|Install the `brainforge` wrapper in `~/.local/bin` for this checkout|
-|`bun run audit`|Check every operation has a handler, CLI `--help`, a skill mention and a test reference|
+|`bun run audit`|Check every operation has a skill mention and a test reference|
 |`bun run recovery-smoke -- --source-project <dir> --scenario all`|Fault-injection scenarios on a temp copy: restart mid-collection, partial download, promotion and export failure|
-|`bun run feasibility -- --project <dir> --phase brief --plan`|Bounded art-proof harness used before the app existed|
 
 ## Testing
 

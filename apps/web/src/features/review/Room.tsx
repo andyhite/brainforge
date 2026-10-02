@@ -169,7 +169,7 @@ export function Room(props: RoomProps) {
   } else {
     const room: RoomData = {
       mode, assetId, stepId, projectId, branchId, branches: branches ?? [], stepState, candidates: strip, jobs, asked,
-      canGenerate, hrefFor: hrefKeepingRole, comparing, onStopComparing: () => setComparing(false), compareIds, onToggleCompare: toggleCompareCandidate,
+      canGenerate, hrefFor: hrefKeepingRole, comparing, onComparing: setComparing, compareIds, onToggleCompare: toggleCompareCandidate,
       notice, onDecided, onAdd: () => setDialog({ mode: "fresh" }), onVariation: (id) => setDialog({ mode: "variation", parentCandidateId: id }), canStep: navList.length > 1,
     };
     body = <CandidateView key={pickedId} room={room} inspect={inspectQuery.data.data} />;

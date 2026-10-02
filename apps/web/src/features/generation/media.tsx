@@ -30,17 +30,3 @@ export type OutputRole = CandidateOutput["role"];
 export function pickOutput(candidate: Candidate, role: OutputRole): CandidateOutput | undefined {
   return candidate.outputs.find((output) => output.role === role) ?? candidate.outputs[0];
 }
-
-export function outputUrl(projectId: string, fileId: string, max?: number): string {
-  const base = `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}`;
-  return max ? `${base}?max=${max}` : base;
-}
-
-const ROLES: Array<{ value: OutputRole; label: string; title: string }> = [
-  { value: "matted", label: "Transparent", title: "Background removed, as it goes into the game" },
-  { value: "untouched", label: "Original", title: "Exactly what the generator returned" },
-];
-
-export function RolePicker({ value, onChange }: { value: OutputRole; onChange: (next: OutputRole) => void }) {
-  return <Seg label="Output shown" value={value} options={ROLES} onChange={onChange} />;
-}

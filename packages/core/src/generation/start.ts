@@ -12,7 +12,7 @@ import { loadDescriptor } from "./descriptors.ts";
 import { resolveDeliverable } from "./deliverable.ts";
 import { PLAN_TTL_MS, changedSpecs, storedPlan } from "./plan.ts";
 import { motionBasis } from "./motion.ts";
-import { normalizedHash } from "../operations.ts";
+import { assertPlanHash, normalizedHash } from "../operations.ts";
 import { readPinnedReference } from "./references.ts";
 import { schedulerOf } from "./scheduler.ts";
 import { jobRow, newId, toJob } from "./store.ts";
@@ -27,7 +27,6 @@ const CONTENT_BLOCKERS = new Set([
 
 export interface StartEnvironment {
   project: OpenProject;
-  workflowsDir: string;
   comfy: ComfyTransport | undefined;
   actorId: string;
 }
@@ -40,9 +39,7 @@ export async function startGeneration(env: StartEnvironment, input: ParsedOperat
   const { project } = env;
   const stored = storedPlan(project, input.planId);
   const plan = stored.plan;
-  if (plan.planHash !== input.planHash) {
-    throw new OperationFailure("REVISION_CONFLICT", "planHash does not match the plan that was inspected under this planId", { expected: plan.planHash, got: input.planHash }, [{ label: "Inspect the plan again", operation: "generation.plan" }]);
-  }
+  assertPlanHash(plan.planHash, input.planHash, [{ label: "Inspect the plan again", operation: "generation.plan" }]);
   if (stored.startedRunId !== null) {
     throw new OperationFailure("STEP_BLOCKED", `Plan ${plan.planId} was already started as run ${stored.startedRunId}; plan again to start another batch.`, { runId: stored.startedRunId }, [{ label: "See the run's jobs", operation: "job.list", input: { assetId: plan.assetId } }]);
   }
@@ -80,7 +77,7 @@ export async function startGeneration(env: StartEnvironment, input: ParsedOperat
       throw new OperationFailure("OUTPUT_MISSING", `Reference ${ref.id} is missing or no longer matches the hash pinned by the plan.`, { reference: ref }, [{ label: "Plan again", operation: "generation.plan" }]);
     }
   }
-  const wf = await loadDescriptor(env.workflowsDir, plan.workflow.id, plan.workflow.version).catch((e: unknown) => {
+  const wf = await loadDescriptor(plan.workflow.id, plan.workflow.version).catch((e: unknown) => {
     throw new OperationFailure("WORKFLOW_UNAVAILABLE", `Workflow ${plan.workflow.id}@${plan.workflow.version} cannot be loaded: ${e instanceof Error ? e.message : String(e)}`);
   });
   if (graphHash(wf.graph) !== plan.workflow.graphHash) {

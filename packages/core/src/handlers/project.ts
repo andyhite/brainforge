@@ -4,19 +4,15 @@ import { stringify } from "yaml";
 import type { ProjectSummary } from "@brainforge/contracts";
 import { acquireProjectLease, openProjectDb, paths, ProjectDbError, ProjectLeaseError, writeFileAtomic } from "@brainforge/storage";
 import { discoverAuthored, observeAuthored, parseAuthored, readAuthoredFile, specInfo, type AuthoredSet } from "../authored.ts";
-import { isOpenableRegistry, type OpenProject } from "../project-runtime.ts";
+import { slug, type OpenProject } from "../project-runtime.ts";
 import { snapshotProject } from "../snapshot.ts";
 import { OperationFailure, type HandlerMap } from "../runtime.ts";
-import { assertGameDirectory, assetSummaries, requireOpen } from "./common.ts";
+import { assertGameDirectory, assetSummaries } from "./common.ts";
 
 const GAME_DIRS = [
   "brainforge", "brainforge/styles", "brainforge/references", "brainforge/workflows", "brainforge/assets",
   "brainforge/.state", "brainforge/.state/staging",
 ] as const;
-
-function slug(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "project";
-}
 
 async function exists(path: string): Promise<boolean> {
   return lstat(path).then(() => true, () => false);
@@ -33,7 +29,7 @@ async function canonicalGameDir(path: string): Promise<string> {
   return root;
 }
 
-export function summarize(project: OpenProject, set: AuthoredSet): ProjectSummary {
+function summarize(project: OpenProject, set: AuthoredSet): ProjectSummary {
   return {
     projectId: project.projectId,
     name: set.project?.spec?.name ?? basename(project.root),
@@ -121,7 +117,6 @@ export const lifecycleHandlers: HandlerMap = {
         { label: "Initialize Brainforge in this directory", operation: "project.init", input: { path: root, confirm: false } },
       ]);
     }
-    if (!isOpenableRegistry(runtime.projects)) throw new OperationFailure("IO_ERROR", "This server's project registry cannot open projects");
     let project: OpenProject;
     try {
       project = await runtime.projects.open(root);
@@ -141,8 +136,7 @@ export const lifecycleHandlers: HandlerMap = {
     };
   },
 
-  "project.inspect": async ({ project, runtime }) => {
-    const open = requireOpen(project);
+  "project.inspect": async ({ project: open, runtime }) => {
     const set = await discoverAuthored(open.root);
     observeAuthored(open, set.all());
     const url = runtime.machine.comfyUrl();
@@ -156,9 +150,7 @@ export const lifecycleHandlers: HandlerMap = {
     };
   },
 
-  "project.close": async ({ project, runtime }) => {
-    const open = requireOpen(project);
-    if (!isOpenableRegistry(runtime.projects)) throw new OperationFailure("IO_ERROR", "This server's project registry cannot close projects");
+  "project.close": async ({ project: open, runtime }) => {
     const state = await runtime.projects.close(open.root);
     return {
       data: {
@@ -170,8 +162,7 @@ export const lifecycleHandlers: HandlerMap = {
     };
   },
 
-  "project.snapshot": async ({ input, project }) => {
-    const open = requireOpen(project);
+  "project.snapshot": async ({ input, project: open }) => {
     const set = await discoverAuthored(open.root);
     const result = await snapshotProject(open, input.destination, set.project?.spec?.export.destination);
     return { data: result, nextActions: [{ label: "Open the snapshot", operation: "project.open", input: { path: result.destination } }] };

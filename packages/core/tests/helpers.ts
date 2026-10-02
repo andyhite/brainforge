@@ -1,10 +1,12 @@
-import { deflateSync } from "node:zlib";
+import { Database } from "bun:sqlite";
 import { mkdir, mkdtemp, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { OperationContext, OperationData, OperationName, OperationResult } from "@brainforge/contracts";
 import type { ComfyTransport } from "@brainforge/comfy";
-import { createProjectRegistry, executeOperation, projectHandlers, type IdempotencyStore, type MachineStore, type OperationRuntime, type OpenableProjectRegistry } from "../src/index.ts";
+import { encodePng } from "@brainforge/comfy/testing";
+import { createIdempotencyStore, MIGRATIONS, type DurableIdempotencyStore } from "@brainforge/storage";
+import { createProjectRegistry, executeOperation, projectHandlers, type MachineStore, type OperationRuntime, type OpenableProjectRegistry } from "../src/index.ts";
 
 export const human: OperationContext = { actorId: "human:local", actorType: "human" };
 export const agent: OperationContext = { actorId: "agent:local", actorType: "agent" };
@@ -24,19 +26,10 @@ family: character
 description: A guarded teenager with an exposed brain.
 `;
 
-function memoryIdempotency(): IdempotencyStore {
-  const rows = new Map<string, { hash: string; result?: string }>();
-  return {
-    reserve(k) {
-      const key = `${k.actorId}\0${k.requestId}`;
-      const row = rows.get(key);
-      if (!row) { rows.set(key, { hash: k.payloadHash }); return { kind: "new" }; }
-      if (row.hash !== k.payloadHash) return { kind: "conflict" };
-      return row.result === undefined ? { kind: "in-flight" } : { kind: "replay", resultJson: row.result };
-    },
-    complete(k, json) { const row = rows.get(`${k.actorId}\0${k.requestId}`); if (row) row.result = json; },
-    release(k) { const key = `${k.actorId}\0${k.requestId}`; if (rows.get(key)?.result === undefined) rows.delete(key); },
-  };
+function memoryIdempotency(): DurableIdempotencyStore {
+  const db = new Database(":memory:");
+  db.exec(MIGRATIONS.map((m) => m.sql).join("\n"));
+  return createIdempotencyStore(db);
 }
 
 export interface Harness {
@@ -55,7 +48,7 @@ export interface HarnessOptions {
 }
 
 export function createHarness(options: HarnessOptions = {}): Harness {
-  const registry = createProjectRegistry(options.comfy ? { generation: { comfy: options.comfy, workflowsDir: join(import.meta.dir, "../../comfy/workflows"), pollIntervalMs: 15, tickIntervalMs: 15 } } : {});
+  const registry = createProjectRegistry(options.comfy ? { generation: { comfy: options.comfy, pollIntervalMs: 15, tickIntervalMs: 15 } } : {});
   const recents: { root: string; name?: string }[] = [];
   let comfy: string | undefined;
   const machine: MachineStore = {
@@ -65,8 +58,7 @@ export function createHarness(options: HarnessOptions = {}): Harness {
     recordRecent: (root, name) => { recents.push({ root, name }); },
     recents: () => recents.map((r) => ({ ...r, lastOpenedAt: new Date().toISOString() })),
   };
-  const workflowsDir = join(import.meta.dir, "../../comfy/workflows");
-  const runtime: OperationRuntime = { projects: registry, machine, workflowsDir, publicUrl: "http://127.0.0.1:3210", ...(options.comfy ? { comfy: options.comfy } : {}) };
+  const runtime: OperationRuntime = { projects: registry, machine, publicUrl: "http://127.0.0.1:3210", ...(options.comfy ? { comfy: options.comfy } : {}) };
   return {
     runtime, registry, recents,
     setComfyUrl: (u) => { comfy = u; },
@@ -99,46 +91,14 @@ export function expectOk<T>(r: OperationResult<T>): T {
   return r.data;
 }
 
-function crc32(buf: Uint8Array): number {
-  let c = ~0;
-  for (const byte of buf) {
-    c ^= byte;
-    for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
-  }
-  return ~c >>> 0;
-}
-
-function pngChunk(type: string, data: Buffer): Buffer {
-  const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
-  const out = Buffer.alloc(body.length + 8);
-  out.writeUInt32BE(data.length, 0);
-  body.copy(out, 4);
-  out.writeUInt32BE(crc32(body), body.length + 4);
-  return out;
-}
-
-const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-
-function encodePng(width: number, height: number, colorType: 2 | 6, rows: Buffer): Buffer {
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(width, 0);
-  ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8;
-  ihdr[9] = colorType;
-  return Buffer.concat([PNG_SIGNATURE, pngChunk("IHDR", ihdr), pngChunk("IDAT", deflateSync(rows)), pngChunk("IEND", Buffer.alloc(0))]);
-}
-
 /** A valid solid-colour RGB PNG. */
 export function makePng(width: number, height: number, rgb: [number, number, number]): Buffer {
-  const row = Buffer.concat([Buffer.from([0]), Buffer.from(Array.from({ length: width }, () => rgb).flat())]);
-  return encodePng(width, height, 2, Buffer.concat(Array.from({ length: height }, () => row)));
+  return Buffer.from(encodePng(width, height, 3, Uint8Array.from(Array.from({ length: width * height }, () => rgb).flat())));
 }
 
 /** A valid RGBA PNG whose pixels come from `pixel(x, y)`. */
 export function makeRgbaPng(width: number, height: number, pixel: (x: number, y: number) => [number, number, number, number]): Buffer {
-  const rows = Buffer.alloc(height * (1 + width * 4));
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) Buffer.from(pixel(x, y)).copy(rows, y * (1 + width * 4) + 1 + x * 4);
-  }
-  return encodePng(width, height, 6, rows);
+  const px = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) px.set(pixel(x, y), (y * width + x) * 4);
+  return Buffer.from(encodePng(width, height, 4, px));
 }

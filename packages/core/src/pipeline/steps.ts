@@ -11,7 +11,7 @@ import { buildPipeline, type PipelineNode, type PipelinePlan } from "../pipeline
 import { standingApproval } from "../review/authority.ts";
 import { stepFingerprint, stepRequirementsHash, selectedOutput, type SelectedOutput } from "../review/requirements.ts";
 import { onDiskManifestHash } from "../outputs/frames.ts";
-import { inspectConceptStep, specHashesOf, unaddressedRequiredNotes } from "../review/step.ts";
+import { feedbackActions, inspectConceptStep, specHashesOf, unaddressedRequiredNotes } from "../review/step.ts";
 import { OperationFailure } from "../runtime.ts";
 
 const ACTIVE_JOB_STATES = "('queued','submitting','running','collecting')";
@@ -61,7 +61,7 @@ function openRevisionIds(db: Database, assetId: string, stepId: string, branchId
 }
 
 /** Required notes nobody has resolved or waived on this step's candidates in the branch (and on a reused lineage). */
-export function unaddressedOnStep(db: Database, assetId: string, stepId: string, branchId: string): { annotationId: string; candidateId: string }[] {
+function unaddressedOnStep(db: Database, assetId: string, stepId: string, branchId: string): { annotationId: string; candidateId: string }[] {
   const inScope = new Set(feedbackCandidateIds(db, assetId, stepId, branchId));
   return unaddressedRequiredNotes(db, assetId).filter((n) => inScope.has(n.candidateId));
 }
@@ -239,10 +239,7 @@ async function deliverableStep(ctx: StepContext, current: AuthoredSet, set: Auth
       next.unshift({ label: "Select another candidate", operation: "candidate.list", input: { assetId, stepId } });
     }
   }
-  if (unaddressed.length > 0) {
-    next.push({ label: `Bundle ${unaddressed.length} required note(s) into a revision request`, operation: "revision.create", input: { candidateId: unaddressed[0]?.candidateId, annotationIds: unaddressed.map((n) => n.annotationId) } });
-  }
-  if (counts.openRevisions > 0) next.push({ label: "See open revision requests", operation: "revision.list", input: { assetId } });
+  next.push(...feedbackActions(assetId, unaddressed, counts.openRevisions));
 
   return {
     assetId, stepId, ...(branchId ? { branchId } : {}), kind: node.kind, required: node.required, dependsOn: node.dependsOn,

@@ -12,9 +12,9 @@ import { readPinnedReference } from "./references.ts";
 /** The canvas Wan renders in and the guides are normalized into. */
 export const WAN_CANVAS = 768;
 /** Bottom-centre of every normalized guide's foreground: the shared feet baseline inside the Wan canvas. */
-export const WAN_FEET = { x: WAN_CANVAS / 2, y: WAN_CANVAS - 40 };
-export const DEFAULT_FRAME_COUNT = 33;
-export const DEFAULT_SOURCE_FPS = 16;
+const WAN_FEET = { x: WAN_CANVAS / 2, y: WAN_CANVAS - 40 };
+const DEFAULT_FRAME_COUNT = 33;
+const DEFAULT_SOURCE_FPS = 16;
 
 const WAN_MIN_LENGTH = 5;
 const WAN_MAX_LENGTH = 81;
@@ -51,7 +51,7 @@ async function fullFrame(bytes: Uint8Array, label: string): Promise<Bounds> {
 const FIT_MARGIN = 8;
 
 /** Where the scaled foreground of a guide sits so its bottom-centre lands on the shared feet baseline. */
-export function guideTransform(scale: number, bounds: Bounds): MotionGuide["transform"] {
+function guideTransform(scale: number, bounds: Bounds): MotionGuide["transform"] {
   return {
     scale,
     offsetX: Math.round(WAN_FEET.x - (bounds.x + bounds.width / 2) * scale),

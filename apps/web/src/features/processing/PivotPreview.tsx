@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { FrameInfo, ProcessingPlan, ProcessingRecipe } from "@brainforge/contracts";
-import { outputUrl, type Backdrop } from "../generation/media.tsx";
+import { fileUrl } from "../../api/hooks.ts";
+import type { Backdrop } from "../generation/media.tsx";
 
 interface Point { x: number; y: number }
 
@@ -25,7 +26,7 @@ export function SourceFramePreview({ projectId, frames, recipe, backdrop, onPivo
   return (
     <figure className="pivot-figure">
       <div className={`stage-bg ${backdrop} pivot-stage`} style={{ aspectRatio: `${frame.width} / ${frame.height}` }}>
-        <img src={outputUrl(projectId, frame.fileId, 1024)} width={frame.width} height={frame.height} alt={`Source frame ${frame.index + 1} of ${frames.length}`} />
+        <img src={fileUrl(projectId, frame.fileId, 1024)} width={frame.width} height={frame.height} alt={`Source frame ${frame.index + 1} of ${frames.length}`} />
         <svg
           viewBox={`0 0 ${frame.width} ${frame.height}`} preserveAspectRatio="none" className="pivot-overlay"
           onClick={(event) => {

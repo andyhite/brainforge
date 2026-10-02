@@ -10,7 +10,7 @@ export:
   destination: assets/brainforge
 `;
 
-export const PROJECT_FULL = `schema: brainforge.project.v2
+const PROJECT_FULL = `schema: brainforge.project.v2
 id: my-game
 name: My Game
 artDirection: >
@@ -47,11 +47,11 @@ export:
   godotProjectRoot: .
 `;
 
-export const STYLE_MINIMAL = `schema: brainforge.style.v2
+const STYLE_MINIMAL = `schema: brainforge.style.v2
 id: cranium
 `;
 
-export const STYLE_FULL = `schema: brainforge.style.v2
+const STYLE_FULL = `schema: brainforge.style.v2
 id: cranium
 description: Documentation only, not sent to the model. Warm, flat, cel-shaded look with dark warm contours.
 palette:
@@ -62,14 +62,14 @@ references: []
 preferences: []
 `;
 
-export const ASSET_MINIMAL = `schema: brainforge.asset.v2
+const ASSET_MINIMAL = `schema: brainforge.asset.v2
 id: cortex
 name: Cortex
 family: character
 description: A sixteen-year-old boy with a huge coral-pink brain for a head, standing upright with a slouch.
 `;
 
-export const ASSET_FULL = `schema: brainforge.asset.v2
+const ASSET_FULL = `schema: brainforge.asset.v2
 id: cortex
 name: Cortex
 family: character

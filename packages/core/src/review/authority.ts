@@ -1,6 +1,7 @@
 import type { Fingerprint } from "./requirements.ts";
 import type { Database } from "bun:sqlite";
 import type { Decision, ErrorCode, Escalation, OutputApproval, PolicyView } from "@brainforge/contracts";
+import { agentDenial } from "../policy.ts";
 
 export interface DecisionRow {
   decision_id: string; candidate_id: string; output_id: string; output_hash: string; asset_id: string; step_id: string; branch_id: string | null;
@@ -110,12 +111,8 @@ export function canActorReview(view: PolicyView, actorType: "human" | "agent" | 
       denial: { escalate: { code: "INVALID_INPUT", message: "You are the human reviewer: decide directly with review.decide." } },
     };
   }
+  const askUser = (verb: string) => agentDenial(view, "productionReview", verb, "Tell the user this output is ready for their decision.");
   const effective = view.effective.productionReview;
-  const pending = view.requested.productionReview !== effective && view.pendingRelaxation
-    && (view.requested.productionReview === "agent" || view.requested.productionReview === "agent_with_escalation");
-  const askUser = (verb: string) => pending
-    ? { code: "POLICY_PENDING" as const, message: `Policy requests that agents may ${verb} (productionReview: ${view.requested.productionReview}), but a human has not confirmed that change. Ask the user to confirm it in Settings.` }
-    : { code: "HUMAN_AUTHORIZATION_REQUIRED" as const, message: `Only the user may ${verb} under the current approval policy (productionReview: ${effective}). Tell the user this output is ready for their decision.` };
 
   if (effective === "human") {
     const why = askUser("decide production review").message;

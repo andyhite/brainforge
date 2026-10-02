@@ -1,9 +1,9 @@
 import { Fragment, useState } from "react";
 import { Link } from "react-router-dom";
 import type { Candidate, GenerationPlan } from "@brainforge/contracts";
-import { useMutationOperation } from "../../api/hooks.ts";
-import { ActionLinks, Banner, ErrorBanner, Modal, NetworkProblem, Seg, Status } from "../../components/ui.tsx";
-import { outputUrl, pickOutput } from "./media.tsx";
+import { fileUrl, useMutationOperation } from "../../api/hooks.ts";
+import { ActionLinks, Banner, Modal, OpResult, Seg, Status } from "../../components/ui.tsx";
+import { pickOutput } from "./media.tsx";
 import { MotionPlanView } from "../processing/MotionPlanView.tsx";
 import { paths } from "../../lib/paths.ts";
 import { useProject } from "../../lib/use-project.ts";
@@ -83,7 +83,7 @@ export function GenerateDialog({ assetId, stepId = "concept", stepKind, branchId
                       return (
                         <li key={candidate.candidateId}>
                           <button type="button" aria-pressed={candidate.candidateId === parentId} onClick={() => setParentId(candidate.candidateId)}>
-                            <span className="art checker">{output && projectId ? <img src={outputUrl(projectId, output.fileId, 128)} alt="" /> : null}</span>
+                            <span className="art checker">{output && projectId ? <img src={fileUrl(projectId, output.fileId, 128)} alt="" /> : null}</span>
                             <span>{candidate.label}</span>
                           </button>
                         </li>
@@ -103,8 +103,7 @@ export function GenerateDialog({ assetId, stepId = "concept", stepKind, branchId
                 <textarea id="gen-instr" rows={3} maxLength={4000} value={instructions} onChange={(event) => setInstructions(event.target.value)} />
                 <div className="hint">Used for this run only. They never change the asset definition.</div>
               </div>
-              {plan.error ? <NetworkProblem error={plan.error} /> : null}
-              {plan.data && !plan.data.ok ? <ErrorBanner error={plan.data.error} /> : null}
+              <OpResult m={plan} />
               <div className="row end">
                 <button type="button" className="ghost" onClick={onClose}>Cancel</button>
                 <button type="submit" className="primary" disabled={plan.isPending || variationMissingParent || count < 1 || count > 8}>{plan.isPending ? "Planning…" : "Plan"}</button>
@@ -126,8 +125,7 @@ export function GenerateDialog({ assetId, stepId = "concept", stepKind, branchId
                   </ul>
                 </Banner>
               ) : null}
-              {start.error ? <NetworkProblem error={start.error} /> : null}
-              {start.data && !start.data.ok ? <ErrorBanner error={start.data.error} /> : null}
+              <OpResult m={start} />
               {startReason ? <p className="secondary" role="status">Can’t start: {startReason}</p> : null}
               <div className="row end">
                 <button type="button" className="ghost" onClick={() => { setPlanned(undefined); plan.reset(); start.reset(); }}>Change plan</button>
@@ -178,7 +176,7 @@ function PlanView({ plan, candidates }: { plan: GenerationPlan; candidates: Cand
           <ul className="plan-refs">
             {plan.inputs.references.map((reference) => (
               <li key={`${reference.role}-${reference.id}`}>
-                <div className="art checker"><img src={outputUrl(projectId, reference.id, 240)} alt={`Reference for role ${reference.role}`} /></div>
+                <div className="art checker"><img src={fileUrl(projectId, reference.id, 240)} alt={`Reference for role ${reference.role}`} /></div>
                 <div className="secondary">{reference.role}</div>
               </li>
             ))}

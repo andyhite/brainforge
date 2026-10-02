@@ -66,7 +66,6 @@ a { color: var(--text); text-decoration-color: var(--border-strong); text-underl
 a:hover { text-decoration-color: currentColor; }
 code, .mono { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
 .secondary { font-size: 12.5px; color: var(--text-muted); }
-.muted { color: var(--text-muted); }
 .faint { color: var(--text-faint); }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .icon { display: inline-block; width: 16px; height: 16px; flex: none; vertical-align: middle; }
@@ -74,9 +73,6 @@ code, .mono { font-family: var(--mono); font-size: 12px; font-variant-numeric: t
 .icon-lg { width: 18px; height: 18px; }
 ::selection { color: var(--accent-text); background: var(--accent); }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.tone-ok { color: var(--ok); }
-.tone-warn { color: var(--warn); }
-.tone-bad { color: var(--danger); }
 
 /* ---------------------------------------------------------------- controls */
 button, input, select, textarea { font: inherit; color: inherit; }
@@ -264,19 +260,10 @@ details[open] > summary::before { transform: rotate(45deg); }
 .glyph.bad { background: var(--danger-soft); color: var(--danger); }
 .glyph.ok { background: var(--ok-soft); color: var(--ok); }
 
-/* Candidate grids shared by branch comparison and concept exploration. */
-.candidate-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
-.candidate-grid.branch-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
-.branch-grid .stack { min-width: 0; overflow-wrap: anywhere; }
-.candidate-card { display: grid; gap: 10px; align-content: start; }
-.candidate-card.selected .candidate-thumb { box-shadow: 0 0 0 2px var(--text); }
-.candidate-link { display: block; text-decoration: none; }
-.candidate-thumb { display: grid; place-items: center; overflow: hidden; border-radius: 6px; box-shadow: inset 0 0 0 1px var(--border); }
-.candidate-thumb img { display: block; width: 100%; height: auto; }
-
 /* ---------------------------------------------------------------- dialogs and menus */
-.dialog-overlay { position: fixed; inset: 0; z-index: 40; background: rgb(0 0 0 / 0.5); backdrop-filter: blur(2px); animation: fade-in 140ms var(--ease); }
-.dialog { position: fixed; z-index: 41; top: 50%; left: 50%; width: min(720px, 94vw); max-height: 88vh; overflow: auto; padding: 22px 24px 24px; border-radius: 14px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--border), var(--shadow-pop); transform: translate(-50%, -50%); animation: pop-in 160ms var(--ease); }
+.dialog { width: min(720px, 94vw); max-height: 88vh; padding: 0; border: 0; border-radius: 14px; background: var(--surface); color: inherit; box-shadow: inset 0 0 0 1px var(--border), var(--shadow-pop); animation: pop-in 160ms var(--ease); }
+.dialog::backdrop { background: rgb(0 0 0 / 0.5); backdrop-filter: blur(2px); animation: fade-in 140ms var(--ease); }
+.dialog-body { padding: 22px 24px 24px; }
 .dialog.wide { width: min(1040px, 96vw); }
 .dialog-title { margin: 0 0 4px; font-size: 17px; font-weight: 650; letter-spacing: -0.012em; }
 .dialog-description { margin: 0 0 18px; color: var(--text-muted); font-size: 13px; }
@@ -295,7 +282,6 @@ details[open] > summary::before { transform: rotate(45deg); }
 .menu-label { padding: 6px 10px 4px; color: var(--text-faint); font-size: 11.5px; font-weight: 600; }
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes pop-in { from { opacity: 0; transform: translate(var(--pop-x, 0), calc(var(--pop-y, 0px) + 4px)) scale(0.98); } }
-.dialog { --pop-x: -50%; --pop-y: -50%; }
 
 /* ---------------------------------------------------------------- shell */
 .shell { display: grid; grid-template-rows: var(--topbar-h) minmax(0, 1fr); height: 100%; min-height: 0; }
@@ -348,7 +334,7 @@ details[open] > summary::before { transform: rotate(45deg); }
 .meta .sep { width: 3px; height: 3px; border-radius: 50%; background: var(--text-faint); }
 
 /* Command palette (jump to asset or deliverable). */
-.palette { top: 14vh; width: min(620px, 94vw); padding: 0; overflow: hidden; transform: translate(-50%, 0); --pop-y: 0px; }
+.palette { margin-top: 14vh; width: min(620px, 94vw); padding: 0; overflow: hidden; }
 .palette input[type="search"] { min-height: 48px; padding: 0 16px 0 44px; border-radius: 0; background: transparent; box-shadow: none; border-bottom: 1px solid var(--border); font-size: 15px; }
 .palette input[type="search"]:focus-visible { box-shadow: none; border-bottom-color: var(--border-strong); }
 .palette .search-icon { position: absolute; top: 16px; left: 16px; color: var(--text-faint); }

@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { OutputDetail } from "@brainforge/contracts";
 import { fileUrl } from "../../api/hooks.ts";
+import type { Backdrop } from "../generation/media.tsx";
 
-export type Background = "checker" | "light" | "dark";
 export type Source = "frames" | "atlas";
 
 /** Whether every frame has a packed rectangle, i.e. the shipped atlas can drive playback. */
 export const hasAtlas = (d: OutputDetail): boolean => d.atlasPages.length > 0 && d.frames.length > 0 && d.frames.every((f) => f.atlas !== undefined);
 
 /** Loads images by URL once and reports when each is ready; failures are surfaced, never swallowed. */
-export function useImages(urls: readonly string[]): { images: ReadonlyMap<string, HTMLImageElement>; failed: string | undefined } {
+function useImages(urls: readonly string[]): { images: ReadonlyMap<string, HTMLImageElement>; failed: string | undefined } {
   const [ready, setReady] = useState<ReadonlyMap<string, HTMLImageElement>>(new Map());
   const [failed, setFailed] = useState<string | undefined>();
   const key = urls.join("\n");
@@ -39,7 +39,7 @@ export function useImages(urls: readonly string[]): { images: ReadonlyMap<string
 }
 
 /** URLs the given source mode needs: every frame file, or every atlas page. */
-export function sourceUrls(projectId: string, d: OutputDetail, source: Source): string[] {
+function sourceUrls(projectId: string, d: OutputDetail, source: Source): string[] {
   return source === "atlas" ? d.atlasPages.map((p) => fileUrl(projectId, p.fileId)) : d.frames.map((f) => fileUrl(projectId, f.fileId));
 }
 
@@ -51,7 +51,7 @@ interface Props {
   source: Source;
   /** Display pixels per canvas pixel. */
   scale: number;
-  background: Background;
+  background: Backdrop;
   /** Draw the pivot cross and a baseline through the pivot's y. */
   showPivot: boolean;
   label: string;

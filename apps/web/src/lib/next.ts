@@ -21,7 +21,7 @@ export function hasOpenFeedback(step: StepState): boolean {
 }
 
 /** Filled done, ringed waiting for you, amber blocked by something specific, red failed, hollow not started. */
-export function cellState(step: StepState): CellState {
+function cellState(step: StepState): CellState {
   switch (step.state) {
     case "complete": return "done";
     case "failed": return "bad";
@@ -70,7 +70,7 @@ export interface NextItem {
   waiting?: boolean;
 }
 
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 function listNames(names: string[]): string {
   if (names.length <= 1) return names.join("");

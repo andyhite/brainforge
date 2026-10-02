@@ -11,11 +11,9 @@ import { policyView } from "../policy.ts";
 import { candidateRow, outputRows } from "../review/records.ts";
 import { stepRequirementsHash } from "../review/requirements.ts";
 import { OperationFailure, type HandlerMap } from "../runtime.ts";
-import { requireOpen } from "./common.ts";
 
 export const branchHandlers: HandlerMap = {
-  "concept.lock": async ({ input, project, context }) => {
-    const open = requireOpen(project);
+  "concept.lock": async ({ input, project: open, context }) => {
     const cand = candidateRow(open.db, input.candidateId);
     if (cand.asset_id !== input.assetId) throw new OperationFailure("INVALID_INPUT", `Candidate ${cand.candidate_id} belongs to ${cand.asset_id}, not ${input.assetId}`);
     if (cand.step_id !== "concept") {
@@ -72,14 +70,12 @@ export const branchHandlers: HandlerMap = {
     };
   },
 
-  "branch.list": async ({ input, project }) => {
-    const { db } = requireOpen(project);
+  "branch.list": async ({ input, project: { db } }) => {
     const rows = db.query<BranchRow, [string]>("SELECT * FROM branches WHERE asset_id = ? ORDER BY locked_at, rowid").all(input.assetId);
     return { data: { branches: rows.map((r) => toBranch(db, r)) } };
   },
 
-  "branch.plan": async ({ input, project, context }) => {
-    const open = requireOpen(project);
+  "branch.plan": async ({ input, project: open, context }) => {
     const { plan } = await planBranch(open, context, input);
     const blocked = plan.blockers.length > 0;
     return {
@@ -91,8 +87,7 @@ export const branchHandlers: HandlerMap = {
     };
   },
 
-  "branch.create": async ({ input, project, context }) => {
-    const open = requireOpen(project);
+  "branch.create": async ({ input, project: open, context }) => {
     const { branchId, revision } = await open.mutate(() => createBranch(open, context, input));
     return {
       data: { branch: toBranch(open.db, branchRow(open.db, branchId)) }, revision,
@@ -100,13 +95,11 @@ export const branchHandlers: HandlerMap = {
     };
   },
 
-  "branch.compare": async ({ input, project }) => {
-    const open = requireOpen(project);
+  "branch.compare": async ({ input, project: open }) => {
     return { data: { comparison: await compareBranches(open, input) } };
   },
 
-  "branch.select": async ({ input, project, context }) => {
-    const open = requireOpen(project);
+  "branch.select": async ({ input, project: open, context }) => {
     const branch = branchRow(open.db, input.branchId);
     if (branch.asset_id !== input.assetId) throw new OperationFailure("INVALID_INPUT", `Branch ${branch.branch_id} belongs to ${branch.asset_id}, not ${input.assetId}`, undefined, [{ label: "List branches", operation: "branch.list", input: { assetId: input.assetId } }]);
     const { revision } = open.transact(() => {
@@ -123,8 +116,7 @@ export const branchHandlers: HandlerMap = {
   },
 
 
-  "candidate.select": async ({ input, project, context }) => {
-    const open = requireOpen(project);
+  "candidate.select": async ({ input, project: open, context }) => {
     const branch = branchRow(open.db, input.branchId);
     if (input.deliverableId === "concept") {
       throw new OperationFailure("INVALID_INPUT", "The concept is chosen with concept.lock, not candidate.select", undefined, [{ label: "Lock a concept", operation: "concept.lock" }]);

@@ -11,7 +11,7 @@ import { ExportHistory } from "../export/ExportHistory.tsx";
 import { ActivateDialog, isRestore } from "../production/ActivateDialog.tsx";
 import { PromotePanel } from "../production/PromotePanel.tsx";
 import { progress } from "../../lib/next.ts";
-import { ReleaseKey, exportNeed, newestPromoted, useCurrentExport, useVersionLists, type CurrentExport, type VersionList } from "../production/state.tsx";
+import { ReleaseKey, activeOf, exportNeed, newestPromoted, useCurrentExport, useVersionLists, type CurrentExport, type VersionList } from "../production/state.tsx";
 import "./releases.css";
 
 type RequiredAsset = OperationData<"project.completeness">["requiredAssets"][number];
@@ -45,7 +45,7 @@ function ReleaseRow({ asset, req, list, exported, targeted, onPromote, onActivat
 }) {
   const name = asset.name ?? asset.assetId;
   const versions = list?.versions ?? [];
-  const active = versions.find((version) => version.versionId === list?.active.versionId);
+  const active = list ? activeOf(versions, list.active) : undefined;
   const pending = newestPromoted(versions, list?.active.versionId);
   const inGameId = exported.exportedVersionId(asset.assetId);
   const inGame = versions.find((version) => version.versionId === inGameId);

@@ -46,8 +46,6 @@ export const paths = {
   reviewDir: (assetId: string, revisionRequestId: string) =>
     `${paths.asset(assetId)}/work/reviews/${assertId("revision", revisionRequestId, true)}`,
   cleanupDir: (assetId: string, cleanupId: string) => `${paths.asset(assetId)}/work/cleanup/${assertId("cleanup", cleanupId, true)}`,
-  feasibilityDir: (assetId: string, trialId: string) =>
-    `${paths.asset(assetId)}/work/feasibility/${assertId("trial", trialId)}`,
   versionDir: (assetId: string, versionId: string) => `${paths.asset(assetId)}/versions/${assertId("version", versionId, true)}`,
   versionManifest: (assetId: string, versionId: string) => `${paths.versionDir(assetId, versionId)}/manifest.json`,
 };

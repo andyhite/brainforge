@@ -1,115 +1,21 @@
 import "./settings.css";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
-import { parseDocument, type Document } from "yaml";
 import { ConflictDialog, ExternalChangeBanner, SaveBar, SpecEditor } from "../../components/SpecEditor.tsx";
 import { EffectiveSettings } from "../../components/EffectiveSettings.tsx";
 import { PolicyPanel } from "../../components/PolicyPanel.tsx";
 import { Banner, ErrorBanner, Seg } from "../../components/ui.tsx";
-import { readField, readString, readStringList, splitList, writeField, type FieldPath } from "../../lib/yaml-fields.ts";
+import { Ctx, CheckField, ListField, NumberField, SelectField, TextField, type EditorContext } from "../families/fields.tsx";
+import { mutate, parseDraft } from "../families/yaml-patch.ts";
 import { specRoute } from "../../lib/use-project.ts";
 import { useSpecFile, type SpecFile } from "../../lib/spec-file.ts";
 
 const PROJECT_FILE = "brainforge/project.yaml";
-const REVIEW_OPTIONS = ["human", "agent", "agent_with_escalation"];
-const OPTION_LABEL: Record<string, string> = { human: "A person", agent: "An agent", agent_with_escalation: "An agent, escalating to a person", generic: "Generic files", godot4: "Godot 4" };
-
-interface FieldProps {
-  id: string;
-  label: string;
-  path: FieldPath;
-  draft: string;
-  doc: Document;
-  file: SpecFile;
-  hint?: string;
-}
-
-function TextField({ id, label, path, draft, file, doc, hint, optional, multiline }: FieldProps & { optional?: boolean; multiline?: boolean }) {
-  const value = readString(doc, path);
-  const onChange = (next: string) => file.setDraft(writeField(draft, path, optional && next === "" ? undefined : next));
-  return (
-    <div className="field">
-      <label htmlFor={id}>{label}</label>
-      {multiline ? (
-        <textarea id={id} rows={4} value={value} onChange={(event) => onChange(event.target.value)} />
-      ) : (
-        <input id={id} type="text" value={value} onChange={(event) => onChange(event.target.value)} />
-      )}
-      {hint ? <span className="secondary">{hint}</span> : null}
-    </div>
-  );
-}
-
-function NumberField({ id, label, path, draft, file, doc, hint, required }: FieldProps & { required?: boolean }) {
-  const value = readString(doc, path);
-  const [text, setText] = useState(value);
-  const [error, setError] = useState<string | undefined>(undefined);
-  // Follow the file when it changes from elsewhere (YAML view, reload), but not while an invalid entry is on screen.
-  useEffect(() => {
-    if (!error) setText(value);
-  }, [value, error]);
-  const onChange = (next: string) => {
-    setText(next);
-    const parsed = Number(next);
-    if (next.trim() === "" || Number.isNaN(parsed)) {
-      if (required && value !== "") {
-        setError(`Required. The file keeps its last valid value (${value}).`);
-        return;
-      }
-      setError(undefined);
-      if (value !== "") file.setDraft(writeField(draft, path, undefined));
-      return;
-    }
-    setError(undefined);
-    file.setDraft(writeField(draft, path, parsed));
-  };
-  return (
-    <div className="field">
-      <label htmlFor={id}>{label}</label>
-      <input id={id} type="number" min={0} step="any" value={text} aria-invalid={error ? true : undefined} aria-describedby={error ? `${id}-error` : undefined} onChange={(event) => onChange(event.target.value)} />
-      {error ? <span id={`${id}-error`} role="alert" className="secondary" style={{ color: "var(--danger)" }}>✖ {error}</span> : null}
-      {hint ? <span className="secondary">{hint}</span> : null}
-    </div>
-  );
-}
-
-function SelectField({ id, label, path, draft, file, doc, hint, options }: FieldProps & { options: string[] }) {
-  const value = readString(doc, path);
-  return (
-    <div className="field">
-      <label htmlFor={id}>{label}</label>
-      <select id={id} value={value} onChange={(event) => file.setDraft(writeField(draft, path, event.target.value === "" ? undefined : event.target.value))}>
-        {value === "" ? <option value="">(not set)</option> : null}
-        {options.map((option) => <option key={option} value={option}>{OPTION_LABEL[option] ?? option}</option>)}
-      </select>
-      {hint ? <span className="secondary">{hint}</span> : null}
-    </div>
-  );
-}
-
-function ListField({ id, label, path, draft, file, doc, hint }: FieldProps) {
-  const items = readStringList(doc, path);
-  const [text, setText] = useState(items.join("\n"));
-  // Re-sync only when the draft changed from elsewhere (YAML view, reload), not while typing.
-  useEffect(() => {
-    setText((current) => (splitList(current).join("\n") === items.join("\n") ? current : items.join("\n")));
-  }, [items.join("\n")]);
-  return (
-    <div className="field">
-      <label htmlFor={id}>{label}</label>
-      <textarea
-        id={id}
-        rows={3}
-        value={text}
-        onChange={(event) => {
-          setText(event.target.value);
-          file.setDraft(writeField(draft, path, splitList(event.target.value)));
-        }}
-      />
-      {hint ? <span className="secondary">{hint}</span> : null}
-    </div>
-  );
-}
+const REVIEW_OPTIONS = [
+  { value: "human", label: "A person" },
+  { value: "agent", label: "An agent" },
+  { value: "agent_with_escalation", label: "An agent, escalating to a person" },
+];
 
 function Section({ title, hint, children }: { title: string; hint: string; children: ReactNode }) {
   return (
@@ -122,50 +28,53 @@ function Section({ title, hint, children }: { title: string; hint: string; child
 }
 
 function FieldsForm({ file }: { file: SpecFile }) {
-  const draft = file.draft;
-  const doc = useMemo(() => parseDocument(draft), [draft]);
-  if (doc.errors.length > 0) {
+  const parsed = useMemo(() => parseDraft(file.draft), [file.draft]);
+  if (parsed.syntaxError !== undefined) {
     return <Banner tone="warn" title="Fields unavailable">The YAML has syntax errors. Fix the YAML view first, then come back to the fields.</Banner>;
   }
-  const common = { draft, file, doc };
-  const autoRegenerate = readField(doc, ["automation", "autoRegenerate"]) === true;
+  const ctx: EditorContext = {
+    data: parsed.data,
+    profile: undefined,
+    problems: [],
+    patch: (fn) => file.setDraft(mutate(file.draft, fn)),
+    disabled: false,
+    assetId: "",
+    open: new Set(),
+    setOpen: () => {},
+  };
   return (
-    <form className="settings-stack" onSubmit={(event) => event.preventDefault()}>
-      <Section title="Direction" hint="What this project looks like. Styles listed here are applied to every asset.">
-        <TextField {...common} id="dir-name" label="Project name" path={["name"]} />
-        <ListField {...common} id="dir-styles" label="Style ids" path={["styleIds"]} hint="Comma or one per line." />
-        <TextField {...common} id="dir-art" label="Art direction" path={["artDirection"]} multiline />
-      </Section>
-      <Section title="Defaults" hint="Used by every asset unless the asset or its family overrides them.">
-        <NumberField {...common} required id="dir-width" label="Canvas width (px)" path={["defaults", "sizing", "width"]} />
-        <NumberField {...common} required id="dir-height" label="Canvas height (px)" path={["defaults", "sizing", "height"]} />
-        <NumberField {...common} id="dir-subject" label="Subject height (px)" path={["defaults", "sizing", "subjectHeightPx"]} hint="Optional. Standing height of characters and creatures." />
-        <NumberField {...common} id="dir-scale" label="Display scale" path={["defaults", "sizing", "displayScale"]} hint="Optional." />
-        <NumberField {...common} required id="dir-fps" label="Playback frame rate (fps)" path={["defaults", "animation", "playbackFps"]} hint="Cannot be cleared once set; edit project.yaml directly to remove it." />
-      </Section>
-      <Section title="Export" hint="Where finished files go in your game project.">
-        <SelectField {...common} id="dir-preset" label="Export preset" path={["export", "preset"]} options={["generic", "godot4"]} />
-        <TextField {...common} id="dir-dest" label="Destination" path={["export", "destination"]} hint="Relative to the game root." />
-        <TextField {...common} id="dir-godot" label="Godot project root" path={["export", "godotProjectRoot"]} optional hint="Relative to the game root. Empty means “.”." />
-      </Section>
-      <Section title="Approvals" hint="Who approves each step. Changes are requests until a human confirms them below.">
-        <SelectField {...common} id="dir-concept" label="Concept lock" path={["approval", "conceptLock"]} options={REVIEW_OPTIONS} />
-        <SelectField {...common} id="dir-review" label="Production review" path={["approval", "productionReview"]} options={REVIEW_OPTIONS} />
-        <SelectField {...common} id="dir-promotion" label="Promotion" path={["approval", "promotion"]} options={REVIEW_OPTIONS} />
-        <SelectField {...common} id="dir-activation" label="Activation" path={["approval", "activation"]} options={REVIEW_OPTIONS} />
-      </Section>
-      <Section title="Automation" hint="Limits for unattended generation work.">
-        <NumberField {...common} required id="dir-concurrent" label="Max concurrent generations" path={["automation", "maxConcurrentGenerations"]} />
-        <NumberField {...common} required id="dir-batch" label="Max batch candidates" path={["automation", "maxBatchCandidates"]} />
-        <div className="field">
-          <label htmlFor="dir-auto">
-            <input id="dir-auto" type="checkbox" checked={autoRegenerate} onChange={(event) => file.setDraft(writeField(draft, ["automation", "autoRegenerate"], event.target.checked))} />{" "}
-            Regenerate automatically
-          </label>
-          <span className="secondary">Retry failed steps without asking, within the attempt limit.</span>
-        </div>
-      </Section>
-    </form>
+    <Ctx.Provider value={ctx}>
+      <form className="settings-stack" onSubmit={(event) => event.preventDefault()}>
+        <Section title="Direction" hint="What this project looks like. Styles listed here are applied to every asset.">
+          <TextField required path={["name"]} label="Project name" />
+          <ListField path={["styleIds"]} label="Style ids" hint="Comma separated; each matches a file under brainforge/styles/." />
+          <TextField required area path={["artDirection"]} label="Art direction" />
+        </Section>
+        <Section title="Defaults" hint="Used by every asset unless the asset or its family overrides them.">
+          <NumberField required min={0} path={["defaults", "sizing", "width"]} label="Canvas width (px)" />
+          <NumberField required min={0} path={["defaults", "sizing", "height"]} label="Canvas height (px)" />
+          <NumberField min={0} path={["defaults", "sizing", "subjectHeightPx"]} label="Subject height (px)" hint="Optional. Standing height of characters and creatures." />
+          <NumberField min={0} path={["defaults", "sizing", "displayScale"]} label="Display scale" hint="Optional." />
+          <NumberField required min={0} path={["defaults", "animation", "playbackFps"]} label="Playback frame rate (fps)" hint="Cannot be cleared once set; edit project.yaml directly to remove it." />
+        </Section>
+        <Section title="Export" hint="Where finished files go in your game project.">
+          <SelectField path={["export", "preset"]} label="Export preset" emptyLabel="(not set)" options={[{ value: "generic", label: "Generic files" }, { value: "godot4", label: "Godot 4" }]} />
+          <TextField required path={["export", "destination"]} label="Destination" hint="Relative to the game root." />
+          <TextField path={["export", "godotProjectRoot"]} label="Godot project root" hint="Relative to the game root. Empty means “.”." />
+        </Section>
+        <Section title="Approvals" hint="Who approves each step. Changes are requests until a human confirms them below.">
+          <SelectField path={["approval", "conceptLock"]} label="Concept lock" emptyLabel="(not set)" options={REVIEW_OPTIONS} />
+          <SelectField path={["approval", "productionReview"]} label="Production review" emptyLabel="(not set)" options={REVIEW_OPTIONS} />
+          <SelectField path={["approval", "promotion"]} label="Promotion" emptyLabel="(not set)" options={REVIEW_OPTIONS} />
+          <SelectField path={["approval", "activation"]} label="Activation" emptyLabel="(not set)" options={REVIEW_OPTIONS} />
+        </Section>
+        <Section title="Automation" hint="Limits for unattended generation work.">
+          <NumberField required min={0} path={["automation", "maxConcurrentGenerations"]} label="Max concurrent generations" />
+          <NumberField required min={0} path={["automation", "maxBatchCandidates"]} label="Max batch candidates" />
+          <CheckField path={["automation", "autoRegenerate"]} label="Regenerate automatically" hint="Retry failed steps without asking, within the attempt limit." />
+        </Section>
+      </form>
+    </Ctx.Provider>
   );
 }
 

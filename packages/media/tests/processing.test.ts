@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import sharp from "sharp";
 import { ProcessingRecipe } from "@brainforge/contracts";
-import { animationDocument, atlasLayout, buildAtlas, decodeRgba, loopJumps, MediaError, playSchedule, processClip, resample } from "../src/index.ts";
+import { animationDocument, buildAtlas, decodeRgba, layoutSprites, loopJumps, MediaError, playSchedule, processClip, resample } from "../src/index.ts";
 
 const sum = (xs: { durationMs: number }[]) => xs.reduce((a, f) => a + f.durationMs, 0);
 
@@ -229,8 +229,9 @@ test("atlas of processed frames: each rectangle reproduces its frame's exact RGB
 });
 
 test("a frame that cannot fit one page is impossible packing, named before any pixel work", () => {
-  expect(() => atlasLayout(32, 32, 3, { maxSize: 33, padding: 2, extrude: 1 })).toThrow(/exceeds atlas max 33/);
-  expect(atlasLayout(32, 32, 9, { maxSize: 80, padding: 2, extrude: 1 })).toEqual({ cols: 2, rows: 2, perPage: 4, pages: 3 });
+  const sprites = (n: number) => Array.from({ length: n }, (_, i) => ({ id: String(i), width: 32, height: 32 }));
+  expect(() => layoutSprites(sprites(3), { maxSize: 33, padding: 2, extrude: 1 })).toThrow(/exceeds atlas max 33/);
+  expect(layoutSprites(sprites(9), { maxSize: 80, padding: 2, extrude: 1 }).pages).toHaveLength(3);
 });
 
 test("animation.json keeps real durations and rectangles; a rectangle outside its page or a non-positive duration is refused", () => {

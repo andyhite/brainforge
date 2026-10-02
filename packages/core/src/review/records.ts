@@ -33,7 +33,7 @@ export function outputRows(db: Database, candidateId: string): OutputRow[] {
   return db.query<OutputRow, [string]>("SELECT * FROM candidate_outputs WHERE candidate_id = ? ORDER BY role DESC").all(candidateId);
 }
 
-export function toOutput(r: OutputRow): CandidateOutput {
+function toOutput(r: OutputRow): CandidateOutput {
   return {
     outputId: r.output_id, role: r.role, fileId: r.file_id, sha256: r.sha256, width: r.width, height: r.height, mediaType: r.media_type,
     stage: r.stage, mediaKind: r.media_kind,

@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "exports": { ".": "./src/index.ts" },
-  "scripts": { "typecheck": "tsc -p .", "test": "bun test tests", "godot-verify": "bun scripts/godot-verify.ts" },
+  "scripts": { "typecheck": "tsc -p .", "test": "bun test --preload ../../scripts/test-tmpdir.ts tests", "godot-verify": "bun scripts/godot-verify.ts" },
   "dependencies": { "@brainforge/contracts": "workspace:*", "@brainforge/media": "workspace:*" },
   "devDependencies": { "sharp": "^0.34.0" }
 }

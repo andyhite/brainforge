@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import sharp from "sharp";
-import { applyFraming, calibrateFraming, decodeImage, foregroundBounds, MediaError } from "../src/index.ts";
+import { applyFraming, decodeImage, foregroundBounds, MediaError } from "../src/index.ts";
 
 async function fixture(w: number, h: number, rect: { x: number; y: number; width: number; height: number }) {
   const fg = await sharp({ create: { width: rect.width, height: rect.height, channels: 4, background: { r: 200, g: 40, b: 40, alpha: 1 } } }).png().toBuffer();
@@ -16,7 +16,7 @@ test("foregroundBounds finds the opaque rectangle only", async () => {
 test("framing scales standing height uniformly and anchors feet", async () => {
   const png = await fixture(200, 200, { x: 80, y: 20, width: 40, height: 100 });
   const b = await foregroundBounds(png);
-  const t = calibrateFraming(b, { subjectHeightPx: 50, canvas: { width: 64, height: 64 }, anchor: { x: 32, y: 60 } });
+  const t = { scale: 50 / b.height, canvas: { width: 64, height: 64 }, anchor: { x: 32, y: 60 }, sourceBounds: b, subjectHeightPx: 50 };
   const { png: out, clipped } = await applyFraming(png, t);
   expect(clipped).toBe(false);
   const ob = await foregroundBounds(out);

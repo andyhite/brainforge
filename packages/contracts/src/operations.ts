@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ApprovalPolicy, AssetFamily, AuthoredKind } from "./authored.ts";
+import { ApprovalPolicy, AssetFamily, AuthoredKind, Sha256 } from "./authored.ts";
 import { NextAction, RecoveryAction } from "./envelope.ts";
 import { Annotation, Branch, Candidate, Decision, Escalation, FrameRange, GenerationPlan, Geometry, InputMode, Job, JobState, OutputApproval, RevisionRequest, RevisionStatus, StepId, StepState, Visual } from "./generation.ts";
 import { BranchComparison, BranchPlan } from "./branches.ts";
@@ -122,8 +122,6 @@ export const PolicyView = z.object({
   confirmedAt: z.string().optional(),
 });
 export type PolicyView = z.infer<typeof PolicyView>;
-
-const Sha256 = z.string().regex(/^[0-9a-f]{64}$/);
 
 // --------------------------------------------------------------------------- registry
 
@@ -551,10 +549,10 @@ export const OPERATIONS = {
     summary: "Plan a coherent immutable version: every required deliverable with its selected processed output, applicable approval, unresolved feedback and dependency pins. A missing, unapproved, stale or changed deliverable blocks the whole bundle. Read-only toward the version store; returns planId and planHash for promotion.start.",
   },
   "promotion.start": {
-    input: z.object({ planId: z.string(), planHash: z.string(), requestId: z.string().min(8).max(120), note: z.string().max(2000).optional() }).strict(),
+    input: z.object({ planId: z.string(), planHash: z.string(), note: z.string().max(2000).optional() }).strict(),
     data: z.object({ version: AssetVersion, created: z.boolean() }),
     mutating: true, humanOnly: false, needsProject: true,
-    summary: "Publish the planned version atomically. The plan is revalidated first; a stale plan is refused. Repeating a request with the same requestId returns the same version (created=false). Promotion does NOT activate. Needs the effective promotion capability.",
+    summary: "Publish the planned version atomically. The plan is revalidated first; a stale plan is refused. Repeating the exact request (same envelope requestId and input) returns the original result, never a second version. Promotion does NOT activate. Needs the effective promotion capability.",
   },
   "version.list": {
     input: z.object({ assetId: z.string() }).strict(),
@@ -589,10 +587,10 @@ export const OPERATIONS = {
     summary: "Plan an export of immutable versions to the game-relative destination in project.yaml (export.preset generic|godot4): selected versions, assets that will leave current, files, conflicts and blockers. Never selects raw or unapproved candidates; an asset without an active version is a blocker, not skipped.",
   },
   "export.start": {
-    input: z.object({ planId: z.string(), planHash: z.string(), requestId: z.string().min(8).max(120) }).strict(),
+    input: z.object({ planId: z.string(), planHash: z.string() }).strict(),
     data: z.object({ export: ExportRecord, created: z.boolean() }),
     mutating: true, humanOnly: false, needsProject: true,
-    summary: "Publish the planned export atomically to <destination>/current (a managed relative symlink to an immutable .releases/<export-id> snapshot). Same requestId returns the same export. Failure before the pointer switch leaves the previous export intact; export never changes promotion or activation.",
+    summary: "Publish the planned export atomically to <destination>/current (a managed relative symlink to an immutable .releases/<export-id> snapshot). Repeating a request with the same envelope requestId returns the same export. Failure before the pointer switch leaves the previous export intact; export never changes promotion or activation.",
   },
   "export.list": {
     input: z.object({ limit: z.number().int().min(1).max(100).default(20) }).strict(),

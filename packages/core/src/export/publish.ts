@@ -1,32 +1,17 @@
 import { z } from "zod";
-import type { ActorType, ExportRecord } from "@brainforge/contracts";
-import { ExportError, InjectedFault, commitExport, prepareExport, recoverExport, type ExportFaults, type ExportIntent } from "@brainforge/export";
+import { ExportIntent, type ActorType, type ExportRecord } from "@brainforge/contracts";
+import { ExportError, InjectedFault, commitExport, prepareExport, recoverExport, type ExportFault } from "@brainforge/export";
 import { resolveIn } from "@brainforge/storage";
 import { newId } from "../generation/store.ts";
+import { insertIntent, markIntentCommitted, markIntentFailed, preparedIntents } from "../outputs/intents.ts";
 import type { OpenProject } from "../project-runtime.ts";
 import { OperationFailure } from "../runtime.ts";
 import { readCurrentView } from "./current.ts";
 import { SelectionJson, toInput, type ExportEvaluation, type ExportRow } from "./plan.ts";
 
-export const EXPORT_INTENT_KIND = "export";
+const EXPORT_INTENT_KIND = "export";
 
-/** Test-only crash points; release server construction never takes them from any outside input. */
-export type ExportFault = "fail-during-staging" | "fail-before-switch" | "fail-after-switch";
-
-const PACKAGE_FAULTS: Record<ExportFault, ExportFaults> = {
-  "fail-during-staging": { failDuringStaging: true },
-  "fail-before-switch": { failBeforeSwitch: true },
-  "fail-after-switch": { failAfterSwitchBeforeRetire: true },
-};
-
-const Sha = z.string().regex(/^[0-9a-f]{64}$/);
-const OwnedFile = z.object({ path: z.string(), sha256: Sha, size: z.number().int().nonnegative() });
-const IntentSchema = z.object({
-  exportId: z.string(), projectId: z.string(), preset: z.enum(["generic", "godot4"]), releaseDir: z.string(), manifestSha256: Sha,
-  files: z.array(OwnedFile), carried: z.array(OwnedFile),
-  previous: z.object({ exportId: z.string(), manifestSha256: Sha, files: z.array(OwnedFile), unowned: z.array(OwnedFile) }).optional(),
-});
-const Payload = z.object({ exportId: z.string(), destination: z.string(), intent: IntentSchema });
+const Payload = z.object({ exportId: z.string(), destination: z.string(), intent: ExportIntent });
 type Payload = z.infer<typeof Payload>;
 
 const warningsOf = (row: ExportRow): string[] => z.array(z.string()).parse(JSON.parse(row.warnings_json));
@@ -64,14 +49,13 @@ function finishReceipt(open: OpenProject, row: ExportRow, intentId: string, mani
     open.db.query("UPDATE exports SET state = 'committed', manifest_sha256 = ?, committed_at = ?, warnings_json = ?, error = NULL WHERE export_id = ?")
       .run(manifestSha256, now, JSON.stringify([...new Set([...known, ...warnings])]), row.export_id);
     open.db.query("UPDATE exports SET retired_at = ? WHERE destination = ? AND state = 'committed' AND retired_at IS NULL AND export_id != ?").run(now, row.destination, row.export_id);
-    open.db.query("UPDATE publication_intents SET state = 'committed', resolved_at = ?, error = NULL WHERE intent_id = ?").run(now, intentId);
+    markIntentCommitted(open, intentId, now);
   }, [{ type: "export.committed", data: { exportId: row.export_id, destination: row.destination, preset: row.preset, selection: SelectionJson.parse(JSON.parse(row.selection_json)) }, actorId: row.created_by }]);
 }
 
 function failReceipt(open: OpenProject, exportId: string, intentId: string | undefined, error: string): void {
-  const now = new Date().toISOString();
   open.db.query("UPDATE exports SET state = 'failed', error = ? WHERE export_id = ? AND state != 'committed'").run(error, exportId);
-  if (intentId) open.db.query("UPDATE publication_intents SET state = 'failed', error = ?, resolved_at = ? WHERE intent_id = ?").run(error, now, intentId);
+  if (intentId) markIntentFailed(open, intentId, error);
 }
 
 const failure = (e: unknown, prefix: string): OperationFailure => {
@@ -104,7 +88,6 @@ export async function publishExport(open: OpenProject, request: StartExportReque
   const intentId = newId("pub");
   const createdAt = new Date().toISOString();
   const releasePath = `${e.destination}/.releases/${exportId}`;
-  const faults = request.fault ? PACKAGE_FAULTS[request.fault] : undefined;
 
   open.db.query("INSERT INTO exports (export_id, preset, destination, state, selection_json, release_path, created_by, created_at, request_id, replaces_export_id) VALUES (?, ?, ?, 'prepared', ?, ?, ?, ?, ?, ?)")
     .run(exportId, e.preset, e.destination, JSON.stringify(e.selection.map((s) => ({ assetId: s.assetId, versionId: s.versionId }))), releasePath, request.actorId, createdAt, request.requestId, e.replacesExportId ?? null);
@@ -113,7 +96,7 @@ export async function publishExport(open: OpenProject, request: StartExportReque
   try {
     prepared = await prepareExport({
       destinationAbs: e.destinationAbs, input: toInput(e, open.projectId, exportId, createdAt),
-      ...(e.current ? { expectedCurrent: e.current } : {}), ...(faults ? { faults } : {}),
+      ...(e.current ? { expectedCurrent: e.current } : {}), ...(request.fault ? { fault: request.fault } : {}),
     });
   } catch (error) {
     failReceipt(open, exportId, undefined, error instanceof Error ? error.message : String(error));
@@ -121,11 +104,10 @@ export async function publishExport(open: OpenProject, request: StartExportReque
   }
 
   const payload: Payload = { exportId, destination: e.destination, intent: prepared.intent };
-  open.db.query("INSERT INTO publication_intents (intent_id, kind, payload_json, staging_path, state, created_at) VALUES (?, ?, ?, NULL, 'prepared', ?)")
-    .run(intentId, EXPORT_INTENT_KIND, JSON.stringify(payload), createdAt);
+  insertIntent(open, intentId, EXPORT_INTENT_KIND, payload, null, createdAt);
 
   try {
-    const committed = await commitExport({ destinationAbs: e.destinationAbs, intent: prepared.intent, ...(faults ? { faults } : {}) });
+    const committed = await commitExport({ destinationAbs: e.destinationAbs, intent: prepared.intent, ...(request.fault ? { fault: request.fault } : {}) });
     finishReceipt(open, exportRow(open, exportId), intentId, committed.manifestSha256, [...prepared.warnings, ...committed.warnings]);
     return { exportId };
   } catch (error) {
@@ -149,30 +131,27 @@ export interface ExportRecovery { committed: string[]; failed: { exportId: strin
 /** Resolve every prepared export intent without taking the mutation gate (callers hold it or run at open). */
 export async function recoverExportIntents(open: OpenProject): Promise<ExportRecovery> {
   const report: ExportRecovery = { committed: [], failed: [] };
-  const intents = open.db.query<{ intent_id: string; payload_json: string }, [string]>("SELECT intent_id, payload_json FROM publication_intents WHERE kind = ? AND state = 'prepared' ORDER BY rowid").all(EXPORT_INTENT_KIND);
-  for (const intent of intents) {
-    const parsed = Payload.safeParse(JSON.parse(intent.payload_json));
-    if (!parsed.success) {
-      failReceipt(open, "", intent.intent_id, `payload unreadable: ${parsed.error.message}`);
+  for (const intent of preparedIntents(open, EXPORT_INTENT_KIND, Payload)) {
+    if (intent.unreadable !== undefined) {
+      failReceipt(open, "", intent.intentId, intent.unreadable);
       report.failed.push({ exportId: "", error: "payload unreadable" });
       continue;
     }
-    const { exportId, destination } = parsed.data;
-    const intentData: ExportIntent = parsed.data.intent;
+    const { exportId, destination, intent: intentData } = intent.payload;
     try {
       const destinationAbs = await resolveIn(open.root, destination);
       const result = await recoverExport({ destinationAbs, intent: intentData });
       if (result.status === "committed") {
-        finishReceipt(open, exportRow(open, exportId), intent.intent_id, intentData.manifestSha256, result.warnings);
+        finishReceipt(open, exportRow(open, exportId), intent.intentId, intentData.manifestSha256, result.warnings);
         report.committed.push(exportId);
       } else {
         const error = "interrupted before the current pointer was switched; the prepared release was removed and the previous export is unchanged";
-        failReceipt(open, exportId, intent.intent_id, error);
+        failReceipt(open, exportId, intent.intentId, error);
         report.failed.push({ exportId, error });
       }
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
-      failReceipt(open, exportId, intent.intent_id, error);
+      failReceipt(open, exportId, intent.intentId, error);
       report.failed.push({ exportId, error });
     }
   }

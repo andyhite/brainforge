@@ -11,12 +11,12 @@ interface Baseline {
   text: string;
 }
 
-export interface DiskState {
+interface DiskState {
   hash: string | null;
   text: string;
 }
 
-export interface ConflictState {
+interface ConflictState {
   mine: string;
   disk: DiskState;
 }

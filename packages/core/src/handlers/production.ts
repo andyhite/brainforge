@@ -1,16 +1,15 @@
 import { discoverAuthored } from "../authored.ts";
 import { newId } from "../generation/store.ts";
+import { assertPlanHash } from "../operations.ts";
 import { policyView } from "../policy.ts";
 import { activateVersion } from "../production/activation.ts";
 import { capabilityFor, evaluatePromotion, evaluationHash, loadPlan, storePlan, toPlan } from "../production/plan.ts";
 import { publishVersion, recoverPromotionIntents } from "../production/publish.ts";
 import { activationEvents, activeSelection, describeVersion, verifyVersion, versionRow, versionRows } from "../production/versions.ts";
 import { OperationFailure, type HandlerMap } from "../runtime.ts";
-import { requireOpen } from "./common.ts";
 
 export const productionHandlers: HandlerMap = {
-  "promotion.plan": async ({ input, project, context }) => {
-    const open = requireOpen(project);
+  "promotion.plan": async ({ input, project: open, context }) => {
     const memberPins = input.members && Object.keys(input.members).length > 0 ? input.members : undefined;
     if (memberPins && !(await discoverAuthored(open.root)).assets.find((a) => a.fileId === input.assetId)?.spec?.collection) {
       throw new OperationFailure("INVALID_INPUT", `members applies to an environment with collection.members; ${input.assetId} has none`, undefined, [{ label: "Read the asset definition", operation: "spec.read", input: { path: `brainforge/assets/${input.assetId}/asset.yaml` } }]);
@@ -22,28 +21,25 @@ export const productionHandlers: HandlerMap = {
     return {
       data: { plan },
       nextActions: plan.blockers.length === 0
-        ? [{ label: capability.allowed ? "Publish this version" : "Ask the user to promote it", operation: "promotion.start", input: { planId: plan.planId, planHash: plan.planHash, requestId: newId("promote") } }]
+        ? [{ label: capability.allowed ? "Publish this version" : "Ask the user to promote it", operation: "promotion.start", input: { planId: plan.planId, planHash: plan.planHash } }]
         : plan.blockers.flatMap((b) => b.recoveryActions).slice(0, 5),
       warnings: capability.allowed ? [] : [capability.reason ?? "You may not promote under the current policy."],
     };
   },
 
-  "promotion.start": async ({ input, project, context, runtime }) => {
-    const open = requireOpen(project);
+  "promotion.start": async ({ input, project: open, context, runtime, requestId }) => {
     const { planId, planHash } = input;
     const row = await open.mutate(async () => {
       // A lost response (or a crash after the rename) is answered from the record, never by publishing twice.
       await recoverPromotionIntents(open);
-      const existing = open.db.query<{ version_id: string; asset_id: string }, [string]>("SELECT version_id, asset_id FROM asset_versions WHERE request_id = ?").get(input.requestId);
+      const existing = open.db.query<{ version_id: string; asset_id: string }, [string]>("SELECT version_id, asset_id FROM asset_versions WHERE request_id = ?").get(requestId);
       if (existing) {
-        if (existing.asset_id !== loadPlan(open, planId).assetId) throw new OperationFailure("IDEMPOTENCY_CONFLICT", `requestId ${input.requestId} already published a version of ${existing.asset_id}`);
+        if (existing.asset_id !== loadPlan(open, planId).assetId) throw new OperationFailure("IDEMPOTENCY_CONFLICT", `requestId ${requestId} already published a version of ${existing.asset_id}`);
         return { versionId: existing.version_id, created: false };
       }
 
       const stored = loadPlan(open, planId);
-      if (stored.planHash !== planHash) {
-        throw new OperationFailure("REVISION_CONFLICT", "planHash does not match the plan that was inspected under this planId", { expected: stored.planHash, got: planHash }, [{ label: "Plan the promotion again", operation: "promotion.plan", input: { assetId: stored.assetId, branchId: stored.branchId } }]);
-      }
+      assertPlanHash(stored.planHash, planHash, [{ label: "Plan the promotion again", operation: "promotion.plan", input: { assetId: stored.assetId, branchId: stored.branchId } }]);
       const capability = capabilityFor(await policyView(open), "promotion", context.actorType);
       if (!capability.allowed && capability.denial) throw new OperationFailure(capability.denial.code, capability.denial.message);
 
@@ -56,7 +52,7 @@ export const productionHandlers: HandlerMap = {
       }
       const fault = runtime.faults?.promotion;
       const { versionId } = await publishVersion(open, {
-        evaluation, actorId: context.actorId, actorType: context.actorType, requestId: input.requestId,
+        evaluation, actorId: context.actorId, actorType: context.actorType, requestId,
         ...(input.note ? { note: input.note } : {}), ...(fault ? { fault } : {}),
       });
       return { versionId, created: true };
@@ -72,8 +68,7 @@ export const productionHandlers: HandlerMap = {
     };
   },
 
-  "version.list": async ({ input, project }) => {
-    const open = requireOpen(project);
+  "version.list": async ({ input, project: open }) => {
     const set = await discoverAuthored(open.root);
     const active = activeSelection(open.db, input.assetId);
     const versions = [];
@@ -81,8 +76,7 @@ export const productionHandlers: HandlerMap = {
     return { data: { versions, active } };
   },
 
-  "version.inspect": async ({ input, project }) => {
-    const open = requireOpen(project);
+  "version.inspect": async ({ input, project: open }) => {
     const row = versionRow(open.db, input.versionId);
     const described = await describeVersion(open, await discoverAuthored(open.root), row, activeSelection(open.db, row.asset_id));
     if (!described.manifest) {
@@ -93,8 +87,7 @@ export const productionHandlers: HandlerMap = {
     };
   },
 
-  "version.activate": async ({ input, project, context }) => {
-    const open = requireOpen(project);
+  "version.activate": async ({ input, project: open, context }) => {
     const { active, event, revision } = await activateVersion(open, context, input);
     return { data: { active, event }, revision };
   },

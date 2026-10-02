@@ -113,7 +113,7 @@ async function complete(over: { promotion?: string; activation?: string } = {}):
 }
 
 const plan = async (w: World, as: OperationContext = human): Promise<PromotionPlan> => expectOk(await w.call("promotion.plan", { assetId: "cortex" }, as)).plan;
-const start = (w: World, p: PromotionPlan, requestId = "promote-0001", as: OperationContext = human) => w.call("promotion.start", { planId: p.planId, planHash: p.planHash, requestId }, as);
+const start = (w: World, p: PromotionPlan, requestId = "promote-0001", as: OperationContext = human) => w.call("promotion.start", { planId: p.planId, planHash: p.planHash }, as, requestId);
 const promote = async (w: World, requestId = "promote-0001", as: OperationContext = human) => expectOk(await start(w, await plan(w, as), requestId, as)).version;
 const list = async (w: World) => expectOk(await w.call("version.list", { assetId: "cortex" }));
 const activateAt = async (w: World, versionId: string, as: OperationContext = human, extra: Record<string, unknown> = {}) =>
@@ -237,13 +237,13 @@ describe("promotion.start", () => {
     expect(await readdir(join(w.root, "brainforge/.state/staging"))).toEqual([]);
   });
 
-  test("the same requestId returns the same version (created=false); a different request with the used plan is refused", async () => {
+  test("the same requestId replays the same version; a different request with the used plan is refused", async () => {
     const w = await complete();
     const p = await plan(w);
     const first = expectOk(await start(w, p, "promote-0001"));
     const again = expectOk(await start(w, p, "promote-0001"));
     expect(first.created).toBe(true);
-    expect(again).toMatchObject({ created: false, version: { versionId: first.version.versionId } });
+    expect(again).toEqual(first);
     expect(rows(w, "asset_versions")).toBe(1);
     expect(await readdir(versionsDir(w))).toHaveLength(1);
 

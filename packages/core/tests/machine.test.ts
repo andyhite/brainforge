@@ -6,7 +6,7 @@ import { join } from "node:path";
 import type { OperationName, OperationRequest, OperationResult } from "@brainforge/contracts";
 import {
   agentContext, createMachineStore, executeOperation, machineHandlers, HUMAN_CONTEXT,
-  type HandlerMap, type LocalMachineStore, type OperationRuntime, type ProjectHandle,
+  type HandlerMap, type LocalMachineStore, type OperationRuntime,
 } from "../src/index.ts";
 
 const T0 = Date.parse("2026-01-01T00:00:00.000Z");
@@ -15,7 +15,6 @@ let dir: string;
 let clockMs: number;
 let store: LocalMachineStore;
 let runtime: OperationRuntime;
-let projects: ProjectHandle[];
 let counter = 0;
 
 const handlers: HandlerMap = {
@@ -27,10 +26,9 @@ beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "bf-machine-"));
   clockMs = T0;
   store = createMachineStore({ configDir: join(dir, "config"), now: () => new Date(clockMs) });
-  projects = [];
   runtime = {
-    projects: { get: (root) => projects.find((p) => p.root === root), list: () => projects },
-    machine: store, workflowsDir: "", publicUrl: "http://127.0.0.1:3210",
+    projects: { get: () => undefined, list: () => [] } as never,
+    machine: store, publicUrl: "http://127.0.0.1:3210",
   };
 });
 

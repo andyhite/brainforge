@@ -1,7 +1,6 @@
 import { z } from "zod";
+import { Sha256 } from "./authored.ts";
 import { PlanBlocker, StepId } from "./generation.ts";
-
-const Sha256 = z.string().regex(/^[0-9a-f]{64}$/);
 
 // --------------------------------------------------------------------------- manifest (immutable, on disk)
 

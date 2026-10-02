@@ -5,41 +5,18 @@
  * generated resource and compares what Godot reports (atlas regions, StyleBoxTexture margins, loop flags, frame
  * counts, tile data) with sprites.json and the exported files. Prints the evidence; exit 1 on any mismatch.
  */
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { checkGodotRoot, commitExport, prepareExport, type ExportAsset } from "../src/index.ts";
 import { animationDeliverable, makeInput, stillDeliverable } from "../tests/fixtures.ts";
+import { GODOT, RES, check, errorLines, failures, godot, keep } from "./godot-common.ts";
 
-const GODOT = process.env.GODOT_BIN ?? "/Applications/Godot.app/Contents/MacOS/Godot";
-const keep = process.argv.includes("--keep");
-const RES = "res://assets/brainforge";
 const CUR = `${RES}/current/assets`;
-
-if (!(await access(GODOT).then(() => true, () => false))) {
-  console.log(`SKIP: Godot not found at ${GODOT} (set GODOT_BIN); resource-open verification was not run.`);
-  process.exit(0);
-}
 
 const base = await mkdtemp(path.join(tmpdir(), "bf-godot-sprites-"));
 const project = path.join(base, "game");
 const dest = path.join(project, "assets", "brainforge");
-let failures = 0;
-const check = (ok: boolean, what: string, detail?: unknown): void => {
-  console.log(`${ok ? "PASS" : "FAIL"}  ${what}${ok || detail === undefined ? "" : `  (${JSON.stringify(detail)})`}`);
-  if (!ok) failures++;
-};
-
-async function godot(args: string[]): Promise<string> {
-  const proc = Bun.spawn([GODOT, "--headless", "--path", project, ...args], { stdout: "pipe", stderr: "pipe" });
-  const timer = setTimeout(() => proc.kill(), 120_000);
-  const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
-  await proc.exited;
-  clearTimeout(timer);
-  return `${out}${err}`;
-}
-const SHUTDOWN_NOISE = /leaked at exit|still in use at exit/;
-const errorLines = (text: string): string[] => text.split("\n").filter((l) => /(^|\s)(ERROR|SCRIPT ERROR|Parse Error|BF_ERROR)/.test(l) && !SHUTDOWN_NOISE.test(l));
 
 const CHECK_GD = `extends SceneTree
 
@@ -139,10 +116,10 @@ try {
   const prepared = await prepareExport({ destinationAbs: dest, input });
   await commitExport({ destinationAbs: dest, intent: prepared.intent });
 
-  const imp = await godot(["--import"]);
+  const imp = await godot(project, ["--import"]);
   console.log(`--- godot --import ---\n${imp.trim()}\n`);
   check(errorLines(imp).length === 0, "headless import reports no errors", errorLines(imp));
-  const run = await godot(["--script", "res://check.gd"]);
+  const run = await godot(project, ["--script", "res://check.gd"]);
   console.log(`--- godot --script check.gd ---\n${run.trim()}\n`);
   const line = run.split("\n").find((l) => l.startsWith("BF_RESULT "));
   check(line !== undefined && errorLines(run).length === 0, "every generated resource loads in Godot", errorLines(run));

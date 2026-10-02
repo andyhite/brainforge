@@ -1,24 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { Candidate, CandidateOutput, OperationError, ProcessingPlan, ProcessingRecipe, ProcessingWarning, RecipeRequest } from "@brainforge/contracts";
+import type { Candidate, CandidateOutput, OperationError, ProcessingPlan, ProcessingRecipe, RecipeRequest } from "@brainforge/contracts";
 import { useMutationOperation, useOperation } from "../../api/hooks.ts";
-import { Banner, ErrorBanner, NetworkProblem, Status } from "../../components/ui.tsx";
+import { Banner, ErrorBanner, NetworkProblem, OpResult, Status } from "../../components/ui.tsx";
+import { warningText } from "../animation/timing.ts";
 import { BackdropPicker, useBackdrop } from "../generation/media.tsx";
 import { OutputCanvasPreview, SourceFramePreview } from "./PivotPreview.tsx";
-import { FieldSource, NumberField, RecipeGroup } from "./recipe-fields.tsx";
+import { FieldSource, NumberField, RecipeGroup, SelectField } from "./recipe-fields.tsx";
 import "./processing.css";
 
 const FPS_PRESETS = [12, 16];
-const WARNING_LABEL: Record<ProcessingWarning["code"], string> = {
-  CLIPPED: "Content is cut off by the canvas",
-  EMPTY_FRAME: "A frame is empty",
-  PIVOT_OUTSIDE: "Pivot is far from the figure",
-  SCALE_CHANGED: "Scale differs from the character anchor",
-  LOOP_DISCONTINUITY: "The loop seam is visible",
-  ATLAS_PAGES: "The atlas needs several pages",
-  SYMMETRY: "Mirror-repeat symmetry",
-  OTHER: "Note",
-};
 const ms = (value: number) => `${Math.round(value * 10) / 10} ms`;
 
 export function ProcessPanel({ candidate, sources, projectId }: { candidate: Candidate; sources: CandidateOutput[]; projectId: string }) {
@@ -118,14 +109,9 @@ export function ProcessPanel({ candidate, sources, projectId }: { candidate: Can
                 <FieldSource edited={isEdited("playbackFps")} source={sourceOf("playbackFps")} onReset={() => reset("playbackFps")} />
                 <div className="hint">The duration is preserved; only the number of frames changes.</div>
               </div>
-              <div className="field compact">
-                <label htmlFor="closing">Closing frame</label>
-                <select id="closing" value={recipe.closingFrame} onChange={(event) => change({ closingFrame: event.target.value === "keep" ? "keep" : "exclude-last" })}>
-                  <option value="keep">Keep every source frame</option>
-                  <option value="exclude-last">Drop the last frame (it repeats the first in a loop)</option>
-                </select>
+              <SelectField id="closing" label="Closing frame" value={recipe.closingFrame} onChange={(closingFrame) => change({ closingFrame })} options={[["keep", "Keep every source frame"], ["exclude-last", "Drop the last frame (it repeats the first in a loop)"]]}>
                 <FieldSource edited={isEdited("closingFrame")} source={sourceOf("closingFrame")} onReset={() => reset("closingFrame")} />
-              </div>
+              </SelectField>
               <label className="check"><input type="checkbox" checked={recipe.loop} onChange={(event) => change({ loop: event.target.checked })} />Plays as a loop</label>
               <FieldSource edited={isEdited("loop")} source={sourceOf("loop")} onReset={() => reset("loop")} />
               <div className="row">
@@ -153,14 +139,9 @@ export function ProcessPanel({ candidate, sources, projectId }: { candidate: Can
                   (×{Math.round((recipe.scaleAnchor.targetStandingHeightPx / recipe.scaleAnchor.sourceStandingHeightPx) * 1000) / 1000}). <span className="mono">{sourceOf("scaleAnchor") ?? ""}</span>
                 </p>
               ) : null}
-              <div className="field compact">
-                <label htmlFor="filter">Resize filter</label>
-                <select id="filter" value={recipe.resizeFilter} onChange={(event) => change({ resizeFilter: event.target.value === "nearest" ? "nearest" : "lanczos3" })}>
-                  <option value="lanczos3">Smooth (lanczos3)</option>
-                  <option value="nearest">Hard pixels (nearest)</option>
-                </select>
+              <SelectField id="filter" label="Resize filter" value={recipe.resizeFilter} onChange={(resizeFilter) => change({ resizeFilter })} options={[["lanczos3", "Smooth (lanczos3)"], ["nearest", "Hard pixels (nearest)"]]}>
                 <FieldSource edited={isEdited("resizeFilter")} source={sourceOf("resizeFilter")} onReset={() => reset("resizeFilter")} />
-              </div>
+              </SelectField>
             </RecipeGroup>
 
             <RecipeGroup title="Pivot">
@@ -173,15 +154,9 @@ export function ProcessPanel({ candidate, sources, projectId }: { candidate: Can
             </RecipeGroup>
 
             <RecipeGroup title="Transparency">
-              <div className="field compact">
-                <label htmlFor="alpha">Background</label>
-                <select id="alpha" value={recipe.alpha} onChange={(event) => change({ alpha: event.target.value === "matte" ? "matte" : event.target.value === "snap-near-opaque" ? "snap-near-opaque" : "preserve" })}>
-                  <option value="preserve">Keep transparency as is</option>
-                  <option value="snap-near-opaque">Keep transparency, make alpha 254+ fully opaque</option>
-                  <option value="matte">Flatten onto a matte colour</option>
-                </select>
+              <SelectField id="alpha" label="Background" value={recipe.alpha} onChange={(alpha) => change({ alpha })} options={[["preserve", "Keep transparency as is"], ["snap-near-opaque", "Keep transparency, make alpha 254+ fully opaque"], ["matte", "Flatten onto a matte colour"]]}>
                 <FieldSource edited={isEdited("alpha")} source={sourceOf("alpha")} onReset={() => reset("alpha")} />
-              </div>
+              </SelectField>
               {recipe.alpha === "matte" ? (
                 <div className="field compact">
                   <label htmlFor="matte-color">Matte colour</label>
@@ -192,15 +167,9 @@ export function ProcessPanel({ candidate, sources, projectId }: { candidate: Can
             </RecipeGroup>
 
             <RecipeGroup title="Packaging">
-              <div className="field compact">
-                <label htmlFor="packaging">Files to produce</label>
-                <select id="packaging" value={recipe.packaging} onChange={(event) => change({ packaging: event.target.value === "atlas" ? "atlas" : event.target.value === "both" ? "both" : "frames" })}>
-                  <option value="frames">Individual frames</option>
-                  <option value="atlas">Atlas pages</option>
-                  <option value="both">Frames and atlas pages</option>
-                </select>
+              <SelectField id="packaging" label="Files to produce" value={recipe.packaging} onChange={(packaging) => change({ packaging })} options={[["frames", "Individual frames"], ["atlas", "Atlas pages"], ["both", "Frames and atlas pages"]]}>
                 <FieldSource edited={isEdited("packaging")} source={sourceOf("packaging")} onReset={() => reset("packaging")} />
-              </div>
+              </SelectField>
               {recipe.packaging !== "frames" ? (
                 <div className="row">
                   <NumberField id="atlas-max" label="Page size limit (px)" integer min={64} max={4096} value={recipe.atlas.maxSize} onCommit={(maxSize) => change({ atlas: { ...recipe.atlas, maxSize } })} />
@@ -235,8 +204,7 @@ export function ProcessPanel({ candidate, sources, projectId }: { candidate: Can
 
           <div className="proc-side">
             {projectId ? <SourceFramePreview projectId={projectId} frames={frames} recipe={recipe} backdrop={backdrop} onPivot={(pivot) => change({ pivot })} /> : null}
-            {inspect.error ? <NetworkProblem error={inspect.error} /> : null}
-            {inspect.data && !inspect.data.ok ? <ErrorBanner error={inspect.data.error} /> : null}
+            <OpResult m={inspect} />
             <OutputCanvasPreview plan={plan} recipe={recipe} backdrop={backdrop} onPivot={(pivot) => change({ pivot })} />
             <PlanSummary plan={plan} stale={stale} />
           </div>
@@ -254,8 +222,7 @@ export function ProcessPanel({ candidate, sources, projectId }: { candidate: Can
               </ul>
             </Banner>
           ) : null}
-          {startOp.error ? <NetworkProblem error={startOp.error} /> : null}
-          {startOp.data && !startOp.data.ok ? <ErrorBanner error={startOp.data.error} /> : null}
+          <OpResult m={startOp} />
           {done ? <Banner tone="ok" title="New processed result created">It is unapproved. It is open in the player above; review it before using it.</Banner> : null}
           {cannotRun ? <p className="secondary" role="status">Cannot run: {cannotRun}</p> : null}
           <div className="row end">
@@ -286,7 +253,7 @@ function PlanSummary({ plan, stale }: { plan: ProcessingPlan; stale: boolean }) 
         <ul className="plain-list" aria-label="Warnings">
           {plan.warnings.map((warning, index) => (
             <li key={`${warning.code}-${index}`}>
-              <Status tone="warn">{WARNING_LABEL[warning.code]}</Status> {warning.message}
+              <Status tone="warn">{warningText(warning)}</Status> {warning.code === "SYMMETRY" ? null : warning.message}
               {warning.frames.length > 0 ? <span className="secondary"> Frames {warning.frames.slice(0, 12).map((n) => n + 1).join(", ")}{warning.frames.length > 12 ? "…" : ""}.</span> : null}
             </li>
           ))}

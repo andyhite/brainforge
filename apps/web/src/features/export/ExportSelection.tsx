@@ -1,28 +1,7 @@
 import type { AssetVersion } from "@brainforge/contracts";
-import { useOperation } from "../../api/hooks.ts";
+import { VersionPicker } from "../production/VersionPicker.tsx";
 
 const VERSION_WORDS: Record<AssetVersion["state"], string> = { active: "active", promoted: "promoted, not active", superseded: "replaced" };
-
-function VersionPin({ assetId, pinned, onPin }: { assetId: string; pinned: string | undefined; onPin: (versionId: string | undefined) => void }) {
-  const query = useOperation("version.list", { assetId });
-  const id = `export-pin-${assetId}`;
-  if (!query.data) return <span className="secondary" role="status">Loading versions…</span>;
-  if (!query.data.ok) return <span className="secondary">Versions unavailable</span>;
-  const { versions, active } = query.data.data;
-  const ordered: AssetVersion[] = [...versions].sort((a, b) => b.versionNumber - a.versionNumber);
-  const activeVersion = versions.find((version) => version.versionId === active.versionId);
-  return (
-    <div>
-      <label htmlFor={id} className="sr-only">Version of {assetId} to export</label>
-      <select id={id} value={pinned ?? ""} onChange={(event) => onPin(event.target.value === "" ? undefined : event.target.value)} disabled={ordered.length === 0}>
-        <option value="">{activeVersion ? `Active version (v${activeVersion.versionNumber})` : "Active version (none)"}</option>
-        {ordered.map((version) => (
-          <option key={version.versionId} value={version.versionId}>Use v{version.versionNumber} ({VERSION_WORDS[version.state]})</option>
-        ))}
-      </select>
-    </div>
-  );
-}
 
 /** Narrow the export to some assets, or pin a specific promoted version instead of the active one. Pins show up in the plan, never silently. */
 export function ExportSelection({ assets, subset, onSubset, pins, onPin, defaultIds }: {
@@ -67,7 +46,13 @@ export function ExportSelection({ assets, subset, onSubset, pins, onPin, default
                       </td>
                     ) : null}
                     <th scope="row">{asset.name ?? asset.assetId}</th>
-                    <td>{included || pins[asset.assetId] ? <VersionPin assetId={asset.assetId} pinned={pins[asset.assetId]} onPin={(versionId) => onPin(asset.assetId, versionId)} /> : <span className="secondary">Not included</span>}</td>
+                    <td>{included || pins[asset.assetId] ? (
+                      <VersionPicker
+                        assetId={asset.assetId} id={`export-pin-${asset.assetId}`} label={`Version of ${asset.assetId} to export`} value={pins[asset.assetId]} onChange={(versionId) => onPin(asset.assetId, versionId)}
+                        emptyText={(active) => (active ? `Active version (v${active.versionNumber})` : "Active version (none)")}
+                        optionText={(version) => `Use v${version.versionNumber} (${VERSION_WORDS[version.state]})`}
+                      />
+                    ) : <span className="secondary">Not included</span>}</td>
                   </tr>
                 );
               })}

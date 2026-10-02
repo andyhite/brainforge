@@ -1,9 +1,9 @@
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   assertHandlersComplete, createComfyResolver, createMachineStore, createProjectRegistry, machineHandlers, projectHandlers, type HandlerMap, type OperationRuntime,
 } from "@brainforge/core";
 import { createApp, MAX_BODY_BYTES } from "./app.ts";
+import { version } from "../package.json";
 
 const port = Number(process.env.BF_PORT ?? 3210);
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -11,25 +11,14 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
   process.exit(1);
 }
 
-const serverRoot = resolve(import.meta.dir, "..");
-const repoRoot = resolve(serverRoot, "../..");
-
-let version = "0.0.0";
-try {
-  const pkg: unknown = JSON.parse(readFileSync(resolve(serverRoot, "package.json"), "utf8"));
-  if (pkg && typeof pkg === "object" && "version" in pkg && typeof pkg.version === "string") version = pkg.version;
-} catch {
-  // Bundled builds may not ship package.json; the version is informational only.
-}
+const repoRoot = resolve(import.meta.dir, "../../..");
 
 const machine = createMachineStore();
 const comfy = createComfyResolver(machine);
-const workflowsDir = resolve(repoRoot, "packages/comfy/workflows");
-const projects = createProjectRegistry({ generation: { comfy, workflowsDir } });
+const projects = createProjectRegistry({ generation: { comfy } });
 const runtime: OperationRuntime = {
   projects,
   machine,
-  workflowsDir,
   publicUrl: `http://127.0.0.1:${port}`,
   comfy,
 };

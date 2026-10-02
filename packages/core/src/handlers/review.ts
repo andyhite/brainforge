@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { GenerationPlan, type Annotation, type FrameRange, type Geometry, type Visual } from "@brainforge/contracts";
 import { discoverAuthored } from "../authored.ts";
@@ -9,10 +8,10 @@ import {
   toCandidate, toRevision, type CandidateRow, type RevisionRow,
 } from "../review/records.ts";
 import { OperationFailure, type HandlerMap, type ProjectHandle } from "../runtime.ts";
+import type { OpenProject } from "../project-runtime.ts";
+import { newId } from "../generation/store.ts";
 import type { OperationContext } from "@brainforge/contracts";
-import { requireOpen } from "./common.ts";
 
-const newId = (prefix: string): string => `${prefix}_${randomBytes(6).toString("hex")}`;
 const EPS = 1e-9;
 
 function assertGeometryInBounds(g: Geometry): void {
@@ -52,8 +51,7 @@ function assertNotTerminal(status: string, id: string): void {
 const RunInfo = GenerationPlan.pick({ workflow: true, inputs: true, inputMode: true }).extend({ iterationInstructions: z.string().optional() });
 
 export const reviewHandlers: HandlerMap = {
-  "candidate.list": async ({ input, project }) => {
-    const open = requireOpen(project);
+  "candidate.list": async ({ input, project: open }) => {
     const { db } = open;
     const where = ["asset_id = ?", "step_id = ?"];
     const args: (string | number)[] = [input.assetId, input.stepId];
@@ -66,8 +64,7 @@ export const reviewHandlers: HandlerMap = {
     return { data: { candidates: rows.map((r) => toCandidate(db, r, hashFor)) } };
   },
 
-  "candidate.inspect": async ({ input, project }) => {
-    const open = requireOpen(project);
+  "candidate.inspect": async ({ input, project: open }) => {
     const { db } = open;
     const row = candidateRow(db, input.candidateId);
     const planRow = db.query<{ plan_json: string }, [string]>("SELECT plan_json FROM generation_runs WHERE run_id = ?").get(row.run_id);
@@ -94,8 +91,7 @@ export const reviewHandlers: HandlerMap = {
     };
   },
 
-  "candidate.favorite": async ({ input, project, context }) => {
-    const open = requireOpen(project);
+  "candidate.favorite": async ({ input, project: open, context }) => {
     candidateRow(open.db, input.candidateId);
     const { revision } = open.transact(
       () => open.db.query("UPDATE candidates SET favorite = ? WHERE candidate_id = ?").run(input.favorite ? 1 : 0, input.candidateId),
@@ -105,8 +101,7 @@ export const reviewHandlers: HandlerMap = {
     return { data: { candidate: toCandidate(open.db, cand, await requirementsResolver(open, cand.asset_id)) }, revision };
   },
 
-  "annotation.create": async ({ input, project, context }) => {
-    const open = requireOpen(project);
+  "annotation.create": async ({ input, project: open, context }) => {
     const cand = candidateRow(open.db, input.candidateId);
     const out = outputRows(open.db, cand.candidate_id).find((o) => o.output_id === input.outputId);
     if (!out) throw new OperationFailure("NOT_FOUND", `Output ${input.outputId} does not belong to candidate ${cand.candidate_id}`, { outputs: outputRows(open.db, cand.candidate_id).map((o) => o.output_id) });
@@ -124,8 +119,7 @@ export const reviewHandlers: HandlerMap = {
     return { data: { annotation: toAnnotation(annotationRow(open.db, annotationId)) }, revision };
   },
 
-  "annotation.update": async ({ input, project, context }) => {
-    const open = requireOpen(project);
+  "annotation.update": async ({ input, project: open, context }) => {
     const current = loadForEdit(open, input.annotationId, input.expectedVersion);
     if (input.text === undefined && input.geometry === undefined && input.frameRange === undefined && input.requiresRevision === undefined) {
       throw new OperationFailure("INVALID_INPUT", "Nothing to update: provide text, geometry, frameRange or requiresRevision");
@@ -142,8 +136,7 @@ export const reviewHandlers: HandlerMap = {
     return { data: { annotation: toAnnotation(annotationRow(open.db, current.annotationId)) }, revision };
   },
 
-  "annotation.delete": async ({ input, project, context }) => {
-    const open = requireOpen(project);
+  "annotation.delete": async ({ input, project: open, context }) => {
     const current = loadForEdit(open, input.annotationId, input.expectedVersion);
     const now = new Date().toISOString();
     const { revision } = open.transact(() => {
@@ -153,14 +146,12 @@ export const reviewHandlers: HandlerMap = {
     return { data: { annotation: toAnnotation(annotationRow(open.db, current.annotationId)) }, revision };
   },
 
-  "annotation.list": async ({ input, project }) => {
-    const { db } = requireOpen(project);
+  "annotation.list": async ({ input, project: { db } }) => {
     candidateRow(db, input.candidateId);
     return { data: { annotations: annotationsFor(db, input.candidateId, input.includeDeleted) } };
   },
 
-  "revision.create": async ({ input, project, context }) => {
-    const open = requireOpen(project);
+  "revision.create": async ({ input, project: open, context }) => {
     const cand = candidateRow(open.db, input.candidateId);
     const unique = [...new Set(input.annotationIds)];
     const notes: Annotation[] = unique.map((id) => {
@@ -198,8 +189,7 @@ export const reviewHandlers: HandlerMap = {
     };
   },
 
-  "revision.list": async ({ input, project }) => {
-    const { db } = requireOpen(project);
+  "revision.list": async ({ input, project: { db } }) => {
     const where: string[] = [];
     const args: (string | number)[] = [];
     if (input.assetId !== undefined) { where.push("asset_id = ?"); args.push(input.assetId); }
@@ -210,8 +200,7 @@ export const reviewHandlers: HandlerMap = {
     return { data: { revisions: rows.map((r) => toRevision(db, r)) } };
   },
 
-  "revision.inspect": async ({ input, project }) => {
-    const open = requireOpen(project);
+  "revision.inspect": async ({ input, project: open }) => {
     const row = revisionRow(open.db, input.revisionRequestId);
     const revision = toRevision(open.db, row);
     const cand = candidateRow(open.db, row.candidate_id);
@@ -234,8 +223,7 @@ export const reviewHandlers: HandlerMap = {
     };
   },
 
-  "revision.respond": async ({ input, project, context }) => {
-    const open = requireOpen(project);
+  "revision.respond": async ({ input, project: open, context }) => {
     const row = revisionRow(open.db, input.revisionRequestId);
     assertNotTerminal(row.status, row.revision_request_id);
     const now = new Date().toISOString();
@@ -255,8 +243,7 @@ export const reviewHandlers: HandlerMap = {
   "revision.waive": async ({ input, project, context }) => decide(project, context, input.revisionRequestId, "waived", input.reason),
 };
 
-async function decide(project: ProjectHandle | undefined, context: OperationContext, id: string, status: "resolved" | "waived", reason: string | undefined) {
-  const open = requireOpen(project);
+async function decide(open: OpenProject, context: OperationContext, id: string, status: "resolved" | "waived", reason: string | undefined) {
   const row = revisionRow(open.db, id);
   assertNotTerminal(row.status, id);
   await assertMayDecide(open, context, status === "resolved" ? "resolve" : "waive");

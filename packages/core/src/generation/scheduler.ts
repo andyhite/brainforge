@@ -10,12 +10,11 @@ import { loadDescriptor } from "./descriptors.ts";
 import { lookupByIdentity } from "./jobs.ts";
 import { guideFraming } from "./motion.ts";
 import { readPinnedReference } from "./references.ts";
-import { activeJobCount, jobError, jobRow, patchJob, type JobError, type JobRow } from "./store.ts";
+import { activeJobCount, insertCandidate, jobError, jobRow, markJobSucceeded, patchJob, type JobError, type JobRow } from "./store.ts";
 
 export interface SchedulerOptions {
   /** Resolved on every step, so a changed machine setting or an injected fake takes effect immediately. */
   comfy: () => ComfyTransport | undefined;
-  workflowsDir: string;
   /** Queue/history poll interval while a prompt is outstanding (default 2000, per the plan). */
   pollIntervalMs?: number;
   /** How often the loop looks for new or recoverable jobs when nothing wakes it (default 1000). */
@@ -46,6 +45,13 @@ function executionMessage(entry: HistoryEntry): string {
 }
 
 const describe = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+const badRole = (role: string): string => `Workflow output role "${role}" is not a stored candidate role.`;
+const downloadWhy = (e: unknown): string => (e instanceof MediaError ? `is truncated or not a valid image (${e.message})` : `could not be downloaded (${describe(e)})`);
+
+function promptOf(row: JobRow, plan: GenerationPlan): string {
+  const submission = SUBMISSION.parse(JSON.parse(row.submission_json));
+  return typeof submission.values.prompt === "string" ? submission.values.prompt : plan.prompt;
+}
 
 /**
  * Runs a project's generation jobs: uploads, submits one prompt per candidate, polls ComfyUI's queue and history,
@@ -192,7 +198,7 @@ export class GenerationScheduler {
     if (!run) return { failure: `Run ${row.run_id} is missing from the database.` };
     const plan = GenerationPlan.parse(JSON.parse(run.plan_json));
     try {
-      const wf = await loadDescriptor(this.options.workflowsDir, plan.workflow.id, plan.workflow.version);
+      const wf = await loadDescriptor(plan.workflow.id, plan.workflow.version);
       if (graphHash(wf.graph) !== plan.workflow.graphHash) return { failure: `Bundled workflow ${wf.id}@${wf.version} changed since the plan was inspected.` };
       return { plan, wf };
     } catch (e) {
@@ -352,25 +358,18 @@ export class GenerationScheduler {
     const items: (Collected & { bytes: Uint8Array })[] = [];
     for (const binding of wf.outputBindings) {
       const role = ROLES.find((r) => r === binding.role);
-      if (!role) return this.fail(row, "publish", `Workflow output role "${binding.role}" is not a stored candidate role.`, []);
+      if (!role) return this.fail(row, "publish", badRole(binding.role), []);
       const ref = outputImages(entry, binding.nodeId)[0];
       if (!ref) return this.fail(row, "download", `ComfyUI produced no image for ${binding.role} (node ${binding.nodeId}).`, retry);
       try {
         const bytes = await comfy.view(ref);
         items.push({ role, bytes, decoded: await decodeImage(bytes, `${binding.role} output`) });
       } catch (e) {
-        const why = e instanceof MediaError ? `is truncated or not a valid image (${e.message})` : `could not be downloaded (${describe(e)})`;
-        return this.fail(row, "download", `The ${binding.role} output ${why}.`, retry);
+        return this.fail(row, "download", `The ${binding.role} output ${downloadWhy(e)}.`, retry);
       }
     }
 
-    try {
-      await this.options.beforeCandidatePublication?.(row.job_id);
-      await this.publish(row, plan, items);
-    } catch (e) {
-      return this.fail(row, "publish", `Saving the candidate failed: ${describe(e)}`, retry);
-    }
-    return false;
+    return this.publishGuarded(row, retry, () => this.publish(row, plan, items));
   }
 
   /**
@@ -383,7 +382,7 @@ export class GenerationScheduler {
     const sequences: FrameOutputSpec[] = [];
     for (const binding of wf.outputBindings) {
       const role = ROLES.find((r) => r === binding.role);
-      if (!role) return this.fail(row, "publish", `Workflow output role "${binding.role}" is not a stored candidate role.`, []);
+      if (!role) return this.fail(row, "publish", badRole(binding.role), []);
       const refs = outputImages(entry, binding.nodeId);
       const expected = plan.motion?.frameCount;
       if (refs.length === 0 || (expected !== undefined && refs.length !== expected)) {
@@ -397,8 +396,7 @@ export class GenerationScheduler {
           await decodeImage(bytes, `${binding.role} frame ${index + 1}`);
           frames.push({ png: bytes, sourceFrame: index, durationMs: 1000 / sourceFps });
         } catch (e) {
-          const why = e instanceof MediaError ? `is truncated or not a valid image (${e.message})` : `could not be downloaded (${describe(e)})`;
-          return this.fail(row, "download", `Frame ${index + 1} of ${refs.length} of the ${binding.role} sequence ${why}; nothing was published.`, retry);
+          return this.fail(row, "download", `Frame ${index + 1} of ${refs.length} of the ${binding.role} sequence ${downloadWhy(e)}; nothing was published.`, retry);
         }
       }
       sequences.push({
@@ -406,17 +404,21 @@ export class GenerationScheduler {
         meta: { workflow: { id: wf.id, version: wf.version }, promptId: row.prompt_id, nodeId: binding.nodeId },
       });
     }
-    const submission = SUBMISSION.parse(JSON.parse(row.submission_json));
+    return this.publishGuarded(row, retry, () => publishFrameSequence(this.project, {
+      assetId: row.asset_id, candidateId, outputs: sequences, actorId: "system:scheduler", purpose: "generation",
+      candidate: {
+        candidateId, runId: row.run_id, jobId: row.job_id, label: row.label, prompt: promptOf(row, plan),
+        ...(row.seed !== null ? { seed: row.seed } : {}), ...(plan.branchId ? { branchId: plan.branchId } : {}), ...(plan.parentCandidateId ? { parentCandidateId: plan.parentCandidateId } : {}),
+        completesJob: true,
+      },
+    }));
+  }
+
+  /** Runs the test hook, then `publish`; any failure fails the job at `publish` with the retry hint. */
+  private async publishGuarded(row: JobRow, retry: string[], publish: () => Promise<unknown>): Promise<false> {
     try {
       await this.options.beforeCandidatePublication?.(row.job_id);
-      await publishFrameSequence(this.project, {
-        assetId: row.asset_id, candidateId, outputs: sequences, actorId: "system:scheduler", purpose: "generation",
-        candidate: {
-          candidateId, runId: row.run_id, jobId: row.job_id, label: row.label, prompt: typeof submission.values.prompt === "string" ? submission.values.prompt : plan.prompt,
-          ...(row.seed !== null ? { seed: row.seed } : {}), ...(plan.branchId ? { branchId: plan.branchId } : {}), ...(plan.parentCandidateId ? { parentCandidateId: plan.parentCandidateId } : {}),
-          completesJob: true,
-        },
-      });
+      await publish();
     } catch (e) {
       return this.fail(row, "publish", `Saving the candidate failed: ${describe(e)}`, retry);
     }
@@ -452,16 +454,18 @@ export class GenerationScheduler {
           crops.push({ fileId: `${outputId}-crop-${region.id}`, outputId, regionId: region.id, x: region.x, y: region.y, width: region.width, height: region.height, rel, sha256: sha256(bytes) });
         }
       }
-      const submission = SUBMISSION.parse(JSON.parse(row.submission_json));
-      const prompt = typeof submission.values.prompt === "string" ? submission.values.prompt : plan.prompt;
+      const prompt = promptOf(row, plan);
       const now = new Date().toISOString();
       const current = jobRow(project.db, row.job_id);
       if (current.state !== "collecting") return;
+      const events: { type: string; data: unknown; actorId: string }[] = [];
       project.transact(() => {
-        const exists = project.db.query("SELECT 1 FROM candidates WHERE candidate_id = ?").get(candidateId);
-        if (!exists) {
-          project.db.query("INSERT INTO candidates (candidate_id, asset_id, step_id, run_id, job_id, parent_candidate_id, branch_id, label, seed, prompt, favorite, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)")
-            .run(candidateId, row.asset_id, row.step_id, row.run_id, row.job_id, plan.parentCandidateId ?? null, plan.branchId ?? null, row.label, row.seed, prompt, now);
+        const created = insertCandidate(project.db, {
+          candidateId, assetId: row.asset_id, stepId: row.step_id, runId: row.run_id, jobId: row.job_id, parentCandidateId: plan.parentCandidateId ?? null,
+          branchId: plan.branchId ?? null, label: row.label, seed: row.seed, prompt, createdAt: now,
+        }, "system:scheduler");
+        if (created) {
+          events.push(created);
           for (const o of outputs) {
             project.db.query("INSERT INTO candidate_outputs (output_id, candidate_id, role, file_id, path, sha256, width, height, media_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'image/png')")
               .run(o.id, candidateId, o.role, o.id, o.rel, o.decoded.sha256, o.decoded.width, o.decoded.height);
@@ -471,12 +475,9 @@ export class GenerationScheduler {
               .run(c.fileId, c.outputId, c.regionId, c.x, c.y, c.width, c.height, c.rel, c.sha256, now);
           }
         }
-        project.db.query("UPDATE generation_jobs SET state = 'succeeded', candidate_id = ?, collected_at = ?, updated_at = ?, queue_position = NULL, error_json = NULL WHERE job_id = ?")
-          .run(candidateId, now, now, row.job_id);
-      }, [
-        { type: "candidate.created", data: { candidateId, assetId: row.asset_id, stepId: row.step_id, runId: row.run_id, jobId: row.job_id, ...(plan.parentCandidateId ? { parentCandidateId: plan.parentCandidateId } : {}) }, actorId: "system:scheduler" },
-        { type: "job.changed", data: { jobId: row.job_id, runId: row.run_id, assetId: row.asset_id, stepId: row.step_id, state: "succeeded", attempt: row.attempt, candidateId }, actorId: "system:scheduler" },
-      ]);
+        const done = markJobSucceeded(project.db, row.job_id, candidateId, now, "system:scheduler");
+        if (done) events.push(done);
+      }, events);
     });
   }
 }

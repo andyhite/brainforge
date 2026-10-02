@@ -1,7 +1,6 @@
 import { z } from "zod";
+import { Sha256 } from "./authored.ts";
 import { NextAction, RecoveryAction } from "./envelope.ts";
-
-const Sha256 = z.string().regex(/^[0-9a-f]{64}$/);
 
 /**
  * A pipeline step: the literal `concept`, or the id of an authored deliverable (for example `construction-sheet`).

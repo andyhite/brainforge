@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { resolveIn, sha256 } from "@brainforge/storage";
-import { outputRow, readFrameSequence, type FrameOutputRow } from "../outputs/frames.ts";
+import { outputRow, readFrameSequence, type FrameOutputRow, type FrameRecord } from "../outputs/frames.ts";
 import type { OpenProject } from "../project-runtime.ts";
 import { OperationFailure } from "../runtime.ts";
 
@@ -10,7 +10,7 @@ export const STILL_FPS = 1;
 export interface ProcessingSource {
   output: FrameOutputRow;
   /** Verified PNG bytes in source order; exactly one entry for a still image output. */
-  frames: { bytes: Uint8Array; width: number; height: number }[];
+  frames: FrameRecord[];
   sourceFps: number | undefined;
   isStill: boolean;
 }
@@ -27,5 +27,5 @@ export async function readProcessingSource(open: OpenProject, outputId: string):
   const bytes = await readFile(await resolveIn(open.root, output.path)).catch(() => undefined);
   if (!bytes) throw missing(`${output.path} is missing on disk.`);
   if (sha256(bytes) !== output.sha256) throw missing(`${output.path} no longer matches its recorded hash.`);
-  return { output, frames: [{ bytes, width: output.width, height: output.height }], sourceFps: STILL_FPS, isStill: true };
+  return { output, frames: [{ index: 0, fileId: output.file_id, path: output.path, bytes, sha256: output.sha256, width: output.width, height: output.height, sourceFrame: 0, durationMs: 0 }], sourceFps: STILL_FPS, isStill: true };
 }

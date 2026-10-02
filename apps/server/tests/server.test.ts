@@ -122,8 +122,8 @@ beforeEach(async () => {
   project.db.query("INSERT INTO output_crops VALUES ('out1-crop-front', 'brainforge/assets/cortex/work/candidates/c1/processed/crop-front.png')").run();
   const projects = [project, fakeProject(otherRoot, "proj-2")];
   const runtime: OperationRuntime = {
-    projects: { get: (r) => projects.find((p) => p.root === r), list: () => projects },
-    machine: store, workflowsDir: "", publicUrl: `http://${HOST}`,
+    projects: { get: (r: string) => projects.find((p) => p.root === r), list: () => projects } as unknown as OperationRuntime["projects"],
+    machine: store, publicUrl: `http://${HOST}`,
   };
   const handlers: HandlerMap = { ...machineHandlers, "spec.list": async () => ({ data: { files: [] } }) };
   app = createApp({ runtime, handlers, port: PORT, version: "9.9.9", heartbeatMs: 50 });
@@ -265,20 +265,25 @@ describe("files", () => {
   });
 
   test("Range: start-end, open end, suffix, and unsatisfiable", async () => {
-    const headers = auth();
-    const get = (range: string) => call("/api/projects/proj-1/files/ref1", { headers: { ...headers, range } });
-    const r1 = await get("bytes=2-5");
-    expect(r1.status).toBe(206);
-    expect(r1.headers.get("content-range")).toBe("bytes 2-5/20");
-    expect(await r1.text()).toBe("2345");
-    const r2 = await get("bytes=15-");
-    expect(await r2.text()).toBe("FGHIJ");
-    const r3 = await get("bytes=-3");
-    expect(r3.headers.get("content-range")).toBe("bytes 17-19/20");
-    expect(await r3.text()).toBe("HIJ");
-    const r4 = await get("bytes=99-");
-    expect(r4.status).toBe(416);
-    expect(r4.headers.get("content-range")).toBe("bytes */20");
+    // Range handling is Bun.serve's for file bodies, so this goes through a real listener rather than app.fetch.
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: app.fetch });
+    try {
+      const get = (range: string) => fetch(`http://127.0.0.1:${server.port}/api/projects/proj-1/files/ref1`, { headers: { range, host: HOST } });
+      const r1 = await get("bytes=2-5");
+      expect(r1.status).toBe(206);
+      expect(r1.headers.get("content-range")).toBe("bytes 2-5/20");
+      expect(await r1.text()).toBe("2345");
+      const r2 = await get("bytes=15-");
+      expect(await r2.text()).toBe("FGHIJ");
+      const r3 = await get("bytes=-3");
+      expect(r3.headers.get("content-range")).toBe("bytes 17-19/20");
+      expect(await r3.text()).toBe("HIJ");
+      const r4 = await get("bytes=99-");
+      expect(r4.status).toBe(416);
+      expect(r4.headers.get("content-range")).toBe("bytes */20");
+    } finally {
+      await server.stop(true);
+    }
   });
 
   test("stored paths that escape the game root, absolute paths, symlink escapes, and unknown ids are refused; missing files are OUTPUT_MISSING", async () => {
@@ -365,7 +370,7 @@ describe("static and fallback", () => {
     await writeFile(join(dist, "index.html"), "<html>spa</html>");
     await writeFile(join(dist, "assets/app.js"), "console.log(1)");
     await writeFile(join(dir, "secret.txt"), "SECRET");
-    const spa = createApp({ runtime: { projects: { get: () => undefined, list: () => [] }, machine: store, workflowsDir: "", publicUrl: "" }, handlers: {}, port: PORT, version: "1", webDist: dist });
+    const spa = createApp({ runtime: { projects: { get: () => undefined, list: () => [] } as unknown as OperationRuntime["projects"], machine: store, publicUrl: "" }, handlers: {}, port: PORT, version: "1", webDist: dist });
     const get = (p: string) => Promise.resolve(spa.fetch(new Request(`http://${HOST}${p}`, { headers: { host: HOST } })));
     expect(await (await get("/")).text()).toBe("<html>spa</html>");
     expect(await (await get("/settings/agents")).text()).toBe("<html>spa</html>");

@@ -3,12 +3,12 @@ import { readFile, stat, realpath, rm } from "node:fs/promises";
 import { basename } from "node:path";
 import { decodeImage } from "@brainforge/media";
 import { paths, resolveIn, sha256, writeFileAtomic } from "@brainforge/storage";
-import { classifyAuthoredPath, discoverAuthored, observeAuthored, readAuthoredFile, specInfo, writeAuthored } from "../authored.ts";
+import { discoverAuthored, observeAuthored, readAuthoredFile, specInfo, writeAuthored } from "../authored.ts";
 import { EffectiveLookupError, computeEffective } from "../effective.ts";
 import { confirmedPreferences } from "../preferences/store.ts";
 import { authorizePolicy, policyView } from "../policy.ts";
 import { OperationFailure, type HandlerMap } from "../runtime.ts";
-import { requireOpen } from "./common.ts";
+import { authoredPath } from "./common.ts";
 
 const MAX_REFERENCE_BYTES = 64 * 1024 * 1024;
 
@@ -24,29 +24,21 @@ function referenceSlug(label: string): string {
 }
 
 export const specHandlers: HandlerMap = {
-  "spec.list": async ({ project }) => {
-    const open = requireOpen(project);
+  "spec.list": async ({ project: open }) => {
     const set = await discoverAuthored(open.root);
     observeAuthored(open, set.all());
     return { data: { files: set.all().map(specInfo) } };
   },
 
-  "spec.read": async ({ input, project }) => {
-    const open = requireOpen(project);
-    const c = classifyAuthoredPath(input.path);
-    if (!c) {
-      throw new OperationFailure("INVALID_INPUT", `${input.path} is not an authored file location`, {
-        allowed: ["brainforge/project.yaml", "brainforge/styles/<style-id>.yaml", "brainforge/assets/<asset-id>/asset.yaml"],
-      });
-    }
+  "spec.read": async ({ input, project: open }) => {
+    const c = authoredPath(input.path);
     const file = await readAuthoredFile(open.root, c.path);
     if (!file) throw new OperationFailure("NOT_FOUND", `${c.path} does not exist`, { path: c.path }, [{ label: "Create it with spec.write (expectedHash null)", operation: "spec.write" }]);
     observeAuthored(open, [file]);
     return { data: { path: file.path, kind: file.kind, text: file.text, hash: file.hash, problems: file.problems } };
   },
 
-  "spec.write": async ({ input, project, context }) => {
-    const open = requireOpen(project);
+  "spec.write": async ({ input, project: open, context }) => {
     const result = await open.mutate(() => writeAuthored(open, { ...input, actorId: context.actorId }));
     const errors = result.problems.filter((p) => p.severity !== "warning").length;
     const advisories = result.problems.length - errors;
@@ -60,8 +52,7 @@ export const specHandlers: HandlerMap = {
     };
   },
 
-  "settings.inspect": async ({ input, project }) => {
-    const open = requireOpen(project);
+  "settings.inspect": async ({ input, project: open }) => {
     const set = await discoverAuthored(open.root);
     observeAuthored(open, set.all());
     try {
@@ -75,14 +66,12 @@ export const specHandlers: HandlerMap = {
     }
   },
 
-  "policy.authorize": async ({ input, project, context }) => {
-    const open = requireOpen(project);
+  "policy.authorize": async ({ input, project: open, context }) => {
     const { view, revision } = await open.mutate(() => authorizePolicy(open, input.requestedPolicyHash, context.actorId));
     return { data: { policy: view }, revision };
   },
 
-  "reference.list": async ({ input, project }) => {
-    const open = requireOpen(project);
+  "reference.list": async ({ input, project: open }) => {
     const rows = open.db
       .query<{ reference_id: string; scope: "project" | "asset"; asset_id: string | null; label: string; path: string; sha256: string; width: number | null; height: number | null; imported_by: string | null; created_at: string }, [string | null, string | null]>(
         "SELECT reference_id, scope, asset_id, label, path, sha256, width, height, imported_by, created_at FROM reference_records WHERE (?1 IS NULL OR scope = 'project' OR asset_id = ?2) ORDER BY created_at DESC, reference_id",
@@ -98,8 +87,7 @@ export const specHandlers: HandlerMap = {
     };
   },
 
-  "reference.import": async ({ input, project, context }) => {
-    const open = requireOpen(project);
+  "reference.import": async ({ input, project: open, context }) => {
     if (input.scope === "asset" && input.assetId) {
       const known = (await readAuthoredFile(open.root, paths.assetYaml(input.assetId))) ?? (await stat(await resolveIn(open.root, paths.asset(input.assetId))).then((s) => s.isDirectory(), () => false));
       if (!known) throw new OperationFailure("NOT_FOUND", `Asset ${input.assetId} does not exist`, { assetId: input.assetId });

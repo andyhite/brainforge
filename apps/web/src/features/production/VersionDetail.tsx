@@ -1,5 +1,5 @@
 import { useOperation } from "../../api/hooks.ts";
-import { Banner, ErrorBanner, NetworkProblem, Status, formatTime } from "../../components/ui.tsx";
+import { Banner, gate, Status, formatTime } from "../../components/ui.tsx";
 import { FamilyPreviews } from "../families/FamilyPreviews.tsx";
 import { whoLabel } from "../review/room-lib.ts";
 import "./releases.css";
@@ -13,10 +13,9 @@ function show(value: unknown): string {
 /** Everything about one saved version: what it holds, how it differs from today’s requirements, who activated it. Rendered inside a disclosure. */
 export function VersionDetail({ versionId }: { versionId: string }) {
   const query = useOperation("version.inspect", { versionId });
-  if (query.error) return <NetworkProblem error={query.error} />;
-  if (!query.data) return <p className="secondary" role="status">Loading details…</p>;
-  if (!query.data.ok) return <ErrorBanner error={query.data.error} />;
-  const { version, manifest, differences, activations } = query.data.data;
+  const g = gate(query, "Loading details…");
+  if ("node" in g) return g.node;
+  const { version, manifest, differences, activations } = g.data;
   const siblings = manifest.deliverables.map((d) => ({ deliverableId: d.deliverableId, candidateId: d.candidateId, outputId: d.outputId }));
   return (
     <div className="rel-detail">

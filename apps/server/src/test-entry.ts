@@ -13,7 +13,7 @@
  * Points: after-receipt (remote result received, candidate not yet published), processing-after-staging.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import {
   assertHandlersComplete, createComfyResolver, createMachineStore, createProjectRegistry, machineHandlers, projectHandlers,
   type HandlerMap, type OperationRuntime,
@@ -57,20 +57,17 @@ async function holdAt(point: string): Promise<void> {
   while (existsSync(hold)) await Bun.sleep(25);
 }
 
-const serverRoot = resolve(import.meta.dir, "..");
-const repoRoot = resolve(serverRoot, "../..");
 const machine = createMachineStore();
 const comfy = createComfyResolver(machine);
-const workflowsDir = resolve(repoRoot, "packages/comfy/workflows");
 const projects = createProjectRegistry({
-  generation: { comfy, workflowsDir, pollIntervalMs: 100, tickIntervalMs: 100, beforeCandidatePublication: () => holdAt("after-receipt") },
+  generation: { comfy, pollIntervalMs: 100, tickIntervalMs: 100, beforeCandidatePublication: () => holdAt("after-receipt") },
 });
 const faults: Faults = {
   get promotion() { return armed().promotion; },
   get export() { return armed().export; },
   get processing() { return existsSync(join(control, "hold-processing-after-staging")) ? { afterStaging: () => holdAt("processing-after-staging") } : undefined; },
 };
-const runtime: OperationRuntime = { projects, machine, workflowsDir, publicUrl: `http://127.0.0.1:${port}`, comfy, faults };
+const runtime: OperationRuntime = { projects, machine, publicUrl: `http://127.0.0.1:${port}`, comfy, faults };
 const handlers: HandlerMap = { ...projectHandlers, ...machineHandlers };
 assertHandlersComplete(handlers);
 

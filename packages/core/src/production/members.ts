@@ -6,7 +6,7 @@ import { activeSelection, compareToCurrent, readManifest, verifyVersion, type Ve
 const action = (label: string, operation: string, input?: Record<string, unknown>): RecoveryAction => ({ label, operation, ...(input ? { input } : {}) });
 
 /** `direction:<role>@<assetId>/<branchId>`: how a child's version records the environment output its selected candidates were generated against. */
-export const DIRECTION_REFERENCE = /^direction:(.+)@([^/]+)\/(.+)$/;
+const DIRECTION_REFERENCE = /^direction:(.+)@([^/]+)\/(.+)$/;
 
 export interface MemberEvaluation {
   rows: PromotionMemberRow[];

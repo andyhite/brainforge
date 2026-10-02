@@ -1,4 +1,4 @@
-import type { ExportManifest, ExportOwnedFile, ExportPreset } from "@brainforge/contracts";
+import type { ExportIntent, ExportManifest, ExportOwnedFile, ExportPreset } from "@brainforge/contracts";
 
 /** Declared Godot target. `resRootPrefix` is the `res://` URL of the export destination (no `/current`, no trailing slash). */
 export interface GodotTarget {
@@ -92,32 +92,8 @@ export interface ExportOutcome {
 
 export type ExportErrorCode = "EXPORT_CONFLICT" | "EXPORT_BLOCKED" | "INVALID_INPUT" | "IO_ERROR";
 
-export interface ExportFaults {
-  failDuringStaging?: boolean;
-  failBeforeSwitch?: boolean;
-  failAfterSwitchBeforeRetire?: boolean;
-}
-
-/** Serializable record of a prepared publication; the Core stores it so a crashed export can be recovered. */
-export interface ExportIntent {
-  exportId: string;
-  projectId: string;
-  preset: ExportPreset;
-  /** Destination-relative backing release, `.releases/<exportId>`. */
-  releaseDir: string;
-  manifestSha256: string;
-  /** Owned files in the prepared release (manifest excluded). */
-  files: ExportOwnedFile[];
-  /** Unowned files copied into the prepared release; removed with it if never switched in. */
-  carried: ExportOwnedFile[];
-  /** What `current` resolved to when this export was prepared. */
-  previous?: {
-    exportId: string;
-    manifestSha256: string;
-    files: ExportOwnedFile[];
-    unowned: ExportOwnedFile[];
-  };
-}
+/** Test-only crash points, passed through unchanged from the Core's fault injection. */
+export type ExportFault = "fail-during-staging" | "fail-before-switch" | "fail-after-switch";
 
 /** What the Core's database believes `current` is; anything else at `current` is a conflict. */
 export interface ExpectedCurrent {

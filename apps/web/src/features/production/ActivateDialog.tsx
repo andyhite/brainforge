@@ -1,13 +1,12 @@
-import { useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import type { ActiveSelection, AssetVersion, OperationError } from "@brainforge/contracts";
-import { callOperation, newRequestId } from "../../api/client.ts";
+import { useMutationOperation } from "../../api/hooks.ts";
 import { Banner, ErrorBanner, Modal } from "../../components/ui.tsx";
-import { useProjectRoot } from "../../lib/project-context.tsx";
+import { activeOf } from "./state.tsx";
 
 /** Activating an older version than the active one is a restore. */
 export function isRestore(version: AssetVersion, versions: AssetVersion[], active: ActiveSelection): boolean {
-  const current = versions.find((item) => item.versionId === active.versionId);
+  const current = activeOf(versions, active);
   return current !== undefined && version.versionNumber < current.versionNumber;
 }
 
@@ -15,42 +14,29 @@ export function isRestore(version: AssetVersion, versions: AssetVersion[], activ
 export function ActivateDialog({ version, restore, active, open, onOpenChange, onDone }: {
   version: AssetVersion; restore: boolean; active: ActiveSelection; open: boolean; onOpenChange: (open: boolean) => void; onDone: (message: string) => void;
 }) {
-  const { root } = useProjectRoot();
-  const queryClient = useQueryClient();
+  const activate = useMutationOperation("version.activate");
   const ackId = useId();
   const reasonId = useId();
   const [ack, setAck] = useState(false);
   const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
+  const busy = activate.isPending;
   const [failure, setFailure] = useState<OperationError | undefined>(undefined);
-  const [network, setNetwork] = useState<string | undefined>(undefined);
-  const [requestId, setRequestId] = useState(newRequestId);
+  const network = activate.error?.message;
   const obsolete = !version.matchesCurrent;
   const verb = restore ? "Restore this version" : "Activate";
 
   const submit = async () => {
-    setBusy(true);
-    setNetwork(undefined);
     setFailure(undefined);
     try {
-      const result = await callOperation("version.activate", {
-        project: root, requestId,
+      const result = await activate.mutateAsync({
         input: { versionId: version.versionId, expectedRevision: active.revision, acknowledgeObsolete: obsolete && ack, ...(reason.trim() ? { reason: reason.trim() } : {}) },
       });
-      setRequestId(newRequestId());
       if (result.ok) {
-        void queryClient.invalidateQueries({ queryKey: ["op"] });
         onOpenChange(false);
         onDone(`Version ${version.versionNumber} is now active${result.data.event.kind === "restore" ? " (restored)" : ""}.`);
-      } else {
-        setFailure(result.error);
-        if (result.error.code === "REVISION_CONFLICT") void queryClient.invalidateQueries({ queryKey: ["op"] });
-      }
-    } catch (error) {
-      // No envelope arrived: keep the request id so retrying cannot activate twice.
-      setNetwork(error instanceof Error ? error.message : "Request failed");
-    } finally {
-      setBusy(false);
+      } else setFailure(result.error);
+    } catch {
+      // No envelope arrived: the mutation keeps its request id, so retrying cannot activate twice.
     }
   };
 

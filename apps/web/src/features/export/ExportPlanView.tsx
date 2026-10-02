@@ -1,6 +1,6 @@
 import type { ExportPlan, PlanBlocker } from "@brainforge/contracts";
 import { Link } from "react-router-dom";
-import { ActionLinks, Banner, Status } from "../../components/ui.tsx";
+import { Banner, Blockers, Status } from "../../components/ui.tsx";
 import { paths } from "../../lib/paths.ts";
 
 function inspectTarget(blocker: PlanBlocker): string | undefined {
@@ -11,33 +11,6 @@ function inspectTarget(blocker: PlanBlocker): string | undefined {
   return undefined;
 }
 
-function Blocker({ blocker, onConfirmEmpty, onInspect }: { blocker: PlanBlocker; onConfirmEmpty: () => void; onInspect: (exportId: string) => void }) {
-  const isEmpty = blocker.code === "EMPTY_SELECTION";
-  // The server's "plan again" recovery actions re-run a plan this dialog does not hold, so they become its own controls.
-  const remote = blocker.recoveryActions.filter((action) => action.operation !== "export.plan" && action.operation !== "export.inspect");
-  const guidance = remote.filter((action) => !action.url && !(action.operation && action.input !== undefined));
-  const inspectId = inspectTarget(blocker);
-  const assetId = /^([a-z0-9-]+) has no active version/.exec(blocker.message)?.[1];
-  return (
-    <Banner
-      tone="warn" title={blocker.code.replaceAll("_", " ").toLowerCase()}
-      actions={
-        <>
-          {isEmpty ? <button type="button" onClick={onConfirmEmpty}>Confirm empty export</button> : null}
-          {assetId ? <Link className="button" to={paths.assetVersions(assetId)}>Open {assetId} versions</Link> : null}
-          {inspectId ? <button type="button" onClick={() => onInspect(inspectId)}>Inspect the current export</button> : null}
-          <ActionLinks actions={remote} />
-        </>
-      }
-    >
-      {blocker.message}
-      {guidance.map((action) => <div key={action.label} className="secondary">{action.label}</div>)}
-      {blocker.code === "EXPORT_CONFLICT" ? (
-        <div className="secondary">Nothing was changed. Files you own are never overwritten: move or restore the named files, or choose another export destination in the project settings, then plan again.</div>
-      ) : null}
-    </Banner>
-  );
-}
 
 /** The exact plan: which version of which asset, how many files, what leaves, and anything that blocks it. */
 export function ExportPlanView({ plan, onConfirmEmpty, onInspect }: { plan: ExportPlan; onConfirmEmpty: () => void; onInspect: (exportId: string) => void }) {
@@ -98,11 +71,24 @@ export function ExportPlanView({ plan, onConfirmEmpty, onInspect }: { plan: Expo
           {plan.warnings.map((warning) => <li key={warning}><Banner tone="info" title="Warning">{warning}</Banner></li>)}
         </ul>
       ) : null}
-      {plan.blockers.length > 0 ? (
-        <ul className="rel-blockers plain-list" aria-label="Export blockers">
-          {plan.blockers.map((blocker) => <li key={`${blocker.code}-${blocker.message}`}><Blocker blocker={blocker} onConfirmEmpty={onConfirmEmpty} onInspect={onInspect} /></li>)}
-        </ul>
-      ) : null}
+      <Blockers
+        // The server's "plan again" recovery actions re-run a plan this dialog does not hold, so they become its own controls.
+        items={plan.blockers.map((blocker) => ({ ...blocker, inspectId: inspectTarget(blocker), recoveryActions: blocker.recoveryActions.filter((action) => action.operation !== "export.plan" && action.operation !== "export.inspect") }))}
+        label="Export blockers"
+        actions={(blocker) => {
+          const { inspectId } = blocker;
+          return (
+            <>
+              {blocker.code === "EMPTY_SELECTION" ? <button type="button" onClick={onConfirmEmpty}>Confirm empty export</button> : null}
+              {inspectId ? <button type="button" onClick={() => onInspect(inspectId)}>Inspect the current export</button> : null}
+            </>
+          );
+        }}
+      >
+        {(blocker) => blocker.code === "EXPORT_CONFLICT" ? (
+          <div className="secondary">Nothing was changed. Files you own are never overwritten: move or restore the named files, or choose another export destination in the project settings, then plan again.</div>
+        ) : null}
+      </Blockers>
     </div>
   );
 }

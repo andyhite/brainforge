@@ -49,7 +49,8 @@ afterAll(() => server.stop(true));
 async function bf(args: string[], env: Record<string, string> = {}, stdin?: string, cwd = outside) {
   const proc = Bun.spawn(["bun", MAIN, ...args], {
     cwd,
-    env: { PATH: process.env.PATH ?? "", HOME: sandbox, BF_SERVER_URL: url, ...env },
+    // TMPDIR keeps the CLI's saved visuals inside the sandbox.
+    env: { PATH: process.env.PATH ?? "", HOME: sandbox, TMPDIR: sandbox, BF_SERVER_URL: url, ...env },
     stdin: stdin === undefined ? "ignore" : new Blob([stdin]),
     stdout: "pipe",
     stderr: "pipe",
@@ -163,6 +164,15 @@ describe("exit codes", () => {
 });
 
 describe("registry introspection", () => {
+  test("global help works without a project or server and does not read input", async () => {
+    for (const flag of ["--help", "-h"]) {
+      const r = await bf([flag, "--input-file", join(outside, "missing.json")], { BF_SERVER_URL: "http://127.0.0.1:1" });
+      expect(r.code).toBe(0);
+      expect(r.stderr).toBe("");
+      expect(single(r.stdout).ok).toBe(true);
+    }
+  });
+
   test("--list matches OPERATION_NAMES", async () => {
     const r = await bf(["--list"]);
     expect(r.code).toBe(0);

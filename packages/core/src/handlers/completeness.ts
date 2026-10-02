@@ -7,15 +7,13 @@ import { computeSteps } from "../pipeline/steps.ts";
 import { activeSelection, describeVersion, versionRow } from "../production/versions.ts";
 import { unaddressedRequiredNotes } from "../review/step.ts";
 import { OperationFailure, type HandlerMap } from "../runtime.ts";
-import { requireOpen } from "./common.ts";
 import { decisionHandlers } from "./decisions.ts";
 
 type Completeness = OperationData<"project.completeness">;
 type RequiredAsset = Completeness["requiredAssets"][number];
 
 export const impactHandlers: HandlerMap = {
-  "asset.impact": async ({ input, project }) => {
-    const open = requireOpen(project);
+  "asset.impact": async ({ input, project: open }) => {
     const set = await discoverAuthored(open.root);
     if (!set.assets.some((a) => a.fileId === input.assetId && a.valid)) {
       throw new OperationFailure("NOT_FOUND", `Asset ${input.assetId} has no valid definition`, undefined, [{ label: "List assets", operation: "asset.list", input: {} }]);
@@ -32,8 +30,7 @@ export const impactHandlers: HandlerMap = {
 };
 
 export const completenessHandlers: HandlerMap = {
-  "project.completeness": async ({ project, context, requestId, runtime }) => {
-    const open = requireOpen(project);
+  "project.completeness": async ({ project: open, context, requestId, runtime }) => {
     const set = await discoverAuthored(open.root);
     const requiredIds = [...new Set(set.project?.spec?.requirements.assets ?? [])];
 
@@ -82,7 +79,7 @@ export const completenessHandlers: HandlerMap = {
     }
 
     const queue = async (filter: "awaiting" | "escalated" | "needs-revision") => {
-      const result = await decisionHandlers["review.list"]!({ context, requestId, runtime, project, input: { filter, limit: 1, offset: 0 } });
+      const result = await decisionHandlers["review.list"]!({ context, requestId, runtime, project: open, input: { filter, limit: 1, offset: 0 } });
       return result.data.total;
     };
     const completeCount = requiredAssets.filter((a) => a.state === "complete").length;

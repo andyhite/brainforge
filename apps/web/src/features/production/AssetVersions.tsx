@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import type { ActiveSelection, AssetVersion } from "@brainforge/contracts";
 import { useOperation } from "../../api/hooks.ts";
-import { Banner, EmptyState, ErrorBanner, NetworkProblem, Status, timeAgo, formatTime } from "../../components/ui.tsx";
+import { Banner, EmptyState, gate, Status, timeAgo, formatTime } from "../../components/ui.tsx";
 import { Icon } from "../../components/Icon.tsx";
 import { progress } from "../../lib/next.ts";
 import { paths } from "../../lib/paths.ts";
@@ -10,7 +10,7 @@ import { whoLabel } from "../review/room-lib.ts";
 import { ActivateDialog, isRestore } from "./ActivateDialog.tsx";
 import { DeliverableThumb } from "./DeliverableThumb.tsx";
 import { PromotePanel } from "./PromotePanel.tsx";
-import { useCurrentExport } from "./state.tsx";
+import { activeOf, useCurrentExport } from "./state.tsx";
 import { VersionDetail } from "./VersionDetail.tsx";
 import "./releases.css";
 
@@ -83,9 +83,10 @@ export function AssetVersions() {
   // The Activate button disappears once its version is active, so focus moves to the confirmation.
   useEffect(() => { if (message) messageRef.current?.focus(); }, [message]);
 
+  const g = gate(query, "Loading versions…");
   const list = query.data?.ok ? query.data.data : undefined;
   const ordered = list ? [...list.versions].sort((a, b) => b.versionNumber - a.versionNumber) : [];
-  const activeVersion = list?.versions.find((version) => version.versionId === list.active.versionId);
+  const activeVersion = list ? activeOf(list.versions, list.active) : undefined;
   const exportedId = exported.exportedVersionId(assetId);
   const exportedVersion = list?.versions.find((version) => version.versionId === exportedId);
   const counts = steps.data?.ok ? progress(steps.data.data.steps) : undefined;
@@ -98,7 +99,7 @@ export function AssetVersions() {
           <span className="aside">Newest first</span>
         </div>
         <div aria-live="polite" ref={messageRef} tabIndex={-1}>{message ? <Banner tone="ok" title={message} /> : null}</div>
-        {query.error ? <NetworkProblem error={query.error} /> : !query.data ? <p className="secondary" role="status">Loading versions…</p> : !query.data.ok ? <ErrorBanner error={query.data.error} /> : list && (
+        {"node" in g ? g.node : list && (
           ordered.length === 0 ? (
             <EmptyState title="No versions yet">
               Promoting needs every required deliverable approved
@@ -129,7 +130,7 @@ export function AssetVersions() {
         )}
       </section>
       <aside className="rel-aside" aria-label="Promotion">
-        <PromotePanel assetId={assetId} branchId={branchId} activeVersionId={list?.active.versionId} onActivate={setTarget} />
+        <PromotePanel assetId={assetId} branchId={branchId} activeVersionId={list?.active.versionId} onActivate={setTarget} autoPlan={params.has("plan")} />
       </aside>
     </div>
   );

@@ -15,7 +15,7 @@ import { lineageCandidateIds } from "./feedback.ts";
 import { branchRow, type BranchRow } from "./records.ts";
 
 /** One selection the new branch starts with. */
-export interface InheritedSelection { deliverableId: string; candidateId: string; outputId: string | null }
+interface InheritedSelection { deliverableId: string; candidateId: string; outputId: string | null }
 
 export interface PlannedBranch {
   plan: BranchPlan;

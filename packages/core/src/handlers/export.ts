@@ -6,14 +6,13 @@ import { ownedFileFindings } from "../export/current.ts";
 import { evaluateExport, exportHash, loadExportPlan, storeExportPlan, toExportPlan, type ExportRow } from "../export/plan.ts";
 import { currentExportId, exportRow, publishExport, recoverExportIntents, toRecord } from "../export/publish.ts";
 import { newId } from "../generation/store.ts";
+import { assertPlanHash } from "../operations.ts";
 import { OperationFailure, type HandlerMap } from "../runtime.ts";
-import { requireOpen } from "./common.ts";
 
 const replan = { label: "Plan the export again", operation: "export.plan" };
 
 export const exportHandlers: HandlerMap = {
-  "export.plan": async ({ input, project, context }) => {
-    const open = requireOpen(project);
+  "export.plan": async ({ input, project: open, context }) => {
     const request = { ...(input.assetIds ? { assetIds: input.assetIds } : {}), ...(input.versions ? { versions: input.versions } : {}), confirmEmpty: input.confirmEmpty };
     const evaluation = await evaluateExport(open, request);
     const plan = toExportPlan(evaluation, request, newId("xplan"), new Date().toISOString());
@@ -22,28 +21,25 @@ export const exportHandlers: HandlerMap = {
     return {
       data: { plan },
       nextActions: plan.blockers.length === 0
-        ? [{ label: "Publish this export", operation: "export.start", input: { planId: plan.planId, planHash: plan.planHash, requestId: newId("export") } }, ...hints]
+        ? [{ label: "Publish this export", operation: "export.start", input: { planId: plan.planId, planHash: plan.planHash } }, ...hints]
         : plan.blockers.flatMap((b) => b.recoveryActions).slice(0, 5),
     };
   },
 
-  "export.start": async ({ input, project, context, runtime }) => {
-    const open = requireOpen(project);
+  "export.start": async ({ input, project: open, context, runtime, requestId }) => {
     const result = await open.mutate(async () => {
       // A lost response (or a crash after the pointer switch) is answered from the record, never by publishing twice.
       await recoverExportIntents(open);
-      const existing = open.db.query<ExportRow | null, [string]>("SELECT * FROM exports WHERE request_id = ?").get(input.requestId);
+      const existing = open.db.query<ExportRow | null, [string]>("SELECT * FROM exports WHERE request_id = ?").get(requestId);
       if (existing) {
         if (existing.state === "failed") {
-          throw new OperationFailure("IO_ERROR", `Export ${existing.export_id} (requestId ${input.requestId}) failed: ${existing.error ?? "unknown error"}. The previous export is unchanged; plan again and use a new requestId.`, { exportId: existing.export_id }, [replan]);
+          throw new OperationFailure("IO_ERROR", `Export ${existing.export_id} (requestId ${requestId}) failed: ${existing.error ?? "unknown error"}. The previous export is unchanged; plan again and use a new requestId.`, { exportId: existing.export_id }, [replan]);
         }
         return { exportId: existing.export_id, created: false };
       }
 
       const stored = loadExportPlan(open, input.planId);
-      if (stored.planHash !== input.planHash) {
-        throw new OperationFailure("REVISION_CONFLICT", "planHash does not match the plan that was inspected under this planId", { expected: stored.planHash, got: input.planHash }, [replan]);
-      }
+      assertPlanHash(stored.planHash, input.planHash, [replan]);
       const evaluation = await evaluateExport(open, stored.request);
       if (exportHash(evaluation, stored.request) !== stored.planHash) {
         throw new OperationFailure("REVISION_CONFLICT", "The export changed since this plan was made (a version, an activation, the export settings, or the files in the destination). Plan again.", undefined, [replan]);
@@ -53,7 +49,7 @@ export const exportHandlers: HandlerMap = {
         throw new OperationFailure(conflict ? "EXPORT_CONFLICT" : "STEP_BLOCKED", `This export cannot be published: ${evaluation.blockers.map((b) => b.message).join(" ")}`, { blockers: evaluation.blockers }, evaluation.blockers.flatMap((b) => b.recoveryActions));
       }
       const fault = runtime.faults?.export;
-      const { exportId } = await publishExport(open, { evaluation, actorId: context.actorId, actorType: context.actorType, requestId: input.requestId, ...(fault ? { fault } : {}) });
+      const { exportId } = await publishExport(open, { evaluation, actorId: context.actorId, actorType: context.actorType, requestId, ...(fault ? { fault } : {}) });
       return { exportId, created: true };
     });
 
@@ -68,8 +64,7 @@ export const exportHandlers: HandlerMap = {
     };
   },
 
-  "export.list": async ({ input, project }) => {
-    const open = requireOpen(project);
+  "export.list": async ({ input, project: open }) => {
     const spec = (await discoverAuthored(open.root)).project?.spec;
     const rows = open.db.query<ExportRow, [number]>("SELECT * FROM exports ORDER BY rowid DESC LIMIT ?").all(input.limit);
     const currents = new Map<string, string | undefined>();
@@ -84,8 +79,7 @@ export const exportHandlers: HandlerMap = {
     };
   },
 
-  "export.inspect": async ({ input, project }) => {
-    const open = requireOpen(project);
+  "export.inspect": async ({ input, project: open }) => {
     const row = exportRow(open, input.exportId);
     const record = toRecord(row, await currentExportId(open, row.destination));
     const releaseAbs = await resolveIn(open.root, row.release_path).catch(() => undefined);

@@ -5,7 +5,7 @@ import { useMutationOperation, useOperation } from "../../api/hooks.ts";
 import { ActionLinks, Banner, ErrorBanner, MenuButton, NetworkProblem } from "../../components/ui.tsx";
 import { Icon } from "../../components/Icon.tsx";
 import { paths } from "../../lib/paths.ts";
-import { typingTarget } from "../animation/stage.ts";
+import { useHotkeys } from "../animation/stage.ts";
 import { formatFps, isSingleImage } from "../animation/timing.ts";
 import { ContinueDialog } from "../branches/ContinueDialog.tsx";
 import { ReassessmentReasons } from "../branches/shared.tsx";
@@ -142,7 +142,6 @@ function ReviewBody({ assetId, stepId, candidate, output, stepState, branchId, n
   const override = useMutationOperation("review.override");
   const select = useMutationOperation("candidate.select");
   const [form, setForm] = useState<"reject" | "override" | undefined>();
-  const [revising, setRevising] = useState(false);
   const [message, setMessage] = useState<{ tone: "bad" | "warn"; text: string } | undefined>();
   const approval = approvalOf(candidate, output);
   const standing = approval && (approval.state === "approved" || approval.state === "rejected") && approval.applicable ? approval.state : undefined;
@@ -167,25 +166,15 @@ function ReviewBody({ assetId, stepId, candidate, output, stepState, branchId, n
   };
 
   // A approves, R starts a rejection: only from the stage, never while typing.
-  const approveRef = useRef<() => void>(() => undefined);
-  approveRef.current = () => {
-    if (!canAct || pending || form || !you.canDecide || standing === "approved" || agentStands) return;
-    void submit("decide", "approve", []);
-  };
-  const rejectRef = useRef<() => void>(() => undefined);
-  rejectRef.current = () => {
-    if (!canAct || pending || agentStands || !you.canDecide || standing === "rejected") return;
-    setForm("reject");
-  };
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented || typingTarget(event)) return;
-      if (event.key === "a" || event.key === "A") approveRef.current();
-      else if (event.key === "r" || event.key === "R") rejectRef.current();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  useHotkeys((event) => {
+    if (event.key === "a" || event.key === "A") {
+      if (!canAct || pending || form || !you.canDecide || standing === "approved" || agentStands) return;
+      void submit("decide", "approve", []);
+    } else if (event.key === "r" || event.key === "R") {
+      if (!canAct || pending || agentStands || !you.canDecide || standing === "rejected") return;
+      setForm("reject");
+    }
+  });
 
   const status: { icon: "idle" | "ok" | "bad" | "warn"; text: string } = escalated
     ? { icon: "warn", text: "Escalated: waiting for a human decision" }
@@ -228,11 +217,7 @@ function ReviewBody({ assetId, stepId, candidate, output, stepState, branchId, n
         {form === "override" ? <ReasonForm heading={`Override: ${overrideTo} instead. Why?`} confirm={`Override and ${overrideTo}`} danger={overrideTo === "reject"} pending={pending} onConfirm={(reasons) => void submit("override", overrideTo, reasons)} onCancel={() => setForm(undefined)} /> : null}
         {message ? <Banner tone={message.tone} title={message.text} /> : null}
 
-        {revising ? (
-          <NewRevisionForm candidateId={candidate.candidateId} annotations={notes} outputs={candidate.outputs} onCancel={() => setRevising(false)} />
-        ) : (
-          <button type="button" className="ghost sm align-start" onClick={() => setRevising(true)}><Icon name="refresh" size="sm" />Ask for a revision</button>
-        )}
+        <RevisionAsk candidate={candidate} notes={notes} />
         <p className="hint">Approval covers this exact output. Nothing reaches the game until you promote a version and export it.</p>
       </section>
 
@@ -278,7 +263,6 @@ function ReviewBody({ assetId, stepId, candidate, output, stepState, branchId, n
 /** Concept step: choose one by locking it. Favorites only shortlist. */
 function ConceptBox({ assetId, candidate, output, notes, lockedBranchName, siblings, onOpenProcessing, onVariation }: DecisionProps) {
   const [locking, setLocking] = useState(false);
-  const [revising, setRevising] = useState(false);
   const [problem, setProblem] = useState<string | undefined>();
   const lockOutput = pickOutput(candidate, "matted") ?? output;
   return (
@@ -302,13 +286,18 @@ function ConceptBox({ assetId, candidate, output, notes, lockedBranchName, sibli
         <button type="button" className="lg" disabled={!lockOutput} onClick={() => setLocking(true)}>Lock this one instead…</button>
       )}
       {problem ? <Banner tone="bad" title="That didn’t work">{problem}</Banner> : null}
-      {revising ? (
-        <NewRevisionForm candidateId={candidate.candidateId} annotations={notes} outputs={candidate.outputs} onCancel={() => setRevising(false)} />
-      ) : (
-        <button type="button" className="ghost sm align-start" onClick={() => setRevising(true)}><Icon name="refresh" size="sm" />Ask for a revision</button>
-      )}
+      <RevisionAsk candidate={candidate} notes={notes} />
       <p className="hint">Every deliverable follows the concept you lock. Locking a different one later starts a new branch; nothing you made is lost. A favorite only shortlists, and approves nothing.</p>
       {locking && lockOutput ? <ContinueDialog assetId={assetId} candidateId={candidate.candidateId} outputId={lockOutput.outputId} fixedMode={undefined} onClose={() => setLocking(false)} /> : null}
     </section>
+  );
+}
+
+function RevisionAsk({ candidate, notes }: { candidate: Candidate; notes: Annotation[] }) {
+  const [revising, setRevising] = useState(false);
+  return revising ? (
+    <NewRevisionForm candidateId={candidate.candidateId} annotations={notes} outputs={candidate.outputs} onCancel={() => setRevising(false)} />
+  ) : (
+    <button type="button" className="ghost sm align-start" onClick={() => setRevising(true)}><Icon name="refresh" size="sm" />Ask for a revision</button>
   );
 }

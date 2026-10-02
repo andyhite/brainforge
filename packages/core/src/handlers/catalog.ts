@@ -1,11 +1,11 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { ComfyClient, graphHash, preflight } from "@brainforge/comfy";
+import { ComfyClient, graphHash, preflight, workflowIds, workflowVersions } from "@brainforge/comfy";
 import { paths, resolveIn } from "@brainforge/storage";
 import { discoverAuthored, observeAuthored } from "../authored.ts";
-import { loadDescriptor, versionsOf } from "../generation/descriptors.ts";
+import { loadDescriptor } from "../generation/descriptors.ts";
 import { OperationFailure, type HandlerMap } from "../runtime.ts";
-import { assetSummaries, requireOpen } from "./common.ts";
+import { assetSummaries } from "./common.ts";
 
 async function countFiles(abs: string): Promise<number | undefined> {
   let entries;
@@ -26,20 +26,19 @@ async function countFiles(abs: string): Promise<number | undefined> {
 const ASSET_DIRS = ["references", "work/runs", "work/candidates", "work/reviews", "work/feasibility", "versions"] as const;
 
 export const catalogHandlers: HandlerMap = {
-  "workflow.list": async ({ runtime }) => {
-    const ids = (await readdir(runtime.workflowsDir, { withFileTypes: true }).catch(() => [])).filter((e) => e.isDirectory()).map((e) => e.name).sort();
+  "workflow.list": async () => {
     const workflows = [];
-    for (const id of ids) {
-      for (const version of await versionsOf(runtime.workflowsDir, id)) {
-        const wf = await loadDescriptor(runtime.workflowsDir, id, version);
+    for (const id of await workflowIds()) {
+      for (const version of await workflowVersions(id)) {
+        const wf = await loadDescriptor(id, version);
         workflows.push({ id, version, description: wf.description, kind: [...new Set(wf.outputBindings.map((o) => o.kind))].join("/") });
       }
     }
     return { data: { workflows } };
   },
 
-  "workflow.inspect": async ({ input, runtime }) => {
-    const wf = await loadDescriptor(runtime.workflowsDir, input.workflowId, input.version);
+  "workflow.inspect": async ({ input }) => {
+    const wf = await loadDescriptor(input.workflowId, input.version);
     return {
       data: {
         id: wf.id, version: wf.version, description: wf.description, graphHash: graphHash(wf.graph),
@@ -56,7 +55,7 @@ export const catalogHandlers: HandlerMap = {
   },
 
   "workflow.preflight": async ({ input, runtime }) => {
-    const wf = await loadDescriptor(runtime.workflowsDir, input.workflowId, input.version);
+    const wf = await loadDescriptor(input.workflowId, input.version);
     const url = runtime.machine.comfyUrl();
     if (!url) {
       throw new OperationFailure("WORKFLOW_UNAVAILABLE", "No ComfyUI URL is configured on this machine", undefined, [
@@ -80,15 +79,13 @@ export const catalogHandlers: HandlerMap = {
     }
   },
 
-  "asset.list": async ({ project }) => {
-    const open = requireOpen(project);
+  "asset.list": async ({ project: open }) => {
     const set = await discoverAuthored(open.root);
     observeAuthored(open, set.all());
     return { data: { assets: assetSummaries(set) } };
   },
 
-  "asset.inspect": async ({ input, project }) => {
-    const open = requireOpen(project);
+  "asset.inspect": async ({ input, project: open }) => {
     const set = await discoverAuthored(open.root);
     observeAuthored(open, set.all());
     const asset = set.assets.find((a) => a.fileId === input.assetId);

@@ -6,7 +6,6 @@ import { fileUrl, useOperation } from "../../api/hooks.ts";
 import { useProjectRoot } from "../../lib/project-context.tsx";
 import { useProject } from "../../lib/use-project.ts";
 import { isSingleImage } from "../animation/timing.ts";
-import { outputUrl } from "../generation/media.tsx";
 import { AttachmentMarkers, BackgroundPreview, NineSlicePreview, StateCompare, TilePreview, VariantsGallery, type PreviewImage, type StateEntry } from "./previews.tsx";
 
 export interface Sibling { deliverableId: string; candidateId: string; outputId?: string | undefined }
@@ -59,7 +58,7 @@ export function FamilyPreviews({ assetId, deliverableId, candidateId, outputId, 
   const entries: StateEntry[] = [];
   for (const d of spec.deliverables) {
     if (d.id === deliverableId) {
-      entries.push({ key: d.id, label: d.ui?.state ?? d.id, deliverableId: d.id, src: outputUrl(projectId, output.fileId, 320), width: output.width, height: output.height, link: undefined, current: true });
+      entries.push({ key: d.id, label: d.ui?.state ?? d.id, deliverableId: d.id, src: fileUrl(projectId, output.fileId, 320), width: output.width, height: output.height, link: undefined, current: true });
       continue;
     }
     const at = others.findIndex((s) => s.deliverableId === d.id);
@@ -67,7 +66,7 @@ export function FamilyPreviews({ assetId, deliverableId, candidateId, outputId, 
     const sibling = at >= 0 ? others[at] : undefined;
     const cand = envelope?.ok ? envelope.data.candidate : undefined;
     const out = cand ? (cand.outputs.find((o) => o.outputId === sibling?.outputId) ?? cand.outputs.find((o) => o.stage === "processed") ?? cand.outputs[0]) : undefined;
-    entries.push({ key: d.id, label: d.ui?.state ?? d.id, deliverableId: d.id, src: out ? outputUrl(projectId, out.fileId, 320) : undefined, width: out?.width ?? 128, height: out?.height ?? 128, link: cand ? paths.step(assetId, d.id, { candidate: cand.candidateId, ...(out ? { output: out.outputId } : {}) }) : undefined, current: false });
+    entries.push({ key: d.id, label: d.ui?.state ?? d.id, deliverableId: d.id, src: out ? fileUrl(projectId, out.fileId, 320) : undefined, width: out?.width ?? 128, height: out?.height ?? 128, link: cand ? paths.step(assetId, d.id, { candidate: cand.candidateId, ...(out ? { output: out.outputId } : {}) }) : undefined, current: false });
   }
   const stateful = spec.deliverables.filter((d) => d.ui?.state !== undefined).length;
   const stills = entries.filter((e) => spec.deliverables.find((d) => d.id === e.deliverableId)?.kind !== "animation");

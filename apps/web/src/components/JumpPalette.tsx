@@ -1,4 +1,3 @@
-import * as Dialog from "@radix-ui/react-dialog";
 import { useQueries } from "@tanstack/react-query";
 import { useMemo, useState, type KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
@@ -8,6 +7,7 @@ import { paths } from "../lib/paths.ts";
 import { useProjectRoot } from "../lib/project-context.tsx";
 import { kindLabel, STEP_STATE_TEXT } from "../lib/steps.ts";
 import { Icon, type IconName } from "./Icon.tsx";
+import { useModalDialog } from "./ui.tsx";
 
 interface Entry { key: string; group: "Assets" | "Deliverables"; title: string; sub: string; icon: IconName; to: string; haystack: string }
 
@@ -16,6 +16,8 @@ export function JumpPalette({ open, onOpenChange }: { open: boolean; onOpenChang
   const { root } = useProjectRoot();
   const navigate = useNavigate();
   const [text, setText] = useState("");
+  const close = () => { onOpenChange(false); setText(""); };
+  const dialog = useModalDialog(open, close);
   const [active, setActive] = useState(0);
   const assets = useOperation("asset.list", {}, { enabled: open && root !== undefined });
   const list = assets.data?.ok ? assets.data.data.assets : [];
@@ -58,8 +60,7 @@ export function JumpPalette({ open, onOpenChange }: { open: boolean; onOpenChang
 
   const go = (entry: Entry | undefined) => {
     if (!entry) return;
-    onOpenChange(false);
-    setText("");
+    close();
     navigate(entry.to);
   };
   const onKey = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -70,15 +71,15 @@ export function JumpPalette({ open, onOpenChange }: { open: boolean; onOpenChang
     } else if (event.key === "Enter") {
       event.preventDefault();
       go(matches[current]);
+    } else if (event.key === "Escape") {
+      // type=search would spend the first Escape clearing the text; the palette closes at once, as it always did.
+      event.preventDefault();
+      close();
     }
   };
-
   return (
-    <Dialog.Root open={open} onOpenChange={(next) => { onOpenChange(next); if (!next) setText(""); }}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="dialog-overlay" />
-        <Dialog.Content className="dialog palette" aria-describedby={undefined}>
-          <Dialog.Title className="sr-only">Jump to an asset or deliverable</Dialog.Title>
+    <dialog {...dialog} className="dialog palette" aria-label="Jump to an asset or deliverable">
+      <div className="palette-body">
           <Icon name="search" className="search-icon" />
           <input
             type="search" autoFocus value={text} placeholder="Jump to an asset or deliverable…" aria-label="Search assets and deliverables"
@@ -107,8 +108,7 @@ export function JumpPalette({ open, onOpenChange }: { open: boolean; onOpenChang
           <div className="palette-foot" aria-hidden="true">
             <span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>↵</kbd> open</span><span><kbd>esc</kbd> close</span>
           </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+      </div>
+    </dialog>
   );
 }

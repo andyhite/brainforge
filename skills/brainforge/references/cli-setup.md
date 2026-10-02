@@ -13,6 +13,7 @@ Entry: `<brainforge checkout>/apps/cli/src/main.ts`, run with Bun. A thin HTTP c
 ## Usage
 
 ```sh
+brainforge --help                                   # CLI usage, flags, and examples (also -h)
 brainforge --list                                   # every operation: name, summary, mutating, humanOnly
 brainforge <op> --help                              # input JSON Schema of one operation
 brainforge <op> --input '<json>'                    # call it
@@ -23,6 +24,8 @@ printf '%s' '<json>' | brainforge <op> --input -   # input from stdin
 Flags: `--project <abs dir>` overrides discovery, `--request-id <id>` sets the idempotency key (reuse it on retry), `--timeout <seconds>` (default 60; only stops waiting, never cancels server work).
 
 Output: stdout is exactly one JSON envelope (`{ok:true,data,nextActions,warnings}` or `{ok:false,error:{code,message,recoveryActions,details?}}`); diagnostics go to stderr. Exit codes: 0 ok, non-zero per error code.
+
+`--help`, `<op> --help`, and `--list` work without a running server or a game project.
 
 Visuals: when a result carries images (`review.material`, `revision.inspect`, `candidate.inspect`, `output.inspect`, `history.examples`), the envelope gains `visualFiles: [{fileId, role, label, path?, error?}]`. Each `path` is a model-sized PNG/JPEG (longest edge <= 1568 px) in a fresh temp directory; open it with your image-capable file reader. An `error` entry names a visual that could not be saved. The original stays addressable by `fileId`.
 

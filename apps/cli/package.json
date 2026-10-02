@@ -9,6 +9,6 @@
     "./main": "./src/main.ts",
     "./client": "./src/client.ts"
   },
-  "scripts": { "typecheck": "tsc -p .", "test": "bun test tests --pass-with-no-tests" },
+  "scripts": { "typecheck": "tsc -p .", "test": "bun test --preload ../../scripts/test-tmpdir.ts tests --pass-with-no-tests" },
   "dependencies": { "@brainforge/contracts": "workspace:*", "zod": "^4.0.0" }
 }

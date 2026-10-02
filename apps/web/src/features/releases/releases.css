@@ -6,7 +6,6 @@
 .rel-export-state { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 24px; }
 .rel-export-text { display: grid; gap: 8px; min-width: 0; flex: 1 1 320px; }
 .rel-export-text p { margin: 0; }
-.rel-changes { margin: 0; padding-left: 18px; font-size: 13px; }
 .rel-history-disclosure { margin-top: 10px; }
 .rel-history-disclosure[open] > summary { margin-bottom: 8px; }
 .rel-history-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px; }

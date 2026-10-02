@@ -26,10 +26,6 @@ export const FamilyProfile = z.object({
   collection: z.enum(["container", "member", "either", "none"]),
   /** What a person authors for this family beyond the common fields, as editor hints. */
   editorSections: z.array(z.object({ id: z.string(), label: z.string(), description: z.string(), fields: z.array(z.string()) })),
-  /** Metadata keys the export carries for this family. */
-  exportMetadata: z.array(z.string()),
-  /** Workflow ids used for this family's stills, referenced variations and motion. */
-  workflows: z.object({ still: z.string(), stillOpaque: z.string().optional(), variation: z.string().optional(), variationOpaque: z.string().optional(), motion: z.string().optional(), motionOpaque: z.string().optional() }),
 });
 export type FamilyProfile = z.infer<typeof FamilyProfile>;
 

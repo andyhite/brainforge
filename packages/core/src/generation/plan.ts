@@ -6,7 +6,7 @@ import { sha256, resolveIn } from "@brainforge/storage";
 import { discoverAuthored, observeAuthored, type AuthoredSet } from "../authored.ts";
 import { branchSpecHashes, savedInputs, type BranchBasisRow } from "../branches/basis.ts";
 import { computeEffective } from "../effective.ts";
-import { normalizedHash } from "../operations.ts";
+import { loadPlanRow, normalizedHash } from "../operations.ts";
 import type { OpenProject } from "../project-runtime.ts";
 import { OperationFailure } from "../runtime.ts";
 import { loadDescriptor } from "./descriptors.ts";
@@ -20,14 +20,13 @@ export const PLAN_TTL_MS = 2 * 60 * 60 * 1000;
 
 export interface PlanEnvironment {
   project: OpenProject;
-  workflowsDir: string;
   comfy: ComfyTransport | undefined;
   comfyHost: string | undefined;
   actorId: string;
 }
 
 /** Default values a workflow binding carries in its graph (width, height, ref_boost, ...), pinned into the plan. */
-export function workflowDefaults(wf: WorkflowDescriptor): Record<string, string | number> {
+function workflowDefaults(wf: WorkflowDescriptor): Record<string, string | number> {
   const values: Record<string, string | number> = {};
   for (const b of wf.inputBindings) {
     if (b.type === "image") continue;
@@ -105,7 +104,7 @@ export async function createPlan(env: PlanEnvironment, input: ParsedOperationInp
   const override = effective?.effective[`workflows.${stage}${alpha === "opaque" ? "Opaque" : ""}`]?.value;
   const workflowId = (base && typeof override === "string" && override.trim() ? override.trim() : base) ?? "unavailable";
   try {
-    wf = await loadDescriptor(env.workflowsDir, workflowId);
+    wf = await loadDescriptor(workflowId);
   } catch (e) {
     if (!(e instanceof OperationFailure)) throw e;
     block("WORKFLOW_UNAVAILABLE", `Workflow ${workflowId} is not available: ${e.message}`, [{ label: "List the bundled workflows", operation: "workflow.list" }]);
@@ -252,8 +251,7 @@ export async function createPlan(env: PlanEnvironment, input: ParsedOperationInp
 
 /** Stored plan row plus the verified-on-start pieces. */
 export function storedPlan(project: OpenProject, planId: string): { plan: GenerationPlan; startedRunId: string | null; createdAt: string } {
-  const row = project.db.query<{ plan_json: string; started_run_id: string | null; created_at: string }, [string]>("SELECT plan_json, started_run_id, created_at FROM generation_plans WHERE plan_id = ?").get(planId);
-  if (!row) throw new OperationFailure("NOT_FOUND", `No plan ${planId}`, undefined, [{ label: "Plan a generation", operation: "generation.plan" }]);
+  const row = loadPlanRow<{ plan_json: string; started_run_id: string | null; created_at: string }>(project.db, "generation_plans", planId, "plan", { label: "Plan a generation", operation: "generation.plan" });
   return { plan: GenerationPlan.parse(JSON.parse(row.plan_json)), startedRunId: row.started_run_id, createdAt: row.created_at };
 }
 

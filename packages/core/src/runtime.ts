@@ -1,9 +1,11 @@
 import type { Database } from "bun:sqlite";
 import type { PublicationFaults } from "./outputs/frames.ts";
 import type {
-  ErrorCode, NextAction, OperationContext, OperationData, OperationName, ParsedOperationInput, RecoveryAction,
+  ErrorCode, NextAction, OPERATIONS, OperationContext, OperationData, OperationName, ParsedOperationInput, RecoveryAction,
 } from "@brainforge/contracts";
 import type { ComfyTransport } from "@brainforge/comfy";
+import type { OpenableProjectRegistry, OpenProject } from "./project-runtime.ts";
+import type { DurableIdempotencyStore } from "@brainforge/storage";
 
 /** Typed failure raised by handlers; executeOperation converts it to the error envelope. */
 export class OperationFailure extends Error {
@@ -17,15 +19,6 @@ export class OperationFailure extends Error {
   }
 }
 
-/** Durable idempotency: identical retry returns the stored result; a changed payload is IDEMPOTENCY_CONFLICT. */
-export interface IdempotencyStore {
-  /** Reserve (actor, request). Returns the stored terminal result for an identical completed retry. */
-  reserve(key: { actorId: string; requestId: string; operation: string; payloadHash: string }): { kind: "new" } | { kind: "replay"; resultJson: string } | { kind: "in-flight" } | { kind: "conflict" };
-  complete(key: { actorId: string; requestId: string }, resultJson: string): void;
-  /** Validation/authorization failures are never cached: release the reservation. */
-  release(key: { actorId: string; requestId: string }): void;
-}
-
 /** An opened project. Implemented in `project-runtime.ts`; handlers for project-scoped operations receive it. */
 export interface ProjectHandle {
   /** Canonical absolute game directory (realpath). */
@@ -34,7 +27,7 @@ export interface ProjectHandle {
   readonly db: Database;
   /** False when the DB schema is newer than this build understands (read-only with upgrade instruction). */
   readonly writable: boolean;
-  readonly idempotency: IdempotencyStore;
+  readonly idempotency: DurableIdempotencyStore;
   /** Current committed project revision. */
   revision(): number;
   /**
@@ -50,13 +43,13 @@ export interface ProjectHandle {
 
 export interface ProjectRegistry {
   /** Opened project by canonical or symlinked path, or undefined. */
-  get(root: string): ProjectHandle | undefined;
-  list(): ProjectHandle[];
+  get(root: string): OpenProject | undefined;
+  list(): OpenProject[];
 }
 
 /** Machine-level state under `~/.config/brainforge/` (override with `BF_CONFIG_DIR`). Implemented by `LocalMachineStore` in machine-store.ts. */
 export interface MachineStore {
-  readonly idempotency: IdempotencyStore;
+  readonly idempotency: DurableIdempotencyStore;
   /** Configured ComfyUI base URL (env `BF_COMFY_URL` overrides the stored value), if any. */
   comfyUrl(): string | undefined;
   setComfyUrl(url: string | null): void;
@@ -65,10 +58,8 @@ export interface MachineStore {
 }
 
 export interface OperationRuntime {
-  projects: ProjectRegistry;
+  projects: OpenableProjectRegistry;
   machine: MachineStore;
-  /** Bundled workflow YAML directory (packages/comfy/workflows). */
-  workflowsDir: string;
   /** Public base URL used in human-facing links, e.g. `http://127.0.0.1:3210`. */
   publicUrl: string;
   /** ComfyUI transport for the current machine setting; absent means "build one from `machine.comfyUrl()`". Tests inject a fake here. */
@@ -89,8 +80,8 @@ export interface HandlerArgs<K extends OperationName> {
   context: OperationContext;
   requestId: string;
   input: ParsedOperationInput<K>;
-  /** Present iff the operation `needsProject`. */
-  project: ProjectHandle | undefined;
+  /** An opened project iff the operation `needsProject` (executeOperation has already resolved it). */
+  project: (typeof OPERATIONS)[K]["needsProject"] extends true ? OpenProject : undefined;
   runtime: OperationRuntime;
 }
 

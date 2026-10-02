@@ -35,12 +35,13 @@ export interface ProjectDb {
 
 interface IdempotencyRow { payload_hash: string; status: "reserved" | "done"; result_json: string | null }
 
-export function createIdempotencyStore(db: Database): DurableIdempotencyStore {
+/** `table` is `operation_requests` (project.sqlite) or `idempotency` (machine.sqlite); `now` is injectable for tests. */
+export function createIdempotencyStore(db: Database, table = "operation_requests", now: () => Date = () => new Date()): DurableIdempotencyStore {
   const reserveTx = db.transaction((key: IdempotencyKey): IdempotencyReservation => {
-    const row = db.query<IdempotencyRow, [string, string]>("SELECT payload_hash, status, result_json FROM operation_requests WHERE actor_id = ? AND request_id = ?").get(key.actorId, key.requestId);
+    const row = db.query<IdempotencyRow, [string, string]>(`SELECT payload_hash, status, result_json FROM ${table} WHERE actor_id = ? AND request_id = ?`).get(key.actorId, key.requestId);
     if (!row) {
-      db.query("INSERT INTO operation_requests (actor_id, request_id, operation, payload_hash, status, created_at) VALUES (?, ?, ?, ?, 'reserved', ?)")
-        .run(key.actorId, key.requestId, key.operation, key.payloadHash, new Date().toISOString());
+      db.query(`INSERT INTO ${table} (actor_id, request_id, operation, payload_hash, status, created_at) VALUES (?, ?, ?, ?, 'reserved', ?)`)
+        .run(key.actorId, key.requestId, key.operation, key.payloadHash, now().toISOString());
       return { kind: "new" };
     }
     if (row.payload_hash !== key.payloadHash) return { kind: "conflict" };
@@ -50,11 +51,11 @@ export function createIdempotencyStore(db: Database): DurableIdempotencyStore {
   return {
     reserve: (key) => reserveTx.immediate(key),
     complete(key, resultJson) {
-      db.query("UPDATE operation_requests SET status = 'done', result_json = ?, completed_at = ? WHERE actor_id = ? AND request_id = ?")
-        .run(resultJson, new Date().toISOString(), key.actorId, key.requestId);
+      db.query(`UPDATE ${table} SET status = 'done', result_json = ?, completed_at = ? WHERE actor_id = ? AND request_id = ?`)
+        .run(resultJson, now().toISOString(), key.actorId, key.requestId);
     },
     release(key) {
-      db.query("DELETE FROM operation_requests WHERE actor_id = ? AND request_id = ? AND status = 'reserved'").run(key.actorId, key.requestId);
+      db.query(`DELETE FROM ${table} WHERE actor_id = ? AND request_id = ? AND status = 'reserved'`).run(key.actorId, key.requestId);
     },
   };
 }
@@ -64,8 +65,8 @@ function readUserVersion(db: Database): number {
   return row?.user_version ?? 0;
 }
 
-function applyMigrations(db: Database, from: number): void {
-  for (const m of MIGRATIONS) {
+export function applyMigrations(db: Database, migrations: readonly { version: number; sql: string }[], from: number): void {
+  for (const m of migrations) {
     if (m.version <= from) continue;
     db.exec("BEGIN IMMEDIATE");
     try {
@@ -114,7 +115,7 @@ export function openProjectDb(gameRoot: string): ProjectDb {
     db.exec("PRAGMA journal_mode = WAL");
     db.exec("PRAGMA synchronous = FULL");
     db.exec("PRAGMA foreign_keys = ON");
-    applyMigrations(db, version);
+    applyMigrations(db, MIGRATIONS, version);
     // A reservation left by a crashed process never completed; treat the request as new.
     db.query("DELETE FROM operation_requests WHERE status = 'reserved'").run();
   } catch (e) {

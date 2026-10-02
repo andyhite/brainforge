@@ -6,6 +6,7 @@ import type { OpenProject } from "../project-runtime.ts";
 import { OperationFailure } from "../runtime.ts";
 import { packageClip } from "../processing/package.ts";
 import { publishFrameSequence, type DerivedFileInput, type FrameInput, type PublicationFaults } from "../outputs/frames.ts";
+import { insertCandidate } from "../generation/store.ts";
 import { candidateRow, requirementsResolver, toCandidate } from "../review/records.ts";
 import { inheritedMeta, insertLineage, reconcileCleanupLineage, type Lineage } from "./lineage.ts";
 import { loadParent, type Parent } from "./parent.ts";
@@ -80,12 +81,16 @@ async function publishStill(open: OpenProject, parent: Parent, s: { candidateId:
   await open.mutate(async () => {
     await writeFileAtomic(await resolveIn(open.root, rel), s.png);
     const c = parent.candidate;
+    const events: { type: string; data: unknown; actorId: string }[] = [];
     open.transact(() => {
-      open.db.query("INSERT INTO candidates (candidate_id, asset_id, step_id, run_id, job_id, parent_candidate_id, branch_id, label, seed, prompt, favorite, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)")
-        .run(s.candidateId, c.asset_id, c.step_id, c.run_id, c.job_id, c.candidate_id, c.branch_id, s.label, c.seed, c.prompt, s.lineage.createdAt);
+      const created = insertCandidate(open.db, {
+        candidateId: s.candidateId, assetId: c.asset_id, stepId: c.step_id, runId: c.run_id, jobId: c.job_id, parentCandidateId: c.candidate_id,
+        branchId: c.branch_id, label: s.label, seed: c.seed, prompt: c.prompt, createdAt: s.lineage.createdAt,
+      }, s.lineage.createdBy);
+      if (created) events.push(created);
       open.db.query("INSERT INTO candidate_outputs (output_id, candidate_id, role, file_id, path, sha256, width, height, media_type, stage, media_kind, meta_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'image/png', 'source', 'image', ?)")
         .run(s.outputId, s.candidateId, parent.output.role, s.outputId, rel, sha256(s.png), parent.output.width, parent.output.height, JSON.stringify({ ...inheritedMeta(parent.output.meta_json), cleanup: s.lineage }));
       insertLineage(open, s.candidateId, s.lineage);
-    }, [{ type: "candidate.created", data: { candidateId: s.candidateId, assetId: c.asset_id, stepId: c.step_id, parentCandidateId: c.candidate_id }, actorId: s.lineage.createdBy }]);
+    }, events);
   });
 }

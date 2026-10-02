@@ -1,24 +1,9 @@
 import { Link } from "react-router-dom";
 import type { PromotionMemberRow } from "@brainforge/contracts";
-import { useOperation } from "../../api/hooks.ts";
 import { Status } from "../../components/ui.tsx";
 import { paths } from "../../lib/paths.ts";
+import { VersionPicker } from "../production/VersionPicker.tsx";
 import "./families.css";
-
-function Picker({ row, pinned, onPin, busy }: { row: PromotionMemberRow; pinned: string | undefined; onPin: (versionId: string | undefined) => void; busy: boolean }) {
-  const versions = useOperation("version.list", { assetId: row.assetId });
-  const list = versions.data?.ok ? versions.data.data.versions : [];
-  const id = `pin-${row.assetId}`;
-  return (
-    <div className="field compact">
-      <label htmlFor={id} className="sr-only">Version of {row.assetId} to pin</label>
-      <select id={id} value={pinned ?? ""} disabled={busy || versions.isPending} onChange={(e) => onPin(e.target.value === "" ? undefined : e.target.value)}>
-        <option value="">{row.required ? "Active version (default)" : "Leave out (optional)"}</option>
-        {list.map((v) => <option key={v.versionId} value={v.versionId}>v{v.versionNumber} · {v.state}{v.matchesCurrent ? "" : " · obsolete"}</option>)}
-      </select>
-    </div>
-  );
-}
 
 /** The member versions an environment aggregate would pin, with a picker per member for explicit overrides. */
 export function MemberPins({ members, pins, onPin, busy }: { members: PromotionMemberRow[]; pins: Record<string, string>; onPin: (assetId: string, versionId: string | undefined) => void; busy: boolean }) {
@@ -46,7 +31,13 @@ export function MemberPins({ members, pins, onPin, busy }: { members: PromotionM
                 </td>
                 <td>{row.source === "explicit" ? <Status tone="info">Explicit pin</Status> : row.source === "active" ? <Status tone="idle">Active version</Status> : "—"}</td>
                 <td>{row.versionNumber === undefined ? "—" : row.directionMatches ? <Status tone="ok">Matches</Status> : <Status tone="bad">Direction mismatch</Status>}</td>
-                <td><Picker row={row} pinned={pins[row.assetId]} busy={busy} onPin={(versionId) => onPin(row.assetId, versionId)} /></td>
+                <td>
+                  <VersionPicker
+                    assetId={row.assetId} id={`pin-${row.assetId}`} label={`Version of ${row.assetId} to pin`} className="field compact" value={pins[row.assetId]} disabled={busy} onChange={(versionId) => onPin(row.assetId, versionId)}
+                    emptyText={() => (row.required ? "Active version (default)" : "Leave out (optional)")}
+                    optionText={(v) => `v${v.versionNumber} · ${v.state}${v.matchesCurrent ? "" : " · obsolete"}`}
+                  />
+                </td>
               </tr>
             ))}
           </tbody>

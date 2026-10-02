@@ -3,7 +3,7 @@ import { paths } from "@brainforge/storage";
 import { PLACEHOLDER, findPlaceholders } from "./validate.ts";
 import { parseAuthored } from "../authored.ts";
 
-export interface FamilyTemplate { path: string; text: string; notes: string[] }
+interface FamilyTemplate { path: string; text: string; notes: string[] }
 
 const q = (s: string): string => JSON.stringify(s);
 const todo = (what: string): string => q(`${PLACEHOLDER} ${what}`);

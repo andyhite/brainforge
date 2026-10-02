@@ -12,13 +12,13 @@ import { useProjectRoot } from "../../lib/project-context.tsx";
 import { groupByKind } from "../../lib/steps.ts";
 import { specRoute } from "../../lib/use-project.ts";
 import { DeliverableRow, KIND_LABEL, newDeliverable, problemPlace } from "./DeliverableRow.tsx";
-import { Ctx, ListField, NumberField, ProblemFlag, RequiredTextField, SelectField, TextField, Group, idOf, problemsFor, FieldProblems, useEditor, type EditorContext } from "./fields.tsx";
+import { Ctx, ListField, NumberField, ProblemFlag, SelectField, TextField, Group, idOf, problemsFor, FieldProblems, useEditor, type EditorContext } from "./fields.tsx";
 import { ALPHA_TEXT, MOTION_TEXT, splitProblems, useFamilies } from "./useFamilies.tsx";
 import { isPlaceholder, mutate, normalizeField, parseDraft, pushAt, removeAt, setAt, type Path } from "./yaml-patch.ts";
 import "./families.css";
 
 /** Debounced `spec.validate` of the draft: the same schema and family rules the server applies on save. */
-export function useValidation(path: string, text: string, enabled: boolean): { problems: Problem[] | undefined; pending: boolean } {
+function useValidation(path: string, text: string, enabled: boolean): { problems: Problem[] | undefined; pending: boolean } {
   const { root } = useProjectRoot();
   const [result, setResult] = useState<{ text: string; problems: Problem[] } | undefined>(undefined);
   useEffect(() => {
@@ -129,7 +129,7 @@ function IdentityFields({ profiles }: { profiles: FamilyProfile[] }) {
   };
   return (
     <>
-      <RequiredTextField path={["description"]} label="Description" area />
+      <TextField required path={["description"]} label="Description" area />
       <Group legend="Identity requirements" hint="Plain-language, concrete visible features, one per key. All of these are sent to the image model.">
         {identity.map((name) => (
           <div key={name} className="fam-identity-row">
@@ -149,7 +149,7 @@ function IdentityFields({ profiles }: { profiles: FamilyProfile[] }) {
       <details className="spec-more">
         <summary>Name and family<ProblemFlag problems={[...problemsFor(problems, ["name"]), ...problemsFor(problems, ["family"])]} /></summary>
         <div className="spec-more-body grid-2">
-          <RequiredTextField path={["name"]} label="Name" />
+          <TextField required path={["name"]} label="Name" />
           <SelectField
             path={["family"]}
             label="Family"

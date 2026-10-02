@@ -17,19 +17,26 @@ function canonical(v: unknown): string {
 
 export const graphHash = (g: ComfyGraph): string => createHash("sha256").update(canonical(g)).digest("hex");
 
-export async function loadWorkflow(id: string, version = 1): Promise<WorkflowDescriptor> {
-  if (!/^[a-z0-9-]+$/.test(id)) throw new Error(`Bad workflow id ${id}`);
-  const text = await readFile(join(WORKFLOW_DIR, id, `${version}.yaml`), "utf8");
+/** A bundled workflow descriptor; the newest version when none is named. */
+export async function loadWorkflow(id: string, version?: number): Promise<WorkflowDescriptor> {
+  const chosen = version ?? (await workflowVersions(id)).at(-1);
+  if (chosen === undefined) throw new Error(`No versions of workflow ${id}`);
+  const text = await readFile(join(WORKFLOW_DIR, id, `${chosen}.yaml`), "utf8");
   const wf = WorkflowDescriptor.parse(parse(text));
-  if (wf.id !== id || wf.version !== version) throw new Error(`Workflow file ${id}/${version}.yaml declares ${wf.id}@${wf.version}`);
+  if (wf.id !== id || wf.version !== chosen) throw new Error(`Workflow file ${id}/${chosen}.yaml declares ${wf.id}@${wf.version}`);
   return wf;
 }
 
-/** Version numbers of a bundled workflow, ascending. */
+/** Version numbers of a bundled workflow, ascending; none when the workflow does not exist. */
 export async function workflowVersions(id: string): Promise<number[]> {
   if (!/^[a-z0-9-]+$/.test(id)) throw new Error(`Bad workflow id ${id}`);
-  const entries = await readdir(join(WORKFLOW_DIR, id));
+  const entries = await readdir(join(WORKFLOW_DIR, id)).catch(() => []);
   return entries.flatMap((f) => (/^\d+\.yaml$/.test(f) ? [Number.parseInt(f, 10)] : [])).sort((a, b) => a - b);
+}
+
+/** Ids of the bundled workflows, sorted. */
+export async function workflowIds(): Promise<string[]> {
+  return (await readdir(WORKFLOW_DIR, { withFileTypes: true }).catch(() => [])).filter((e) => e.isDirectory()).map((e) => e.name).sort();
 }
 
 /** Values keyed by input binding name; image bindings take the uploaded ComfyUI file name. */

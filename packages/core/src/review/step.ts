@@ -98,12 +98,17 @@ export async function inspectConceptStep(db: Database, root: string, assetId: st
     next.push({ label: state === "ready" ? "Plan a first batch" : "Plan another batch", operation: "generation.plan", input: { assetId, stepId: "concept", mode: "fresh" } });
   }
   if (counts.candidates > 0) next.push({ label: "Review candidates", operation: "candidate.list", input: { assetId } });
-  if (unaddressed.length > 0) {
-    next.push({ label: `Bundle ${unaddressed.length} required note(s) into a revision request`, operation: "revision.create", input: { candidateId: unaddressed[0]?.candidateId, annotationIds: unaddressed.map((n) => n.annotationId) } });
-  }
-  if (counts.openRevisions > 0) next.push({ label: "See open revision requests", operation: "revision.list", input: { assetId } });
+  next.push(...feedbackActions(assetId, unaddressed, counts.openRevisions));
 
   return { assetId, stepId: "concept", kind: "concept", required: true, dependsOn: [], state, blockers, needsReassessment: reasons.length > 0, reassessmentReasons: reasons, counts, nextActions: next };
+}
+
+/** Next actions for open required feedback: bundle the unaddressed notes into a revision request, look at the open ones. */
+export function feedbackActions(assetId: string, unaddressed: { annotationId: string; candidateId: string }[], openRevisions: number): NextAction[] {
+  return [
+    ...(unaddressed.length > 0 ? [{ label: `Bundle ${unaddressed.length} required note(s) into a revision request`, operation: "revision.create", input: { candidateId: unaddressed[0]?.candidateId, annotationIds: unaddressed.map((n) => n.annotationId) } }] : []),
+    ...(openRevisions > 0 ? [{ label: "See open revision requests", operation: "revision.list", input: { assetId } }] : []),
+  ];
 }
 
 export function specHashesOf(plan: unknown): Record<string, string> {

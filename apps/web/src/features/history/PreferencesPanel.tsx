@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { HistoryExample, OperationError, Preference } from "@brainforge/contracts";
 import { useMutationOperation, useOperation } from "../../api/hooks.ts";
-import { ErrorBanner, formatTime, NetworkProblem, Status, type Tone } from "../../components/ui.tsx";
+import { ErrorBanner, formatTime, gate, Status, type Tone } from "../../components/ui.tsx";
 import { paths } from "../../lib/paths.ts";
 import { whoLabel } from "../review/room-lib.ts";
 
@@ -19,6 +19,7 @@ const roomOf = (hit: HistoryExample) => paths.step(hit.assetId, hit.stepId, { ca
 
 export function PreferencesPanel({ examples, styleIds }: { examples: HistoryExample[]; styleIds: string[] }) {
   const query = useOperation("preference.list", {});
+  const g = gate(query, "Loading preferences…");
   const preferences = query.data?.ok ? [...query.data.data.preferences].sort((a, b) => Number(b.status === "proposed") - Number(a.status === "proposed")) : [];
   const waiting = preferences.filter((p) => p.status === "proposed").length;
   const byDecision = new Map(examples.map((e) => [e.decisionId, e]));
@@ -30,7 +31,7 @@ export function PreferencesPanel({ examples, styleIds }: { examples: HistoryExam
         <span className="aside">Only a person can confirm or reject a preference.</span>
       </div>
       <p className="secondary">Short statements of visual direction, each backed by past decisions. A preference counts only after you confirm it.</p>
-      {query.error ? <NetworkProblem error={query.error} /> : !query.data ? <p className="secondary" role="status">Loading preferences…</p> : !query.data.ok ? <ErrorBanner error={query.data.error} /> : preferences.length === 0 ? (
+      {"node" in g ? g.node : preferences.length === 0 ? (
         <p className="secondary">No preferences yet. Propose one below, or an agent can propose one from the decisions it retrieved.</p>
       ) : (
         <ul className="rows" aria-label="Preferences">

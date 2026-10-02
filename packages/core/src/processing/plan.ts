@@ -4,7 +4,7 @@ import { discoverAuthored } from "../authored.ts";
 import { authoredSetFor } from "../branches/basis.ts";
 import { computeEffective } from "../effective.ts";
 import { profileFor, resolveAlpha } from "../families/index.ts";
-import { normalizedHash } from "../operations.ts";
+import { loadPlanRow, normalizedHash } from "../operations.ts";
 import { type FrameOutputRow } from "../outputs/frames.ts";
 import { readProcessingSource, STILL_FPS } from "./source.ts";
 import type { OpenProject } from "../project-runtime.ts";
@@ -18,7 +18,7 @@ interface CandidateRow { candidate_id: string; asset_id: string; step_id: string
 
 /** Tolerance, in output pixels, of how far a pivot may sit outside the clip's foreground before it is called out. */
 const pivotMargin = (canvasHeight: number): number => Math.max(4, Math.round(canvasHeight * 0.04));
-/** The feet sit this far above the canvas bottom by default (matches calibrateFraming), scaled down for tiny canvases. */
+/** The feet sit this far above the canvas bottom by default, scaled down for tiny canvases. */
 const feetMargin = (canvasHeight: number): number => Math.min(12, Math.floor(canvasHeight * 0.05));
 /** Relative scale difference that counts as "the character's size changed". */
 const SCALE_TOLERANCE = 0.005;
@@ -292,7 +292,6 @@ export async function createProcessingPlan(open: OpenProject, actorId: string, i
 
 /** A stored plan together with whether (and into which output) it has already been started. */
 export function storedProcessingPlan(open: OpenProject, planId: string): { plan: ProcessingPlan; startedOutputId: string | null } {
-  const row = open.db.query<{ plan_json: string; started_output_id: string | null }, [string]>("SELECT plan_json, started_output_id FROM processing_plans WHERE plan_id = ?").get(planId);
-  if (!row) throw new OperationFailure("NOT_FOUND", `No processing plan ${planId}`, undefined, [{ label: "Plan processing", operation: "processing.plan" }]);
+  const row = loadPlanRow<{ plan_json: string; started_output_id: string | null }>(open.db, "processing_plans", planId, "processing plan", { label: "Plan processing", operation: "processing.plan" });
   return { plan: ProcessingPlan.parse(JSON.parse(row.plan_json)), startedOutputId: row.started_output_id };
 }

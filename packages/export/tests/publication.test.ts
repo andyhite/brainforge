@@ -3,7 +3,7 @@ import { lstat, mkdir, readFile, readdir, readlink, rm, symlink, writeFile } fro
 import path from "node:path";
 import {
   commitExport, ExportError, InjectedFault, prepareExport, recoverExport,
-  type ExpectedCurrent, type ExportFaults, type ExportInput,
+  type ExpectedCurrent, type ExportInput,
 } from "../src/index.ts";
 import { characterAsset, makeInput, stillDeliverable, tempDir, writeText } from "./fixtures.ts";
 
@@ -24,9 +24,9 @@ const input = (e: Env, exportId: string, seed: number, withProp = false): Promis
     return makeInput({ sourceDir: e.sourceDir, exportId, seed }, assets);
   });
 
-async function publish(e: Env, inp: ExportInput, expected?: ExpectedCurrent, faults?: ExportFaults) {
-  const prepared = await prepareExport({ destinationAbs: e.dest, input: inp, ...(expected ? { expectedCurrent: expected } : {}), ...(faults ? { faults } : {}) });
-  const committed = await commitExport({ destinationAbs: e.dest, intent: prepared.intent, ...(faults ? { faults } : {}) });
+async function publish(e: Env, inp: ExportInput, expected?: ExpectedCurrent) {
+  const prepared = await prepareExport({ destinationAbs: e.dest, input: inp, ...(expected ? { expectedCurrent: expected } : {}) });
+  const committed = await commitExport({ destinationAbs: e.dest, intent: prepared.intent });
   return { prepared, committed, current: { exportId: inp.exportId, manifestSha256: prepared.intent.manifestSha256 } satisfies ExpectedCurrent };
 }
 
@@ -130,7 +130,7 @@ describe("atomic publication", () => {
   test("failure during staging leaves the prior current intact and no staging debris", async () => {
     const e = await env();
     const first = await publish(e, await input(e, "exp-1", 1));
-    const error = await prepareExport({ destinationAbs: e.dest, input: await input(e, "exp-2", 2), expectedCurrent: first.current, faults: { failDuringStaging: true } }).catch((x: unknown) => x);
+    const error = await prepareExport({ destinationAbs: e.dest, input: await input(e, "exp-2", 2), expectedCurrent: first.current, fault: "fail-during-staging" }).catch((x: unknown) => x);
     expect(error).toBeInstanceOf(InjectedFault);
     expect(await pointer(e)).toBe(".releases/exp-1");
     expect(await releases(e)).toEqual(["exp-1"]);
@@ -140,7 +140,7 @@ describe("atomic publication", () => {
     const e = await env();
     const first = await publish(e, await input(e, "exp-1", 1));
     const prepared = await prepareExport({ destinationAbs: e.dest, input: await input(e, "exp-2", 2), expectedCurrent: first.current });
-    const error = await commitExport({ destinationAbs: e.dest, intent: prepared.intent, faults: { failBeforeSwitch: true } }).catch((x: unknown) => x);
+    const error = await commitExport({ destinationAbs: e.dest, intent: prepared.intent, fault: "fail-before-switch" }).catch((x: unknown) => x);
     expect(error).toBeInstanceOf(InjectedFault);
     expect(await pointer(e)).toBe(".releases/exp-1");
     expect(JSON.parse(await readFile(path.join(e.dest, "current/manifest.json"), "utf8")).exportId).toBe("exp-1");
@@ -166,7 +166,7 @@ describe("atomic publication", () => {
     const e = await env();
     const first = await publish(e, await input(e, "exp-1", 1));
     const prepared = await prepareExport({ destinationAbs: e.dest, input: await input(e, "exp-2", 2), expectedCurrent: first.current });
-    const crash = await commitExport({ destinationAbs: e.dest, intent: prepared.intent, faults: { failAfterSwitchBeforeRetire: true } }).catch((x: unknown) => x);
+    const crash = await commitExport({ destinationAbs: e.dest, intent: prepared.intent, fault: "fail-after-switch" }).catch((x: unknown) => x);
     expect(crash).toBeInstanceOf(InjectedFault);
     expect(await pointer(e)).toBe(".releases/exp-2");
     expect(await releases(e)).toEqual(["exp-1", "exp-2"]);

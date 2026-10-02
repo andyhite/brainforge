@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { MotionGuide, MotionPlan } from "@brainforge/contracts";
-import { outputUrl } from "../generation/media.tsx";
+import { fileUrl } from "../../api/hooks.ts";
 
 const ROLE_LABEL: Record<MotionGuide["role"], string> = { start: "Start pose", end: "End pose" };
 
@@ -11,7 +11,7 @@ function NormalizedGuide({ projectId, guide, canvas }: { projectId: string; guid
   return (
     <div className="pivot-stage canvas-stage stage-bg light" style={{ aspectRatio: `${canvas.width} / ${canvas.height}`, maxWidth: 200 }}>
       <img
-        src={outputUrl(projectId, guide.originalFileId, 1024)}
+        src={fileUrl(projectId, guide.originalFileId, 1024)}
         alt={`${ROLE_LABEL[guide.role]} placed in the ${canvas.width} by ${canvas.height} motion canvas`}
         onLoad={(event) => setNatural({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
         style={natural ? {
@@ -46,7 +46,7 @@ export function MotionPlanView({ motion, projectId }: { motion: MotionPlan; proj
             <strong>{ROLE_LABEL[guide.role]}</strong> <span className="secondary mono">{guide.deliverableId}</span>
             <div className="row" style={{ alignItems: "flex-start", gap: 8, flexWrap: "nowrap" }}>
               <figure style={{ margin: 0 }}>
-                <img src={outputUrl(projectId, guide.originalFileId, 240)} alt={`Approved ${ROLE_LABEL[guide.role].toLowerCase()} from ${guide.deliverableId}`} style={{ width: 100, height: 100, objectFit: "contain", background: "var(--surface-2)" }} />
+                <img src={fileUrl(projectId, guide.originalFileId, 240)} alt={`Approved ${ROLE_LABEL[guide.role].toLowerCase()} from ${guide.deliverableId}`} style={{ width: 100, height: 100, objectFit: "contain", background: "var(--surface-2)" }} />
                 <figcaption className="secondary">Approved</figcaption>
               </figure>
               <figure style={{ margin: 0, flex: 1 }}>

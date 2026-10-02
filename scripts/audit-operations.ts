@@ -1,15 +1,12 @@
 /**
- * Operation registry audit. For every key of OPERATIONS checks: (a) a core handler, (b) a CLI `--help` path,
- * (c) a mention in skills/brainforge, (d) a reference in tests/scripts. Also lists operations the web UI never
- * calls. Exits 1 on any gap in (a)-(d).
+ * Operation registry audit. For every key of OPERATIONS checks: (a) a mention in skills/brainforge, (b) a
+ * reference in tests/scripts. Also lists operations the web UI never calls. Exits 1 on any gap.
+ * (Handler and CLI presence are guaranteed by assertHandlersComplete and the HandlerMap typing.)
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { z } from "zod";
-import { OPERATIONS, OPERATION_NAMES } from "@brainforge/contracts";
-import { machineHandlers, projectHandlers } from "@brainforge/core";
+import { OPERATION_NAMES } from "@brainforge/contracts";
 
-const HelpEnvelope = z.object({ ok: z.literal(true) });
 const root = join(import.meta.dir, "..");
 
 function walk(dir: string, accept: (path: string) => boolean, out: string[] = []): string[] {
@@ -30,28 +27,20 @@ const isTest = (p: string) => /(\.test\.ts|-fixture\.ts|fixtures?\.ts|helpers\.t
 const tests = corpus(["packages", "apps"], isTest) + "\n" + corpus(["scripts"], (p) => p.endsWith(".ts") && !p.endsWith("audit-operations.ts"));
 const skill = corpus(["skills/brainforge"], (p) => p.endsWith(".md"));
 const web = corpus(["apps/web/src"], (p) => /\.tsx?$/.test(p));
-const handlers: Record<string, unknown> = { ...projectHandlers, ...machineHandlers };
 
 const gaps: string[] = [];
 const uiNever: string[] = [];
 const rows: string[] = [];
 
 for (const name of OPERATION_NAMES) {
-  const handler = typeof handlers[name] === "function";
-  const cli = Bun.spawnSync(["bun", join(root, "apps/cli/src/main.ts"), name, "--help"], { stdout: "pipe", stderr: "pipe" });
-  const parsed = HelpEnvelope.safeParse(cli.stdout.toString().trim().length > 0 ? JSON.parse(cli.stdout.toString()) : null);
-  const cliOk = cli.exitCode === 0 && parsed.success;
   const inSkill = skill.includes(name);
   const inTests = tests.includes(name);
   const inWeb = web.includes(`"${name}"`) || web.includes(`'${name}'`);
   if (!inWeb) uiNever.push(name);
-  const missing = [!handler && "handler", !cliOk && "cli", !inSkill && "skill", !inTests && "tests"].filter(Boolean);
+  const missing = [!inSkill && "skill", !inTests && "tests"].filter(Boolean);
   if (missing.length > 0) gaps.push(`${name}: ${missing.join(", ")}`);
-  rows.push(`${name.padEnd(28)} handler=${handler ? "y" : "N"} cli=${cliOk ? "y" : "N"} skill=${inSkill ? "y" : "N"} tests=${inTests ? "y" : "N"} ui=${inWeb ? "y" : "-"}`);
+  rows.push(`${name.padEnd(28)} skill=${inSkill ? "y" : "N"} tests=${inTests ? "y" : "N"} ui=${inWeb ? "y" : "-"}`);
 }
-
-const extraHandlers = Object.keys(handlers).filter((h) => !(h in OPERATIONS));
-if (extraHandlers.length > 0) gaps.push(`handlers without operation: ${extraHandlers.join(", ")}`);
 
 console.log(rows.join("\n"));
 console.log(`\n${OPERATION_NAMES.length} operations; ${gaps.length} gaps`);

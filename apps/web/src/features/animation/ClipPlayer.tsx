@@ -2,18 +2,18 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import type { Annotation, Geometry, OperationData } from "@brainforge/contracts";
 import { useOperation } from "../../api/hooks.ts";
 import { Icon } from "../../components/Icon.tsx";
-import { ErrorBanner, MenuButton, NetworkProblem } from "../../components/ui.tsx";
+import { gate, MenuButton } from "../../components/ui.tsx";
 import { useProject } from "../../lib/use-project.ts";
 import { FrameCanvas, hasAtlas, type Source } from "./FrameCanvas.tsx";
 import { FrameStepper } from "./FrameStepper.tsx";
-import { typingTarget, type Backdrop, type Tool, type Zoom } from "./stage.ts";
+import { NoteLayer, useNoteDraw } from "../review/NoteLayer.tsx";
+import { clamp01, useHotkeys, type Backdrop, type Tool, type Zoom } from "./stage.ts";
 import { frameAt, frameStarts, formatFps, formatMs, totalMs } from "./timing.ts";
 import "./animation.css";
 
 type Detail = OperationData<"output.inspect">["output"];
 
 const SPEEDS = [1, 0.5, 0.25];
-const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const pad = (n: number, of: number) => String(n).padStart(String(of).length, "0");
 
 export interface FrameInfoEvent {
@@ -52,9 +52,8 @@ export function ClipPlayer(props: ClipPlayerProps) {
   const projectId = project.data?.project.projectId;
   const message = (body: ReactNode) => <div className="room-stage" data-bg={props.background}>{props.toolbar}<div className="room-scroll">{body}</div></div>;
   for (const query of [a, ...(second ? [b] : [])]) {
-    if (query.error) return message(<NetworkProblem error={query.error} />);
-    if (!query.data) return message(<p className="secondary" role="status">Loading frames…</p>);
-    if (!query.data.ok) return message(<ErrorBanner error={query.data.error} />);
+    const g = gate(query, "Loading frames…");
+    if ("node" in g) return message(g.node);
   }
   if (!projectId || !a.data?.ok || (second && !b.data?.ok)) return message(<p className="secondary" role="status">Loading frames…</p>);
   const details = [a.data.data.output, ...(second && b.data?.ok ? [b.data.data.output] : [])];
@@ -81,7 +80,6 @@ function Player({ details, projectId, annotations = [], selectedId, onSelect, dr
   const wrapRef = useRef<HTMLDivElement>(null);
   const [wrapWidth, setWrapWidth] = useState(640);
   const [wrapHeight, setWrapHeight] = useState(0);
-  const drag = useRef<{ ox: number; oy: number } | undefined>(undefined);
   const atlasAvailable = details.some(hasAtlas);
 
   useLayoutEffect(() => {
@@ -168,47 +166,39 @@ function Player({ details, projectId, annotations = [], selectedId, onSelect, dr
     setFinished(false);
     setPlaying((p) => !p);
   };
-  const toggleRef = useRef(togglePlay);
-  toggleRef.current = togglePlay;
 
   // Space plays, arrows step: anywhere in the room except a text field, a menu, a dialog or a control with its own meaning for the key.
-  useEffect(() => {
+  // Escape drops a note being drawn, even on a still.
+  useHotkeys((event) => {
+    if (event.key === "Escape") {
+      if (draft) onDraftChange?.(undefined);
+      return;
+    }
     if (single) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || typingTarget(event)) return;
-      const target = event.target as HTMLElement;
-      if (event.key === " ") {
-        if (target.closest("button, a, summary, [role='slider'], [role='application']")) return;
-        toggleRef.current();
-      } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-        if (target.closest("[role='application'], [role='slider']")) return;
-        step(event.key === "ArrowLeft" ? -1 : 1);
-      } else if (event.key === "Home") { setPlaying(false); seek(0); }
-      else if (event.key === "End") { setPlaying(false); seek(startsList[0]![primary.frames.length - 1]!); }
-      else return;
-      event.preventDefault();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [single, step, seek, startsList, primary.frames.length]);
-
-  useEffect(() => {
-    if (!draft) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !typingTarget(event)) onDraftChange?.(undefined); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [draft, onDraftChange]);
+    const target = event.target as HTMLElement;
+    if (event.key === " ") {
+      if (target.closest("button, a, summary, [role='slider'], [role='application']")) return;
+      togglePlay();
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      if (target.closest("[role='application'], [role='slider']")) return;
+      step(event.key === "ArrowLeft" ? -1 : 1);
+    } else if (event.key === "Home") { setPlaying(false); seek(0); }
+    else if (event.key === "End") { setPlaying(false); seek(startsList[0]![primary.frames.length - 1]!); }
+    else return;
+    event.preventDefault();
+  });
 
   const maxW = Math.max(...details.map((d) => d.width));
   const maxH = Math.max(...details.map((d) => d.height));
   // Fit uses the measured content box; the labels above and below each canvas take their height from it.
   const fitHeight = wrapHeight > 0 ? wrapHeight - 22 - (compare ? 24 : 0) : 480;
   const fitScale = Math.max(0.05, Math.min((wrapWidth - (details.length - 1) * 16) / details.length / maxW, fitHeight / maxH));
-  const scale = zoom === "fit" || zoom === "custom" ? fitScale : zoom;
+  const scale = zoom === "fit" ? fitScale : zoom;
 
   const notesHere = annotations.filter((n) => !n.frameRange || (frame.sourceFrame >= n.frameRange.start && frame.sourceFrame <= n.frameRange.end));
   const covered = primary.frames.map((f) => annotations.some((n) => n.frameRange && f.sourceFrame >= n.frameRange.start && f.sourceFrame <= n.frameRange.end));
 
+  const note = useNoteDraw({ tool, draft, size: primary, onDraftChange, onDraftCommit });
   const toNormalized = (event: PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     return { x: clamp01((event.clientX - rect.left) / rect.width), y: clamp01((event.clientY - rect.top) / rect.height) };
@@ -217,27 +207,7 @@ function Player({ details, projectId, annotations = [], selectedId, onSelect, dr
     if (tool === "none" || !onDraftChange) return;
     setPlaying(false);
     event.currentTarget.setPointerCapture(event.pointerId);
-    const p = toNormalized(event);
-    if (tool === "pin") {
-      onDraftChange({ kind: "pin", x: p.x, y: p.y });
-      onDraftCommit?.();
-    } else {
-      drag.current = { ox: p.x, oy: p.y };
-      onDraftChange({ kind: "rect", x: p.x, y: p.y, width: 0, height: 0 });
-    }
-  };
-  const onMove = (event: PointerEvent<HTMLDivElement>) => {
-    const d = drag.current;
-    if (!d || !onDraftChange) return;
-    const p = toNormalized(event);
-    onDraftChange({ kind: "rect", x: Math.min(d.ox, p.x), y: Math.min(d.oy, p.y), width: Math.abs(p.x - d.ox), height: Math.abs(p.y - d.oy) });
-  };
-  const onUp = () => {
-    const d = drag.current;
-    drag.current = undefined;
-    if (!d) return;
-    if (draft?.kind === "rect" && (draft.width * primary.width < 3 || draft.height * primary.height < 3)) onDraftChange?.(undefined);
-    else onDraftCommit?.();
+    note.start(toNormalized(event));
   };
 
   const fps = primary.stage === "processed" ? primary.playbackFps : primary.sourceFps;
@@ -260,31 +230,8 @@ function Player({ details, projectId, annotations = [], selectedId, onSelect, dr
                   <FrameCanvas detail={d} projectId={projectId} index={idx} source={source} scale={scale} background={background} showPivot={pivot} label={`${d.stage === "processed" ? "Game-ready" : "Original"} frame ${idx + 1} of ${d.frames.length}`}>
                     <span className="cell-guide" aria-hidden="true" />
                     {i === 0 && !compare ? (
-                      <div className={`clip-annot${tool === "none" ? "" : " drawing"}`} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp}>
-                        <svg className="clip-overlay" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
-                          {notesHere.map((n) => (n.geometry.kind === "rect" ? (
-                            <rect key={n.annotationId} x={n.geometry.x} y={n.geometry.y} width={n.geometry.width} height={n.geometry.height} className={`annot-rect${n.annotationId === selectedId ? " selected" : ""}${n.requiresRevision ? " required" : ""}`} vectorEffect="non-scaling-stroke" />
-                          ) : null))}
-                          {draft?.kind === "rect" ? <rect x={draft.x} y={draft.y} width={draft.width} height={draft.height} className="annot-rect draft" vectorEffect="non-scaling-stroke" /> : null}
-                        </svg>
-                        {notesHere.map((n) => {
-                          if (n.geometry.kind === "whole") return null;
-                          const number = annotations.indexOf(n) + 1;
-                          return (
-                            <button
-                              key={n.annotationId}
-                              type="button"
-                              className={`annot-marker${n.annotationId === selectedId ? " selected" : ""}${n.requiresRevision ? " required" : ""}`}
-                              style={{ left: `${n.geometry.x * 100}%`, top: `${n.geometry.y * 100}%`, transform: n.geometry.kind === "pin" ? "translate(-50%, -50%)" : "translate(0, -100%)" }}
-                              onPointerDown={(e) => e.stopPropagation()}
-                              onClick={() => onSelect?.(n.annotationId)}
-                              aria-label={`Note ${number}: ${n.text}`}
-                            >
-                              {number}
-                            </button>
-                          );
-                        })}
-                        {draft?.kind === "pin" ? <span className="annot-marker draft" style={{ left: `${draft.x * 100}%`, top: `${draft.y * 100}%`, transform: "translate(-50%, -50%)" }} aria-hidden="true">+</span> : null}
+                      <div className={`clip-annot${tool === "none" ? "" : " drawing"}`} onPointerDown={onDown} onPointerMove={(event) => note.move(toNormalized(event))} onPointerUp={note.end}>
+                        <NoteLayer annotations={annotations} visible={notesHere} selectedId={selectedId} onSelect={onSelect} draft={draft} svgClass="clip-overlay" />
                       </div>
                     ) : null}
                   </FrameCanvas>

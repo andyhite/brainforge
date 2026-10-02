@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { Database } from "bun:sqlite";
 import type { InputMode, OperationContext, ParsedOperationInput } from "@brainforge/contracts";
 import { discoverAuthored, type AuthoredSet } from "../authored.ts";
+import { assertPlanHash } from "../operations.ts";
 import { buildPipeline } from "../pipeline.ts";
 import type { OpenProject } from "../project-runtime.ts";
 import type { CandidateRow } from "../review/records.ts";
@@ -57,9 +58,7 @@ export async function createBranch(open: OpenProject, context: OperationContext,
       { label: "Lock this concept (policy applies)", operation: "concept.lock", input: { assetId: plan.assetId, candidateId: plan.source.candidateId, outputId: plan.source.outputId, inputMode: input.inputMode } },
     ]);
   }
-  if (plan.planHash !== input.planHash) {
-    throw new OperationFailure("REVISION_CONFLICT", "The branch plan changed since it was inspected (authored files, selections or feedback moved). Inspect it again.", { expected: plan.planHash, got: input.planHash }, [{ label: "Plan again", operation: "branch.plan", input: { candidateId: input.candidateId, inputMode: input.inputMode } }]);
-  }
+  assertPlanHash(plan.planHash, input.planHash, [{ label: "Plan again", operation: "branch.plan", input: { candidateId: input.candidateId, inputMode: input.inputMode } }], "The branch plan changed since it was inspected (authored files, selections or feedback moved). Inspect it again.");
   if (plan.blockers.length > 0) {
     throw new OperationFailure("STEP_BLOCKED", `The branch cannot be created: ${plan.blockers.map((b) => b.message).join(" ")}`, { blockers: plan.blockers }, plan.blockers.flatMap((b) => b.recoveryActions));
   }

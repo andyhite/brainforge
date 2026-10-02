@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import type { StepState } from "@brainforge/contracts";
 import { useOperation } from "../../api/hooks.ts";
-import { ErrorBanner, formatTime, NetworkProblem, Status } from "../../components/ui.tsx";
+import { formatTime, gate, Status } from "../../components/ui.tsx";
 import { paths } from "../../lib/paths.ts";
 import { STEP_STATE_TEXT } from "../../lib/steps.ts";
 import { DeliverableThumb } from "../production/DeliverableThumb.tsx";
@@ -10,10 +10,9 @@ import { DifferencesTable, InputModeBadge, ReassessmentReasons } from "./shared.
 /** Side-by-side per-deliverable grid for 2+ branches, plus how their saved input bases differ. */
 export function CompareBranches({ assetId, branchIds }: { assetId: string; branchIds: string[] }) {
   const query = useOperation("branch.compare", { assetId, branchIds });
-  if (query.error) return <NetworkProblem error={query.error} />;
-  if (!query.data) return <p className="secondary" role="status">Comparing branches…</p>;
-  if (!query.data.ok) return <ErrorBanner error={query.data.error} />;
-  const { branches, steps, basisDifferences, currentBranchId } = query.data.data.comparison;
+  const g = gate(query, "Comparing branches…");
+  if ("node" in g) return g.node;
+  const { branches, steps, basisDifferences, currentBranchId } = g.data.comparison;
   const name = (branchId: string) => branches.find((branch) => branch.branchId === branchId)?.name ?? branchId.slice(0, 8);
 
   return (

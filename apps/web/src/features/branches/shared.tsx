@@ -2,7 +2,7 @@ import type { Branch, FieldDifference, InputMode } from "@brainforge/contracts";
 import { Status } from "../../components/ui.tsx";
 import "./branches.css";
 
-export function formatValue(value: unknown): string {
+function formatValue(value: unknown): string {
   if (value === undefined || value === null) return "(not set)";
   if (typeof value === "string") return value === "" ? "(empty)" : value;
   const text = JSON.stringify(value);

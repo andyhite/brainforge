@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import type { Job } from "@brainforge/contracts";
-import { ActionLinks, Banner } from "../../components/ui.tsx";
+import { ActionLinks, Banner, isRunnable } from "../../components/ui.tsx";
 import { JOB_IS_ACTIVE, jobNeedsAttention } from "../../lib/attention.ts";
 import { paths } from "../../lib/paths.ts";
 
@@ -20,9 +20,8 @@ export function JobProblems({ jobs }: { jobs: Job[] }) {
     <div className="job-problems">
       {jobs.map((job) => {
         const message = job.error?.message ?? (job.unresolved ? `It couldn’t be matched to a result (${job.unresolved.reason.replaceAll("-", " ")}). Check before trying again.` : "");
-        // Recovery steps with nothing to run are guidance: shown as words, never as buttons.
-        const guidance = job.availableActions.filter((action) => !action.url && !(action.operation && action.input !== undefined));
-        const steps = guidance.length > 0 ? guidance.map((action) => action.label) : (job.error?.recovery ?? []);
+        // Guidance with nothing to run is shown by ActionLinks as words; the job's own recovery steps fill in when there is none.
+        const steps = job.availableActions.every(isRunnable) ? (job.error?.recovery ?? []) : [];
         return (
           <Banner
             key={job.jobId}

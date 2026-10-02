@@ -6,7 +6,7 @@ import { Icon } from "../../components/Icon.tsx";
 import { OutputArt } from "../../components/OutputArt.tsx";
 import { Art, MiniSheet } from "../../components/ui.tsx";
 import { paths } from "../../lib/paths.ts";
-import { progress } from "../../lib/next.ts";
+import { plural, progress } from "../../lib/next.ts";
 import { splitProblems, useFamilies } from "../families/useFamilies.tsx";
 import { isDefinitionMissing } from "../assets/missing.ts";
 
@@ -25,8 +25,6 @@ export interface CardAsset {
   exportedVersionId?: string | undefined;
   tag?: { text: string; tone?: "warn" | "bad" | undefined } | undefined;
 }
-
-const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
 /** The locked concept of the current branch, else the newest concept candidate: the asset's face wherever it's shown. */
 export function useConceptArt(assetId: string, ready = true) {

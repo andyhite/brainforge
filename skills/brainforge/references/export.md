@@ -6,7 +6,7 @@ Export publishes IMMUTABLE promoted versions to the game-relative destination in
 
 1. Each asset needs an ACTIVE version: `promotion.start`, then `version.activate` (see [production-versions](production-versions.md)). A missing active version is a blocker, not skipped.
 2. `export.plan {assetIds?, versions?, confirmEmpty?}`. Default = every asset with an active version. `versions: {assetId: versionId}` pins another promoted version; the plan shows it. Read `blockers`, `selection` (with `notes`), `leaving`, `leavingResourceKinds`, `warnings`, `fileCount`. `export.plan` is mutating (stores the plan) and needs a `requestId`.
-3. Show the plan to the user. `export.start {planId, planHash, requestId}`: a fresh `requestId` per export; the SAME one when retrying a lost response (`created:false` = already exists).
+3. Show the plan to the user. `export.start {planId, planHash}` with a fresh envelope `requestId` per export; repeat the exact request (same `requestId` and input) when retrying a lost response: you get the original result, never a second export. Reusing a `requestId` that already succeeded with a different input is `IDEMPOTENCY_CONFLICT`.
 4. `export.list` (history; which export is `current`), `export.inspect {exportId}` (manifest + externally modified owned files).
 
 ## Layout

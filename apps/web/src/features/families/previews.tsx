@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, typ
 import { Link } from "react-router-dom";
 import { Banner, Status } from "../../components/ui.tsx";
 import { Icon } from "../../components/Icon.tsx";
+import { BackdropPicker, type Backdrop } from "../generation/media.tsx";
 
 export interface PreviewImage { src: string; width: number; height: number; alt: string }
 
@@ -9,15 +10,7 @@ function Toggle({ pressed, onClick, children }: { pressed: boolean; onClick: () 
   return <button type="button" aria-pressed={pressed} onClick={onClick}>{children}</button>;
 }
 
-function Backdrop({ value, onChange }: { value: "checker" | "light" | "dark"; onChange: (next: "checker" | "light" | "dark") => void }) {
-  return (
-    <div role="group" aria-label="Preview background" className="seg">
-      {(["checker", "light", "dark"] as const).map((b) => <Toggle key={b} pressed={value === b} onClick={() => onChange(b)}>{b === "checker" ? "Checkerboard" : b === "light" ? "Light" : "Dark"}</Toggle>)}
-    </div>
-  );
-}
-
-export function PreviewBox({ title, id, intro, children }: { title: string; id: string; intro?: ReactNode; children: ReactNode }) {
+function PreviewBox({ title, id, intro, children }: { title: string; id: string; intro?: ReactNode; children: ReactNode }) {
   return (
     <section className="fam-preview" aria-labelledby={id}>
       <h2 id={id}>{title}</h2>
@@ -39,14 +32,14 @@ export function TilePreview({ image, tileSize, seamlessAxes, connections, symmet
 }) {
   const [seams, setSeams] = useState(true);
   const [cell, setCell] = useState(Math.min(192, Math.max(64, image.width)));
-  const [backdrop, setBackdrop] = useState<"checker" | "light" | "dark">("checker");
+  const [backdrop, setBackdrop] = useState<Backdrop>("checker");
   const height = Math.round((cell * image.height) / image.width);
   const labels = connections ? Object.entries(connections).filter(([, v]) => v) : [];
   return (
     <PreviewBox title="Repeating 3×3 tile preview" id="prev-tile" intro="The output repeated three times in each direction, to look for visible seams and pattern repetition. This is an asset check, not level authoring.">
       <div className="viewer-tools">
         <Toggle pressed={seams} onClick={() => setSeams((s) => !s)}>Seam lines</Toggle>
-        <Backdrop value={backdrop} onChange={setBackdrop} />
+        <BackdropPicker value={backdrop} onChange={setBackdrop} />
         <label className="row">Cell size
           <input type="range" min={48} max={320} step={8} value={cell} onChange={(e) => setCell(Number(e.target.value))} aria-valuetext={`${cell} pixels`} />
           <span className="secondary">{cell}px</span>
@@ -171,7 +164,7 @@ export function NineSlicePreview({ image, slice, declared }: { image: PreviewIma
   const [h, setH] = useState(image.height);
   const drag = useRef<{ x: number; y: number; w: number; h: number } | undefined>(undefined);
   const [guides, setGuides] = useState(true);
-  const [backdrop, setBackdrop] = useState<"checker" | "light" | "dark">("checker");
+  const [backdrop, setBackdrop] = useState<Backdrop>("checker");
   const problems: string[] = [];
   if (slice.left + slice.right >= image.width) problems.push(`Left (${slice.left}) + right (${slice.right}) leave no stretchable centre in the ${image.width}px-wide output.`);
   if (slice.top + slice.bottom >= image.height) problems.push(`Top (${slice.top}) + bottom (${slice.bottom}) leave no stretchable centre in the ${image.height}px-tall output.`);
@@ -210,7 +203,7 @@ export function NineSlicePreview({ image, slice, declared }: { image: PreviewIma
         <div className="field compact"><label htmlFor="ns-h">Height (px)</label><input id="ns-h" type="number" min={minH} max={1200} value={h} onChange={(e) => { if (Number.isFinite(Number(e.target.value))) setH(clampH(Number(e.target.value))); }} /></div>
         <button type="button" onClick={() => { setW(image.width); setH(image.height); }}>Original size</button>
         <Toggle pressed={guides} onClick={() => setGuides((g) => !g)}>Margin guides</Toggle>
-        <Backdrop value={backdrop} onChange={setBackdrop} />
+        <BackdropPicker value={backdrop} onChange={setBackdrop} />
       </div>
       <div className={`fam-stage preview-scroll nine-stage ${backdrop}`}>
         {invalid ? <p className="secondary">Fix the margins to see the scaled panel.</p> : (
@@ -254,7 +247,7 @@ export interface StateEntry { key: string; label: string; deliverableId: string;
 export function StateCompare({ entries }: { entries: StateEntry[] }) {
   const [mode, setMode] = useState<"side" | "flip">("side");
   const [index, setIndex] = useState(Math.max(0, entries.findIndex((e) => e.current)));
-  const [backdrop, setBackdrop] = useState<"checker" | "light" | "dark">("checker");
+  const [backdrop, setBackdrop] = useState<Backdrop>("checker");
   const stageRef = useRef<HTMLDivElement>(null);
   const shown = entries[Math.min(index, entries.length - 1)];
   const maxW = Math.max(...entries.map((e) => e.width), 1);
@@ -271,7 +264,7 @@ export function StateCompare({ entries }: { entries: StateEntry[] }) {
       <div className="viewer-tools">
         <Toggle pressed={mode === "side"} onClick={() => setMode("side")}>Side by side</Toggle>
         <Toggle pressed={mode === "flip"} onClick={() => setMode("flip")}>Flip in place</Toggle>
-        <Backdrop value={backdrop} onChange={setBackdrop} />
+        <BackdropPicker value={backdrop} onChange={setBackdrop} />
       </div>
       {mode === "side" ? (
         <ul className="state-grid plain-list" aria-label="States side by side">
@@ -301,10 +294,10 @@ export function StateCompare({ entries }: { entries: StateEntry[] }) {
 }
 
 export function VariantsGallery({ entries, title }: { entries: StateEntry[]; title: string }) {
-  const [backdrop, setBackdrop] = useState<"checker" | "light" | "dark">("checker");
+  const [backdrop, setBackdrop] = useState<Backdrop>("checker");
   return (
     <PreviewBox title={title} id="prev-variants" intro="The selected output of each deliverable of this asset.">
-      <Backdrop value={backdrop} onChange={setBackdrop} />
+      <BackdropPicker value={backdrop} onChange={setBackdrop} />
       <ul className="state-grid plain-list" aria-label={title} style={{ marginTop: 12 }}>
         {entries.map((e) => (
           <li key={e.key}>
@@ -325,7 +318,7 @@ export interface AttachmentPoint { name: string; x: number; y: number; deliverab
 
 export function AttachmentMarkers({ image, canvas, points, deliverableId }: { image: PreviewImage; canvas: { width: number; height: number }; points: AttachmentPoint[]; deliverableId: string }) {
   const [show, setShow] = useState(true);
-  const [backdrop, setBackdrop] = useState<"checker" | "light" | "dark">("checker");
+  const [backdrop, setBackdrop] = useState<Backdrop>("checker");
   const here = points.filter((p) => p.deliverable === undefined || p.deliverable === deliverableId);
   const elsewhere = points.filter((p) => p.deliverable !== undefined && p.deliverable !== deliverableId);
   const scaleNote = canvas.width !== image.width || canvas.height !== image.height;
@@ -333,7 +326,7 @@ export function AttachmentMarkers({ image, canvas, points, deliverableId }: { im
     <PreviewBox title="Attachment points" id="prev-attach" intro={`Named pixel points on this deliverable's ${canvas.width}×${canvas.height}px canvas (origin top-left, x right, y down). Art metadata for the game only.`}>
       <div className="viewer-tools">
         <Toggle pressed={show} onClick={() => setShow((s) => !s)}>Show markers</Toggle>
-        <Backdrop value={backdrop} onChange={setBackdrop} />
+        <BackdropPicker value={backdrop} onChange={setBackdrop} />
       </div>
       {here.length === 0 ? <p className="secondary">No attachment points are declared for this deliverable.{elsewhere.length > 0 ? ` ${elsewhere.length} point(s) belong to other deliverables.` : ""}</p> : (
         <>

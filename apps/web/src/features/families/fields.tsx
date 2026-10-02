@@ -95,7 +95,7 @@ function Wrap({ path, label, hint, compact, errorPath, children, labelFor = true
   );
 }
 
-export function TextField({ path, area, placeholder, ...base }: FieldBase & { area?: boolean; placeholder?: string }) {
+export function TextField({ path, area, placeholder, required, ...base }: FieldBase & { area?: boolean; placeholder?: string; /** An empty value is written as an empty string so validation can name it. */ required?: boolean }) {
   const { data, patch, disabled } = useEditor();
   const raw = getAt(data, path);
   const value = typeof raw === "string" ? raw : raw === undefined || raw === null ? "" : String(raw);
@@ -113,7 +113,7 @@ export function TextField({ path, area, placeholder, ...base }: FieldBase & { ar
           className: placeholderText ? "is-placeholder" : undefined,
           autoComplete: "off",
         };
-        const onChange = (next: string) => patch((doc) => setAt(doc, path, next === "" ? undefined : next));
+        const onChange = (next: string) => patch((doc) => setAt(doc, path, next === "" && !required ? undefined : next));
         return (
           <>
             {area ? <textarea rows={3} {...common} onChange={(e) => onChange(e.target.value)} /> : <input type="text" {...common} onChange={(e) => onChange(e.target.value)} />}
@@ -125,29 +125,7 @@ export function TextField({ path, area, placeholder, ...base }: FieldBase & { ar
   );
 }
 
-/** Text that must stay present (an empty value is written as an empty string so validation can name it). */
-export function RequiredTextField(props: FieldBase & { area?: boolean }) {
-  const { data, patch, disabled } = useEditor();
-  const raw = getAt(data, props.path);
-  const value = typeof raw === "string" ? raw : "";
-  const placeholderText = isPlaceholder(value);
-  return (
-    <Wrap {...props}>
-      {({ id, describedBy, invalid }) => {
-        const common = { id, value, disabled, "aria-invalid": invalid || undefined, "aria-describedby": describedBy, className: placeholderText ? "is-placeholder" : undefined, autoComplete: "off" };
-        const onChange = (next: string) => patch((doc) => setAt(doc, props.path, next));
-        return (
-          <>
-            {props.area ? <textarea rows={3} {...common} onChange={(e) => onChange(e.target.value)} /> : <input type="text" {...common} onChange={(e) => onChange(e.target.value)} />}
-            {placeholderText ? <p className="field-warn"><Icon name="warn" />{" "}Placeholder — replace the “REPLACE:” text with a concrete description.</p> : null}
-          </>
-        );
-      }}
-    </Wrap>
-  );
-}
-
-export function NumberField({ path, min, step, unit, ...base }: FieldBase & { min?: number; step?: number; unit?: string }) {
+export function NumberField({ path, min, step, unit, required, ...base }: FieldBase & { min?: number; step?: number; unit?: string; /** Clearing the input keeps the last valid value in the file. */ required?: boolean }) {
   const { data, patch, disabled } = useEditor();
   const raw = getAt(data, path);
   const value = typeof raw === "number" ? raw : undefined;
@@ -175,9 +153,10 @@ export function NumberField({ path, min, step, unit, ...base }: FieldBase & { mi
             onChange={(e) => {
               setText(e.target.value);
               const trimmed = e.target.value.trim();
-              if (trimmed === "") patch((doc) => setAt(doc, path, undefined));
+              if (trimmed === "") { if (!required) patch((doc) => setAt(doc, path, undefined)); }
               else if (Number.isFinite(Number(trimmed))) patch((doc) => setAt(doc, path, Number(trimmed)));
             }}
+            onBlur={() => { if (required) setText(value === undefined ? "" : String(value)); }}
           />
           {unit ? <span className="secondary">{unit}</span> : null}
         </span>

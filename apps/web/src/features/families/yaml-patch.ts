@@ -109,5 +109,5 @@ export function renameDeliverableRefs(doc: Document, from: string, to: string): 
   }
 }
 
-export const PLACEHOLDER = "REPLACE:";
+const PLACEHOLDER = "REPLACE:";
 export const isPlaceholder = (value: unknown): boolean => typeof value === "string" && value.includes(PLACEHOLDER);

@@ -10,12 +10,12 @@ import { paths } from "../../lib/paths.ts";
 import { kindLabel } from "../../lib/steps.ts";
 import { useProject } from "../../lib/use-project.ts";
 
-export const JOB_TONE: Record<JobState, Tone> = {
+const JOB_TONE: Record<JobState, Tone> = {
   queued: "info", submitting: "info", running: "info", collecting: "info", succeeded: "ok", failed: "bad", cancelled: "idle", unresolved: "warn",
 };
-export const ACTIVE_STATES: JobState[] = ["queued", "submitting", "running", "collecting"];
+const ACTIVE_STATES: JobState[] = ["queued", "submitting", "running", "collecting"];
 
-export const JOB_TEXT: Record<JobState, string> = {
+const JOB_TEXT: Record<JobState, string> = {
   queued: "Queued", submitting: "Sending", running: "Generating", collecting: "Saving result", succeeded: "Done", failed: "Failed", cancelled: "Cancelled", unresolved: "Needs checking",
 };
 
@@ -57,7 +57,7 @@ export function useAssetNames(): (assetId: string) => string {
 export const jobHeading = (name: string, job: Job) => `${name} · ${kindLabel(job.stepId)} · ${job.label}`;
 
 /** The single plain line a row shows under its title. */
-export function jobSummary(job: Job): string {
+function jobSummary(job: Job): string {
   if (job.error) return STAGE_TEXT[job.error.stage];
   if (job.unresolved) return UNRESOLVED_TEXT[job.unresolved.reason];
   if (job.state === "queued") return job.queuePosition !== undefined ? `Waiting in line, position ${job.queuePosition}` : "Waiting in line";
@@ -79,7 +79,7 @@ function JobThumb({ job, heading }: { job: Job; heading: string }) {
  * Recovery and control actions for one job. `compact` (list rows) shows only the one safe action;
  * the full set, including the new attempt behind an authorization (it can duplicate work), lives in the detail.
  */
-export function JobActions({ job, compact = false }: { job: Job; compact?: boolean }) {
+function JobActions({ job, compact = false }: { job: Job; compact?: boolean }) {
   const reconcile = useMutationOperation("job.reconcile");
   const retry = useMutationOperation("job.retry");
   const cancel = useMutationOperation("job.cancel");

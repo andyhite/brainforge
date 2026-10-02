@@ -1,19 +1,19 @@
-import { chmod, constants, copyFile, mkdir, open as openFile, readFile, readdir, rename, rm } from "node:fs/promises";
+import { chmod, constants, copyFile, mkdir, readFile, readdir, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { z } from "zod";
-import { ProductionManifest, type ActorType, type ProductionDeliverable, type ProductionFile } from "@brainforge/contracts";
-import { paths, resolveIn, sha256, writeFileAtomic } from "@brainforge/storage";
+import { ProductionManifest, Sha256, type ActorType, type ProductionDeliverable, type ProductionFile } from "@brainforge/contracts";
+import { paths, resolveIn, sha256, syncDir, writeFileAtomic } from "@brainforge/storage";
 import { newId } from "../generation/store.ts";
 import type { OpenProject } from "../project-runtime.ts";
+import { insertIntent, markIntentCommitted, markIntentFailed, preparedIntents } from "../outputs/intents.ts";
 import { OperationFailure } from "../runtime.ts";
 import type { Evaluation, SourceFile } from "./plan.ts";
 
-export const PROMOTION_INTENT_KIND = "promotion";
+const PROMOTION_INTENT_KIND = "promotion";
 
 /** Test-only crash points; release server construction never takes them from any outside input. */
-export type PromotionFault = "fail-before-publish" | "fail-after-rename-before-commit";
+type PromotionFault = "fail-before-publish" | "fail-after-rename-before-commit";
 
-const Sha = z.string().regex(/^[0-9a-f]{64}$/);
 const Payload = z.object({
   versionId: z.string(),
   assetId: z.string(),
@@ -24,20 +24,15 @@ const Payload = z.object({
   actorId: z.string(),
   actorType: z.enum(["human", "agent", "system"]),
   createdAt: z.string(),
-  requirementsHash: Sha,
+  requirementsHash: Sha256,
   /** Exact manifest.json bytes; its hash is the version's identity. */
   manifestText: z.string(),
-  manifestSha256: Sha,
-  deliverables: z.array(z.object({ deliverableId: z.string(), candidateId: z.string(), outputId: z.string(), outputHash: Sha, decisionId: z.string(), reusedFromVersionId: z.string().nullable() })),
+  manifestSha256: Sha256,
+  deliverables: z.array(z.object({ deliverableId: z.string(), candidateId: z.string(), outputId: z.string(), outputHash: Sha256, decisionId: z.string(), reusedFromVersionId: z.string().nullable() })),
 });
 type Payload = z.infer<typeof Payload>;
 
 const dirOf = (p: Payload): string => paths.versionDir(p.assetId, p.versionId);
-
-async function syncDir(abs: string): Promise<void> {
-  const fh = await openFile(abs, "r");
-  try { await fh.sync(); } finally { await fh.close(); }
-}
 
 /** Problems found comparing a directory to its manifest: unreadable manifest, hash drift, missing or changed files. */
 export async function verifyDirectory(abs: string, expectedManifestSha256: string): Promise<{ manifest?: ProductionManifest; problems: string[] }> {
@@ -104,7 +99,7 @@ function commit(open: OpenProject, intentId: string, p: Payload): void {
           .run(p.versionId, d.deliverableId, d.candidateId, d.outputId, d.outputHash, d.decisionId, d.reusedFromVersionId);
       }
     }
-    open.db.query("UPDATE publication_intents SET state = 'committed', resolved_at = ?, error = NULL WHERE intent_id = ?").run(now, intentId);
+    markIntentCommitted(open, intentId, now);
   }, [{ type: "version.promoted", data: { assetId: p.assetId, versionId: p.versionId, versionNumber: p.versionNumber, branchId: p.branchId, actorType: p.actorType }, actorId: p.actorId }]);
 }
 
@@ -114,7 +109,7 @@ async function failIntent(open: OpenProject, intentId: string, payload: Payload 
     await rm(await resolveIn(open.root, dirOf(payload)), { recursive: true, force: true });
   }
   await rm(await resolveIn(open.root, paths.staging(intentId)), { recursive: true, force: true });
-  open.db.query("UPDATE publication_intents SET state = 'failed', error = ?, resolved_at = ? WHERE intent_id = ?").run(error, new Date().toISOString(), intentId);
+  markIntentFailed(open, intentId, error);
 }
 
 export interface PublishRequest {
@@ -149,8 +144,7 @@ export async function publishVersion(open: OpenProject, request: PublishRequest)
   };
 
   const stagingRel = paths.staging(intentId);
-  open.db.query("INSERT INTO publication_intents (intent_id, kind, payload_json, staging_path, state, created_at) VALUES (?, ?, ?, ?, 'prepared', ?)")
-    .run(intentId, PROMOTION_INTENT_KIND, JSON.stringify(payload), stagingRel, createdAt);
+  insertIntent(open, intentId, PROMOTION_INTENT_KIND, payload, stagingRel, createdAt);
 
   try {
     const stagingAbs = await resolveIn(open.root, stagingRel);
@@ -193,21 +187,19 @@ export interface PromotionRecovery { committed: string[]; failed: { intentId: st
 /** Resolve every prepared promotion intent without taking the mutation gate (callers hold it or run at open). */
 export async function recoverPromotionIntents(open: OpenProject): Promise<PromotionRecovery> {
   const report: PromotionRecovery = { committed: [], failed: [] };
-  const intents = open.db.query<{ intent_id: string; payload_json: string }, [string]>("SELECT intent_id, payload_json FROM publication_intents WHERE kind = ? AND state = 'prepared' ORDER BY rowid").all(PROMOTION_INTENT_KIND);
-  for (const intent of intents) {
-    const parsed = Payload.safeParse(JSON.parse(intent.payload_json));
-    if (!parsed.success) {
-      await failIntent(open, intent.intent_id, undefined, `payload unreadable: ${parsed.error.message}`);
-      report.failed.push({ intentId: intent.intent_id, error: "payload unreadable" });
+  for (const intent of preparedIntents(open, PROMOTION_INTENT_KIND, Payload)) {
+    if (intent.unreadable !== undefined) {
+      await failIntent(open, intent.intentId, undefined, intent.unreadable);
+      report.failed.push({ intentId: intent.intentId, error: "payload unreadable" });
       continue;
     }
-    const p = parsed.data;
+    const p = intent.payload;
     try {
       const alreadyRecorded = open.db.query("SELECT 1 FROM asset_versions WHERE version_id = ?").get(p.versionId) !== null;
       const finalAbs = await resolveIn(open.root, dirOf(p));
       if (!alreadyRecorded && (await verifyDirectory(finalAbs, p.manifestSha256)).problems.length > 0) {
         // Not (fully) renamed: finish from staging only if the staged copy is complete and verified.
-        const stagingAbs = await resolveIn(open.root, paths.staging(intent.intent_id));
+        const stagingAbs = await resolveIn(open.root, paths.staging(intent.intentId));
         const staged = await verifyDirectory(stagingAbs, p.manifestSha256);
         if (staged.problems.length > 0 || (await readdir(stagingAbs).catch(() => [])).length === 0) {
           throw new Error(`neither the published nor the staged version verifies: ${staged.problems.join("; ") || "nothing staged"}`);
@@ -217,13 +209,13 @@ export async function recoverPromotionIntents(open: OpenProject): Promise<Promot
         await rename(stagingAbs, finalAbs);
         await syncDir(dirname(finalAbs));
       }
-      commit(open, intent.intent_id, p);
-      await rm(await resolveIn(open.root, paths.staging(intent.intent_id)), { recursive: true, force: true });
-      report.committed.push(intent.intent_id);
+      commit(open, intent.intentId, p);
+      await rm(await resolveIn(open.root, paths.staging(intent.intentId)), { recursive: true, force: true });
+      report.committed.push(intent.intentId);
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
-      await failIntent(open, intent.intent_id, p, error);
-      report.failed.push({ intentId: intent.intent_id, error });
+      await failIntent(open, intent.intentId, p, error);
+      report.failed.push({ intentId: intent.intentId, error });
     }
   }
   return report;

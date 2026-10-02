@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, Outlet, useParams, useSearchParams } from "react-router-dom";
 import { useMutationOperation, useOperation } from "../../api/hooks.ts";
-import { ErrorBanner, MenuButton, MiniSheet, Modal, NetworkProblem, SubNav, timeAgo, type MenuEntry } from "../../components/ui.tsx";
+import { gate, MenuButton, MiniSheet, Modal, OpResult, SubNav, timeAgo, type MenuEntry } from "../../components/ui.tsx";
 import { Icon } from "../../components/Icon.tsx";
 import { useReviewQueue } from "../../lib/attention.ts";
 import { useProjectRoot } from "../../lib/project-context.tsx";
@@ -13,7 +13,7 @@ import { rebaseSource } from "../branches/shared.tsx";
 import { useFamilies } from "../families/useFamilies.tsx";
 import type { AssetVersion, Branch } from "@brainforge/contracts";
 import { isDefinitionMissing } from "./missing.ts";
-import { newestPromoted } from "../production/state.tsx";
+import { activeOf, newestPromoted } from "../production/state.tsx";
 import { ActivateDialog, isRestore } from "../production/ActivateDialog.tsx";
 import { PromotePanel } from "../production/PromotePanel.tsx";
 import "./sheet.css";
@@ -108,8 +108,7 @@ function BranchMenu({ assetId, view }: { assetId: string; view: AssetView }) {
         <div className="stack">
           {current ? <p>Today the current branch is <strong>{current.name}</strong>. Both keep all of their work.</p> : null}
           <div aria-live="polite">
-            {select.error ? <NetworkProblem error={select.error} /> : null}
-            {select.data && !select.data.ok ? <ErrorBanner error={select.data.error} /> : null}
+            <OpResult m={select} />
           </div>
           <div className="row end">
             <button type="button" onClick={close}>Cancel</button>
@@ -157,7 +156,7 @@ function NextCard({ assetId, name, view, definitionProblem }: { assetId: string;
   // The same gate Releases offers: a promoted version newer than the active one.
   const saved = versions.data?.ok ? versions.data.data : undefined;
   const pending = saved ? newestPromoted(saved.versions, saved.active.versionId) : undefined;
-  const active = saved?.versions.find((version) => version.versionId === saved.active.versionId);
+  const active = saved ? activeOf(saved.versions, saved.active) : undefined;
   const next: NextItem | undefined = work ?? (pending ? {
     key: `${assetId}:activate`, rank: RANK.activate, unlocks: 0, stepIds: [], candidateIds: [],
     title: `Version ${pending.versionNumber} is promoted, not active`,
@@ -220,11 +219,10 @@ export function AssetLayout() {
   const inspect = useOperation("asset.inspect", { assetId }, { enabled: view.enabled });
 
   if (!view.enabled) return <div className="page"><h1>Asset</h1><p>No project selected. <Link to={paths.openProject()}>Open a project</Link>.</p></div>;
-  if (inspect.error) return <div className="page"><Crumbs name="Asset" /><NetworkProblem error={inspect.error} /></div>;
-  if (!inspect.data) return <div className="page"><Crumbs name="Asset" /><p className="secondary" role="status">Loading asset…</p></div>;
-  if (!inspect.data.ok) return <div className="page"><Crumbs name="Asset" /><ErrorBanner error={inspect.data.error} /></div>;
+  const g = gate(inspect, "Loading asset…");
+  if ("node" in g) return <div className="page"><Crumbs name="Asset" />{g.node}</div>;
 
-  const { summary } = inspect.data.data;
+  const { summary } = g.data;
   const name = summary.name ?? summary.assetId;
   const definitionProblem = summary.valid ? undefined : isDefinitionMissing(summary.problems) ? "missing" : "invalid";
   const profile = families.profileOf(summary.family);

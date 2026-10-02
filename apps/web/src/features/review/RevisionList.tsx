@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { OperationError, RevisionRequest } from "@brainforge/contracts";
 import { fileUrl, useMutationOperation, useOperation } from "../../api/hooks.ts";
-import { ErrorBanner, formatTime, NetworkProblem, Status, type Tone } from "../../components/ui.tsx";
+import { ErrorBanner, formatTime, gate, Status, type Tone } from "../../components/ui.tsx";
 import { paths } from "../../lib/paths.ts";
 import { rangeLabel } from "./AnnotationPanel.tsx";
 import { whoLabel } from "./room-lib.ts";
@@ -14,7 +14,7 @@ const STATUS: Record<RevisionRequest["status"], { tone: Tone; label: string }> =
   waived: { tone: "idle", label: "Waived" },
 };
 
-export function RevisionStatus({ revision }: { revision: RevisionRequest }) {
+function RevisionStatus({ revision }: { revision: RevisionRequest }) {
   const s = STATUS[revision.status];
   return <Status tone={s.tone}>{s.label}</Status>;
 }
@@ -124,10 +124,9 @@ function RevisionCard({ revision, projectId, showCandidateLink }: { revision: Re
 
 function Bundle({ revisionRequestId, projectId }: { revisionRequestId: string; projectId: string | undefined }) {
   const query = useOperation("revision.inspect", { revisionRequestId });
-  if (query.error) return <NetworkProblem error={query.error} />;
-  if (!query.data) return <p className="secondary" role="status">Loading…</p>;
-  if (!query.data.ok) return <ErrorBanner error={query.data.error} />;
-  const { visuals, annotations } = query.data.data;
+  const g = gate(query, "Loading…");
+  if ("node" in g) return g.node;
+  const { visuals, annotations } = g.data;
   return (
     <div className="bundle">
       <ul className="plain row" aria-label="Bundle images">

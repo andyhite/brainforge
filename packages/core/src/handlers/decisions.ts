@@ -1,6 +1,6 @@
-import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { Database } from "bun:sqlite";
+import { newId } from "../generation/store.ts";
 import { GenerationPlan, type Candidate, type Decision, type Escalation, type OperationContext, type OutputApproval, type Visual } from "@brainforge/contracts";
 import { resolveIn, sha256 } from "@brainforge/storage";
 import { discoverAuthored, type AuthoredSet } from "../authored.ts";
@@ -15,11 +15,9 @@ import { confirmedPreferences, type ConfirmedPreference } from "../preferences/s
 import { unaddressedRequiredNotes } from "../review/step.ts";
 import { stepRequirementsHash, type FingerprintStage } from "../review/requirements.ts";
 import { OperationFailure, type HandlerMap } from "../runtime.ts";
-import { requireOpen } from "./common.ts";
 
 type ReviewKind = "awaiting-review" | "escalated" | "needs-revision" | "overridden" | "decided";
 
-const newId = (prefix: string): string => `${prefix}_${randomBytes(6).toString("hex")}`;
 /** Confirmed preferences that are part of this asset's effective settings (project ones, and those of styles in effect). */
 function preferencesInForce(open: OpenProject, set: AuthoredSet, assetId: string): ConfirmedPreference[] {
   const confirmed = confirmedPreferences(open.db);
@@ -150,8 +148,7 @@ function requireReasons(decision: "approve" | "reject", reasons: string[]): stri
 }
 
 export const decisionHandlers: HandlerMap = {
-  "review.material": async ({ input, project, context }) => {
-    const open = requireOpen(project);
+  "review.material": async ({ input, project: open, context }) => {
     const cand = inBranchContext(open, candidateRow(open.db, input.candidateId), input.branchId);
     assertReviewable(cand);
     const outputs = input.outputIds ? pickOutputs(open.db, cand, input.outputIds) : outputRows(open.db, cand.candidate_id);
@@ -205,8 +202,7 @@ export const decisionHandlers: HandlerMap = {
     };
   },
 
-  "review.decide": async ({ input, project, context }) => {
-    const open = requireOpen(project);
+  "review.decide": async ({ input, project: open, context }) => {
     const cand = inBranchContext(open, candidateRow(open.db, input.candidateId), input.branchId);
     assertReviewable(cand);
     const outputs = pickOutputs(open.db, cand, input.outputIds);
@@ -224,8 +220,7 @@ export const decisionHandlers: HandlerMap = {
     return { data: { decisions, approvals: await approvalsOf(open, cand, outputs) }, revision, warnings };
   },
 
-  "review.override": async ({ input, project, context }) => {
-    const open = requireOpen(project);
+  "review.override": async ({ input, project: open, context }) => {
     const cand = inBranchContext(open, candidateRow(open.db, input.candidateId), input.branchId);
     assertReviewable(cand);
     const outputs = pickOutputs(open.db, cand, input.outputIds);
@@ -237,8 +232,7 @@ export const decisionHandlers: HandlerMap = {
     return { data: { decisions, approvals: await approvalsOf(open, cand, outputs) }, revision, warnings };
   },
 
-  "review.escalate": async ({ input, project, context }) => {
-    const open = requireOpen(project);
+  "review.escalate": async ({ input, project: open, context }) => {
     const cand = inBranchContext(open, candidateRow(open.db, input.candidateId), input.branchId);
     assertReviewable(cand);
     const outputs = pickOutputs(open.db, cand, input.outputIds);
@@ -262,8 +256,7 @@ export const decisionHandlers: HandlerMap = {
     return { data: { escalation: toEscalation(row) }, revision, nextActions: [{ label: "Tell the user it waits for their decision", operation: "review.list", input: { filter: "escalated" } }] };
   },
 
-  "review.list": async ({ input, project }) => {
-    const open = requireOpen(project);
+  "review.list": async ({ input, project: open }) => {
     const { db } = open;
     const where = ["step_id != 'concept'"];
     const args: string[] = [];
@@ -321,8 +314,7 @@ export const decisionHandlers: HandlerMap = {
     return { data: { items: matched.slice(input.offset, input.offset + input.limit), total: matched.length } };
   },
 
-  "review.history": async ({ input, project }) => {
-    const { db } = requireOpen(project);
+  "review.history": async ({ input, project: { db } }) => {
     candidateRow(db, input.candidateId);
     return { data: { decisions: decisionsFor(db, input.candidateId), escalations: escalationsFor(db, input.candidateId) } };
   },

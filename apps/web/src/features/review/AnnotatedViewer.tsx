@@ -1,20 +1,13 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import type { Annotation, Geometry } from "@brainforge/contracts";
-import type { Backdrop, Tool, Zoom } from "../animation/stage.ts";
+import { clamp01, type Backdrop, type Tool, type Zoom } from "../animation/stage.ts";
+import { FIT, usePanZoom, ARROWS, type View } from "../animation/use-pan-zoom.ts";
+import { NoteLayer, useNoteDraw } from "./NoteLayer.tsx";
 
 const MIN_SCALE = 0.05;
-const MAX_SCALE = 32;
 /** Room kept free around the canvas for the toolbar above and the cell label. */
 const PAD_X = 48;
 const PAD_Y = 128;
-const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
-
-interface View {
-  fit: boolean;
-  scale: number;
-  x: number;
-  y: number;
-}
 
 export interface AnnotatedViewerProps {
   src: string;
@@ -30,9 +23,8 @@ export interface AnnotatedViewerProps {
   /** Enter pressed on the viewer while a draft exists: move to the note form. */
   onDraftCommit: () => void;
   background: Backdrop;
+  /** The room's zoom control: the starting view. The parent remounts the viewer to apply it again. */
   zoom: Zoom;
-  /** The wheel or keys changed the zoom to something the room's zoom control does not offer. */
-  onZoomChange: (zoom: Zoom) => void;
   tool: Tool;
   /** Laid over the top edge of the stage. */
   toolbar?: ReactNode;
@@ -42,12 +34,16 @@ export interface AnnotatedViewerProps {
  * Zoom/pan image stage with a normalized [0,1] annotation overlay. The overlay lives inside the transformed
  * image box, so it stays aligned at every zoom and pan; markers are counter-scaled to keep a constant size.
  */
-export function AnnotatedViewer({ src, alt, width, height, annotations, selectedId, onSelect, draft, onDraftChange, onDraftCommit, background, zoom, onZoomChange, tool, toolbar }: AnnotatedViewerProps) {
-  const stageRef = useRef<HTMLDivElement>(null);
+export function AnnotatedViewer({ src, alt, width, height, annotations, selectedId, onSelect, draft, onDraftChange, onDraftCommit, background, zoom, tool, toolbar }: AnnotatedViewerProps) {
   const [size, setSize] = useState({ w: 0, h: 0 });
-  const [view, setView] = useState<View>({ fit: zoom === "fit" || zoom === "custom", scale: typeof zoom === "number" ? zoom : 1, x: 0, y: 0 });
+  const [view, setView] = useState<View>(zoom === "fit" ? FIT : { fit: false, zoom, x: 0, y: 0 });
   const [failed, setFailed] = useState(false);
-  const drag = useRef<{ kind: "pan"; px: number; py: number; vx: number; vy: number } | { kind: "rect"; ox: number; oy: number } | undefined>(undefined);
+
+  const fitScale = size.w > 0 && size.h > 0 ? Math.max(MIN_SCALE, Math.min((size.w - PAD_X) / width, (size.h - PAD_Y) / height)) : 1;
+  const pz = usePanZoom(view, setView, fitScale);
+  const stageRef = pz.ref;
+  const { zoom: scale, x, y } = pz;
+  const note = useNoteDraw({ tool, draft, size: { width, height }, onDraftChange, onDraftCommit });
 
   useLayoutEffect(() => {
     const el = stageRef.current;
@@ -57,50 +53,11 @@ export function AnnotatedViewer({ src, alt, width, height, annotations, selected
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [stageRef]);
 
   useEffect(() => {
     setFailed(false);
   }, [src]);
-
-  // The room's zoom control wins whenever it changes.
-  useEffect(() => {
-    if (zoom === "fit") setView({ fit: true, scale: 1, x: 0, y: 0 });
-    else if (zoom !== "custom") setView({ fit: false, scale: zoom, x: 0, y: 0 });
-  }, [zoom]);
-
-  const fitScale = size.w > 0 && size.h > 0 ? Math.max(MIN_SCALE, Math.min((size.w - PAD_X) / width, (size.h - PAD_Y) / height)) : 1;
-  const scale = view.fit ? fitScale : view.scale;
-  const x = view.fit ? 0 : view.x;
-  const y = view.fit ? 0 : view.y;
-
-  // Report what the view really is, so the room's zoom control never claims 1× while the wheel has moved on.
-  useEffect(() => {
-    onZoomChange(view.fit ? "fit" : view.scale === 1 ? 1 : view.scale === 2 ? 2 : "custom");
-  }, [view.fit, view.scale, onZoomChange]);
-
-  const zoomAbout = useCallback((factor: number, cx: number, cy: number) => {
-    setView((v) => {
-      const s = v.fit ? fitScale : v.scale;
-      const px = v.fit ? 0 : v.x;
-      const py = v.fit ? 0 : v.y;
-      const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, s * factor));
-      return { fit: false, scale: next, x: cx - ((cx - px) / s) * next, y: cy - ((cy - py) / s) * next };
-    });
-  }, [fitScale]);
-
-  // Non-passive wheel listener: React's onWheel cannot preventDefault page scroll.
-  useEffect(() => {
-    const el = stageRef.current;
-    if (!el) return;
-    const onWheel = (event: WheelEvent) => {
-      event.preventDefault();
-      const rect = el.getBoundingClientRect();
-      zoomAbout(Math.exp(-event.deltaY * 0.0015), event.clientX - rect.left - rect.width / 2, event.clientY - rect.top - rect.height / 2);
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, [zoomAbout]);
 
   const toNormalized = (event: PointerEvent): { x: number; y: number } => {
     const rect = stageRef.current?.getBoundingClientRect();
@@ -114,36 +71,17 @@ export function AnnotatedViewer({ src, alt, width, height, annotations, selected
     if (event.button !== 0 && event.button !== 1) return;
     event.currentTarget.focus();
     event.currentTarget.setPointerCapture(event.pointerId);
-    if (tool === "none" || event.button === 1) {
-      drag.current = { kind: "pan", px: event.clientX, py: event.clientY, vx: x, vy: y };
-    } else if (tool === "pin") {
-      const p = toNormalized(event);
-      onDraftChange({ kind: "pin", x: p.x, y: p.y });
-      onDraftCommit();
-    } else {
-      const p = toNormalized(event);
-      drag.current = { kind: "rect", ox: p.x, oy: p.y };
-      onDraftChange({ kind: "rect", x: p.x, y: p.y, width: 0, height: 0 });
-    }
+    if (tool === "none" || event.button === 1) pz.startPan(event);
+    else note.start(toNormalized(event));
   };
 
   const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    const d = drag.current;
-    if (!d) return;
-    if (d.kind === "pan") {
-      setView({ fit: false, scale, x: d.vx + (event.clientX - d.px), y: d.vy + (event.clientY - d.py) });
-    } else {
-      const p = toNormalized(event);
-      onDraftChange({ kind: "rect", x: Math.min(d.ox, p.x), y: Math.min(d.oy, p.y), width: Math.abs(p.x - d.ox), height: Math.abs(p.y - d.oy) });
-    }
+    if (!pz.movePan(event)) note.move(toNormalized(event));
   };
 
   const onPointerUp = () => {
-    const d = drag.current;
-    drag.current = undefined;
-    if (d?.kind !== "rect") return;
-    if (draft?.kind === "rect" && (draft.width * width < 3 || draft.height * height < 3)) onDraftChange(undefined);
-    else onDraftCommit();
+    pz.endPan();
+    note.end();
   };
 
   const nudge = (dx: number, dy: number, big: boolean): boolean => {
@@ -156,12 +94,10 @@ export function AnnotatedViewer({ src, alt, width, height, annotations, selected
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return;
-    const arrows: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
-    const arrow = arrows[event.key];
-    if (arrow) {
-      event.preventDefault();
-      if (!nudge(arrow[0], arrow[1], event.shiftKey)) setView({ fit: false, scale, x: x - arrow[0] * 40, y: y - arrow[1] * 40 });
-    } else if (event.key === "Enter") {
+    const arrow = ARROWS[event.key];
+    if (arrow && nudge(arrow[0], arrow[1], event.shiftKey)) event.preventDefault();
+    else if (pz.onKeyDown(event)) return;
+    else if (event.key === "Enter") {
       event.preventDefault();
       if (draft) onDraftCommit();
       else onDraftChange({ kind: "pin", x: 0.5, y: 0.5 });
@@ -170,14 +106,8 @@ export function AnnotatedViewer({ src, alt, width, height, annotations, selected
         event.preventDefault();
         onDraftChange(undefined);
       }
-    } else if (event.key === "+" || event.key === "=") zoomAbout(1.25, 0, 0);
-    else if (event.key === "-") zoomAbout(0.8, 0, 0);
-    else if (event.key === "0") setView({ fit: true, scale: 1, x: 0, y: 0 });
-    else if (event.key === "1") setView({ fit: false, scale: 1, x: 0, y: 0 });
+    } else if (event.key === "1") setView({ fit: false, zoom: 1, x: 0, y: 0 });
   };
-
-  const stopMarker = (event: PointerEvent) => event.stopPropagation();
-  const counter = `translate(-50%, -50%) scale(${1 / scale})`;
 
   return (
     <div className="room-stage" data-bg={background}>
@@ -204,33 +134,9 @@ export function AnnotatedViewer({ src, alt, width, height, annotations, selected
           >
             <span className="cell-size" style={{ transform: `translateY(-100%) scale(${1 / scale})` }}>{width} × {height}</span>
             <img src={src} alt={alt} width={width} height={height} draggable={false} style={{ imageRendering: scale > 1 ? "pixelated" : "auto" }} onError={() => setFailed(true)} />
-            <svg className="annot-svg" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
+            <NoteLayer annotations={annotations} selectedId={selectedId} onSelect={onSelect} draft={draft} svgClass="annot-svg" scale={scale}>
               <rect x={0} y={0} width={1} height={1} className="cell-guide-rect" vectorEffect="non-scaling-stroke" />
-              {annotations.map((a, i) => a.geometry.kind === "rect" ? (
-                <rect key={a.annotationId} x={a.geometry.x} y={a.geometry.y} width={a.geometry.width} height={a.geometry.height} className={`annot-rect${a.annotationId === selectedId ? " selected" : ""}${a.requiresRevision ? " required" : ""}`} vectorEffect="non-scaling-stroke" data-n={i + 1} />
-              ) : null)}
-              {draft?.kind === "rect" ? <rect x={draft.x} y={draft.y} width={draft.width} height={draft.height} className="annot-rect draft" vectorEffect="non-scaling-stroke" /> : null}
-            </svg>
-            {annotations.map((a, i) => {
-              if (a.geometry.kind === "whole") return null;
-              const g = a.geometry;
-              return (
-                <button
-                  key={a.annotationId}
-                  type="button"
-                  className={`annot-marker${a.annotationId === selectedId ? " selected" : ""}${a.requiresRevision ? " required" : ""}`}
-                  style={{ left: `${g.x * 100}%`, top: `${g.y * 100}%`, transform: g.kind === "pin" ? counter : `translate(0, -100%) scale(${1 / scale})`, transformOrigin: g.kind === "pin" ? "center" : "left bottom" }}
-                  onPointerDown={stopMarker}
-                  onClick={() => onSelect(a.annotationId)}
-                  aria-label={`Note ${i + 1}: ${a.text}`}
-                >
-                  {i + 1}
-                </button>
-              );
-            })}
-            {draft && draft.kind === "pin" ? (
-              <span className="annot-marker draft" style={{ left: `${draft.x * 100}%`, top: `${draft.y * 100}%`, transform: counter }} aria-hidden="true">+</span>
-            ) : null}
+            </NoteLayer>
           </div>
         )}
       </div>

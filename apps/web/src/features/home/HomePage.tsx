@@ -1,15 +1,15 @@
 import "./home.css";
 import { useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useQueries, useQueryClient } from "@tanstack/react-query";
+import { useQueries } from "@tanstack/react-query";
 import type { Job, NextAction, OperationData } from "@brainforge/contracts";
-import { callOperation, runRecoveryOperation } from "../../api/client.ts";
+import { callOperation } from "../../api/client.ts";
 import { useOperation } from "../../api/hooks.ts";
 import { Icon, type IconName } from "../../components/Icon.tsx";
 import { OutputArt } from "../../components/OutputArt.tsx";
-import { Art, Banner, EmptyState, ErrorBanner, MiniSheet, NetworkProblem, NextActions, Status, timeAgo, type CellState } from "../../components/ui.tsx";
+import { Art, Banner, EmptyState, ErrorBanner, MiniSheet, NetworkProblem, NextActions, Status, timeAgo, useRunAction, type CellState } from "../../components/ui.tsx";
 import { useReviewQueue, useJobAttention } from "../../lib/attention.ts";
-import { assetNext, RANK, type NextItem } from "../../lib/next.ts";
+import { assetNext, plural, RANK, type NextItem } from "../../lib/next.ts";
 import { paths } from "../../lib/paths.ts";
 import { useProjectRoot } from "../../lib/project-context.tsx";
 import { specRoute, useProject, type InspectData } from "../../lib/use-project.ts";
@@ -22,27 +22,16 @@ type RequiredAsset = Report["requiredAssets"][number];
 type Filter = "all" | "needs" | "progress" | "game";
 
 /** One thing the user could do next, from any source. */
-interface HomeItem {
-  key: string;
-  rank: number;
-  unlocks: number;
-  title: string;
-  reason: string;
-  action: string;
-  to: string;
-  candidateIds: string[];
+interface HomeItem extends Omit<NextItem, "stepIds"> {
   /** Show the newest concepts of this asset as thumbnails (lock a concept). */
   conceptsOf?: string;
   /** Show this asset's concept as the thumbnail. */
   artOf?: string;
-  tone?: "warn" | "bad" | undefined;
   icon?: IconName;
-  waiting?: boolean | undefined;
   /** Failed downloads the server lets us collect again; the button runs exactly these actions. */
   retry?: Job[];
 }
 
-const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 const SHOWN = 5;
 
 const STAGE_TITLE: Record<NonNullable<Job["error"]>["stage"], string> = {
@@ -82,31 +71,11 @@ function jobItems(jobs: Job[], names: Map<string, string>): HomeItem[] {
 }
 
 function RetryDownloads({ jobs, primary }: { jobs: Job[]; primary: boolean }) {
-  const { root } = useProjectRoot();
-  const queryClient = useQueryClient();
-  const [done, setDone] = useState<number | undefined>(undefined);
-  const [failure, setFailure] = useState<string | undefined>(undefined);
-  const run = async () => {
-    setFailure(undefined);
-    try {
-      for (const [index, job] of jobs.entries()) {
-        setDone(index);
-        const action = collectAction(job);
-        if (!action?.operation) continue;
-        const result = await runRecoveryOperation(action.operation, root, action.input);
-        if (!result.ok) { setFailure(result.error.message); return; }
-      }
-    } catch (error) {
-      setFailure(error instanceof Error ? error.message : "Request failed");
-    } finally {
-      setDone(undefined);
-      void queryClient.invalidateQueries({ queryKey: ["op"] });
-    }
-  };
+  const { busy, failure, run } = useRunAction();
   return (
     <>
-      <button type="button" className={primary ? "primary lg" : ""} onClick={() => void run()} disabled={done !== undefined}>
-        {done === undefined ? "Retry downloads" : `Retrying ${done + 1} of ${jobs.length}…`}
+      <button type="button" className={primary ? "primary lg" : ""} onClick={() => void run("retry", jobs.flatMap((job) => collectAction(job) ?? []))} disabled={busy !== undefined}>
+        {busy === undefined ? "Retry downloads" : `Retrying ${busy.step + 1} of ${jobs.length}…`}
       </button>
       {failure ? <span role="alert" className="status bad"><Icon name="bad" /><span>{failure}</span></span> : null}
     </>
@@ -160,8 +129,7 @@ function fromNext(next: NextItem, optional: boolean, assetId: string): HomeItem 
   const kind = next.key.split(":")[1];
   // ponytail: optional assets rank 25 lower (after redo, before generate); the game doesn't wait on them. Upgrade: weight by unlocks.
   return {
-    key: next.key, rank: optional && next.rank >= RANK.lock && next.rank < RANK.wait ? next.rank + 25 : next.rank, unlocks: next.unlocks,
-    title: next.title, reason: next.reason, action: next.action, to: next.to, candidateIds: next.candidateIds, tone: next.tone, waiting: next.waiting,
+    ...next, rank: optional && next.rank >= RANK.lock && next.rank < RANK.wait ? next.rank + 25 : next.rank,
     // Failures and definition problems keep their glyph; everything else shows whose work it is.
     ...(kind === "lock" ? { conceptsOf: assetId } : kind === "definition" || next.tone === "bad" ? {} : { artOf: assetId }),
   };

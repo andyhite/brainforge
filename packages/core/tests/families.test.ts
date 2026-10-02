@@ -45,7 +45,10 @@ describe("family catalog", () => {
 
   test("every profile names workflows that exist on disk", async () => {
     const ids = new Set<string>();
-    for (const p of PROFILES) for (const id of Object.values(p.workflows)) if (id) ids.add(id);
+    for (const p of PROFILES) for (const stage of ["still", "variation", "motion"] as const) for (const alpha of ["transparent", "opaque"] as const) {
+      const id = workflowFor(p.family, stage, alpha);
+      if (id) ids.add(id);
+    }
     for (const id of ids) expect(await Bun.file(new URL(`../../comfy/workflows/${id}/1.yaml`, import.meta.url)).exists()).toBe(true);
   });
 });

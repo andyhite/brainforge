@@ -10,7 +10,7 @@
 
 1. Finish every required deliverable: a selected PROCESSED output (animations), an approval whose requirements still match, no unresolved required notes.
 2. `promotion.plan {assetId, branchId?}` → `plan` with `planId`, `planHash`, one row per deliverable, `blockers`, `capability`. Read-only toward versions; always show it to the user.
-3. `promotion.start {planId, planHash, requestId, note?}`. Use a fresh unique `requestId` per promotion; on a lost response retry with the SAME `requestId` and input: you get the same version (`created:false`), never a second one. A stale plan is refused: re-plan.
+3. `promotion.start {planId, planHash, note?}`. Use a fresh unique envelope `requestId` per promotion; on a lost response repeat the exact request (same `requestId` and input): you get the original result, never a second version. Reusing a `requestId` that already succeeded with a different input is `IDEMPOTENCY_CONFLICT`. A stale plan is refused: re-plan.
 4. A crash or staging failure leaves no visible half-version and the active pointer untouched.
 
 ### Row states and blockers (any one blocks the whole asset bundle)

@@ -3,7 +3,7 @@ import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import type { OperationData, OperationError } from "@brainforge/contracts";
 import { useMutationOperation, useOperation } from "../../api/hooks.ts";
-import { ErrorBanner, formatTime, NetworkProblem, Status, timeAgo } from "../../components/ui.tsx";
+import { ErrorBanner, formatTime, NetworkProblem, OpResult, Status, timeAgo } from "../../components/ui.tsx";
 import { useProjectRoot } from "../../lib/project-context.tsx";
 import { paths } from "../../lib/paths.ts";
 
@@ -92,8 +92,7 @@ export function OpenProjectPage() {
 
       <section className="section" aria-labelledby="recent-title">
         <div className="section-head"><h2 id="recent-title">Recent projects</h2></div>
-        {recent.error ? <NetworkProblem error={recent.error} /> : null}
-        {recent.data && !recent.data.ok ? <ErrorBanner error={recent.data.error} /> : null}
+        <OpResult m={recent} />
         {!recent.data && !recent.error ? <p className="secondary" role="status">Loading recent projects…</p> : null}
         {recent.data?.ok && recent.data.data.projects.length === 0 ? <p className="secondary">No projects have been opened on this machine yet.</p> : null}
         {recent.data?.ok && recent.data.data.projects.length > 0 ? (

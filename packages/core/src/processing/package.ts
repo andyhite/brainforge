@@ -1,4 +1,4 @@
-import { animationDocument, atlasLayout, buildAtlas, buildContactSheet, serializeAnimation } from "@brainforge/media";
+import { animationDocument, buildAtlas, buildContactSheet, layoutSprites, serializeAnimation } from "@brainforge/media";
 import { animationFileId, atlasFileId, contactFileId, frameFileName, type DerivedFileInput, type FrameInput } from "../outputs/frames.ts";
 
 export interface PackageSpec {
@@ -14,9 +14,9 @@ export interface PackageSpec {
   frames: readonly { png: Uint8Array; sourceFrame: number; durationMs: number }[];
 }
 
-export const ANIMATION_FILE = "animation.json";
-export const CONTACT_FILE = "contact.png";
-export const atlasFileName = (page: number): string => `atlas-${page}.png`;
+const ANIMATION_FILE = "animation.json";
+const CONTACT_FILE = "contact.png";
+const atlasFileName = (page: number): string => `atlas-${page}.png`;
 
 /**
  * Everything derived from a finished frame sequence: atlas pages when the recipe packs, the `animation.json` that
@@ -50,4 +50,4 @@ export async function packageClip(spec: PackageSpec): Promise<{ frames: FrameInp
 
 /** Number of atlas pages a clip will need, without building any pixels (throws `invalid_input` when a frame cannot fit). */
 export const atlasPageCount = (canvas: { width: number; height: number }, frameCount: number, atlas: PackageSpec["atlas"]): number =>
-  atlasLayout(canvas.width, canvas.height, frameCount, atlas).pages;
+  layoutSprites(Array.from({ length: frameCount }, (_, i) => ({ id: String(i), ...canvas })), atlas).pages.length;

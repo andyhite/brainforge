@@ -6,6 +6,11 @@ import { useProjectRoot } from "../../lib/project-context.tsx";
 
 export type VersionList = OperationData<"version.list">;
 
+/** The version `active` points at, if it is in the list. */
+export function activeOf(versions: readonly AssetVersion[], active: { versionId?: string | null }): AssetVersion | undefined {
+  return versions.find((version) => version.versionId === active.versionId);
+}
+
 /** version.list for many assets at once, on the same cache keys as `useOperation("version.list")`. undefined = loading, null = unavailable. */
 export function useVersionLists(assetIds: readonly string[]): Record<string, VersionList | null | undefined> {
   const { root } = useProjectRoot();
@@ -63,7 +68,7 @@ export function exportNeed(assets: ReadonlyArray<{ assetId: string; name?: strin
     const list = lists[asset.assetId];
     if (!list) continue;
     const name = asset.name ?? asset.assetId;
-    const active = list.versions.find((version) => version.versionId === list.active.versionId);
+    const active = activeOf(list.versions, list.active);
     const exportedId = exported.exportedVersionId(asset.assetId);
     const inGame = list.versions.find((version) => version.versionId === exportedId);
     if (active && active.versionId !== exportedId) {

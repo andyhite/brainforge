@@ -1,14 +1,13 @@
-import { Banner, ErrorBanner, formatTime, NetworkProblem } from "../../components/ui.tsx";
+import { formatTime, gate } from "../../components/ui.tsx";
 import { useOperation } from "../../api/hooks.ts";
 import { whoLabel } from "./room-lib.ts";
 
 /** Every decision, override and escalation on a candidate, newest first, with who made it. */
 export function DecisionHistory({ candidateId }: { candidateId: string }) {
   const history = useOperation("review.history", { candidateId });
-  if (history.error) return <NetworkProblem error={history.error} />;
-  if (!history.data) return <p className="secondary" role="status">Loading history…</p>;
-  if (!history.data.ok) return <ErrorBanner error={history.data.error} />;
-  const { decisions, escalations } = history.data.data;
+  const g = gate(history, "Loading history…");
+  if ("node" in g) return g.node;
+  const { decisions, escalations } = g.data;
   const events = [
     ...decisions.map((d) => ({ at: d.createdAt, key: d.decisionId, kind: "decision" as const, d })),
     ...escalations.map((e) => ({ at: e.escalatedAt, key: e.escalationId, kind: "escalation" as const, e })),
@@ -34,8 +33,4 @@ export function DecisionHistory({ candidateId }: { candidateId: string }) {
       ))}
     </ol>
   );
-}
-
-export function EscalationBanner({ reason }: { reason: string }) {
-  return <Banner tone="warn" title="An agent couldn’t decide and handed this to you">{reason}</Banner>;
 }

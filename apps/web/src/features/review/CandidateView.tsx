@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { Annotation, Branch, Candidate, Geometry, Job, OperationData, StepState } from "@brainforge/contracts";
 import { fileUrl } from "../../api/hooks.ts";
@@ -7,7 +7,7 @@ import { Icon } from "../../components/Icon.tsx";
 import { kindLabel } from "../../lib/steps.ts";
 import { ClipPlayer, type FrameInfoEvent } from "../animation/ClipPlayer.tsx";
 import { CompareClips } from "../animation/CompareClips.tsx";
-import type { Tool, Zoom } from "../animation/stage.ts";
+import { useHotkeys, type Tool, type Zoom } from "../animation/stage.ts";
 import { isSingleImage, outputLabel } from "../animation/timing.ts";
 import { CompareView } from "../generation/CompareView.tsx";
 import { type Backdrop, BackdropPicker, useBackdrop } from "../generation/media.tsx";
@@ -43,7 +43,7 @@ export interface RoomData {
   canGenerate: boolean;
   hrefFor: (candidate: Candidate) => string;
   comparing: boolean;
-  onStopComparing: () => void;
+  onComparing: (on: boolean) => void;
   compareIds: string[];
   onToggleCompare: (candidateId: string) => void;
   notice: string | undefined;
@@ -120,6 +120,8 @@ export function CandidateView({ room, inspect }: { room: RoomData; inspect: Insp
   const [params, setParams] = useSearchParams();
   const [backdrop, setBackdrop] = useBackdrop();
   const [zoom, setZoom] = useState<Zoom>("fit");
+  // Every zoom-control click counts, even on the pressed preset: it remounts the viewer, which resets wheel/drag zoom.
+  const [zoomClicks, setZoomClicks] = useState(0);
   const [tool, setTool] = useState<Tool>("none");
   const [tab, setTab] = useState<Tab>("decision");
   const [selectedId, setSelectedId] = useState<string | undefined>();
@@ -178,7 +180,7 @@ export function CandidateView({ room, inspect }: { room: RoomData; inspect: Insp
   const toolbar = (
     <StageToolbar
       roles={roles} role={role} onRole={(r) => { const next = outputForRole(candidate, r); if (next) setOutputId(next.outputId); }}
-      backdrop={backdrop} onBackdrop={setBackdrop} zoom={zoom} onZoom={setZoom}
+      backdrop={backdrop} onBackdrop={setBackdrop} zoom={zoom} onZoom={(next) => { setZoom(next); setZoomClicks((n) => n + 1); }}
       tool={tool} onTool={setTool} onWhole={() => { setDraft({ kind: "whole" }); commitDraft(); }}
       canNote={!room.comparing && output !== undefined}
     />
@@ -187,7 +189,7 @@ export function CandidateView({ room, inspect }: { room: RoomData; inspect: Insp
   let stage: ReactNode;
   if (!output) stage = <div className="room-stage plain"><Banner tone="warn" title="No output is registered for this candidate" /></div>;
   else if (frames && compareClip) {
-    stage = <CompareClips outputs={candidate.outputs} outputId={output.outputId} compareId={compareClip} onCompare={(id) => { setCompareId(id); if (!id) room.onStopComparing(); }} background={backdrop} zoom={zoom} toolbar={toolbar} />;
+    stage = <CompareClips outputs={candidate.outputs} outputId={output.outputId} compareId={compareClip} onCompare={(id) => { setCompareId(id); room.onComparing(id !== undefined); }} background={backdrop} zoom={zoom} toolbar={toolbar} />;
   } else if (frames) {
     stage = (
       <ClipPlayer
@@ -217,7 +219,7 @@ export function CandidateView({ room, inspect }: { room: RoomData; inspect: Insp
   } else if (room.projectId) {
     stage = (
       <AnnotatedViewer
-        key={output.outputId}
+        key={`${output.outputId}-${zoomClicks}`}
         src={fileUrl(room.projectId, output.fileId)}
         alt={`${candidate.label}, ${outputLabel(output)}`}
         width={output.width}
@@ -230,7 +232,6 @@ export function CandidateView({ room, inspect }: { room: RoomData; inspect: Insp
         onDraftCommit={commitDraft}
         background={backdrop}
         zoom={zoom}
-        onZoomChange={setZoom}
         tool={tool}
         toolbar={toolbar}
       />
@@ -301,7 +302,7 @@ export function CandidateView({ room, inspect }: { room: RoomData; inspect: Insp
             {tab === "details" ? (
               <DetailsTab
                 candidate={candidate} run={run} lineage={lineage} output={output} outputs={candidate.outputs} compareId={compareClip}
-                onSelectOutput={setOutputId} onCompare={(id) => { setCompareId(id); if (!id) room.onStopComparing(); }} familyPreviews={stillFamily}
+                onSelectOutput={setOutputId} onCompare={(id) => { setCompareId(id); room.onComparing(id !== undefined); }} familyPreviews={stillFamily}
               />
             ) : tab === "processing" ? (
               <ProcessingTab candidate={candidate} output={output} projectId={projectId} sheet={sheet} />
@@ -330,20 +331,8 @@ export function neighbour(list: Candidate[], currentId: string | undefined, delt
 
 /** Keys that move between candidates, never while typing. */
 export function useCandidateKeys(onNext: () => void, onPrevious: () => void, enabled: boolean) {
-  const next = useRef(onNext);
-  const previous = useRef(onPrevious);
-  next.current = onNext;
-  previous.current = onPrevious;
-  useEffect(() => {
-    if (!enabled) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
-      const target = event.target;
-      if (target instanceof HTMLElement && target.closest("input, textarea, select, [contenteditable='true'], [role='dialog'], [role='menu']")) return;
-      if (event.key === "j" || event.key === "J") next.current();
-      else if (event.key === "k" || event.key === "K") previous.current();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [enabled]);
+  useHotkeys((event) => {
+    if (event.key === "j" || event.key === "J") onNext();
+    else if (event.key === "k" || event.key === "K") onPrevious();
+  }, enabled);
 }

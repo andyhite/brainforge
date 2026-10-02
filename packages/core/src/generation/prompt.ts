@@ -25,7 +25,7 @@ const POSITIONS: Record<number, string[]> = { 2: ["on the left", "on the right"]
  * A positive layout instruction for a reference sheet, derived from its regions (left to right when they share a row).
  * A region's authored `view` phrase is used as written; otherwise its id names the view.
  */
-export function sheetLayout(family: string, regions: readonly { id: string; x: number; y: number; view?: string }[]): string {
+function sheetLayout(family: string, regions: readonly { id: string; x: number; y: number; view?: string }[]): string {
   const ordered = [...regions].sort((a, b) => a.x - b.x || a.y - b.y);
   const names = ordered.map((r) => r.view?.trim() || `${r.id.replace(/-/g, " ")} view`);
   const row = ordered.every((r) => r.y === ordered[0]?.y);

@@ -132,7 +132,7 @@ const promotionPlan = async (w: World, assetId: string, extra: Record<string, un
 const promote = async (w: World, assetId: string, requestId: string, extra: Record<string, unknown> = {}): Promise<string> => {
   const p = await promotionPlan(w, assetId, extra);
   if (p.blockers.length > 0) throw new Error(`blocked: ${p.blockers.map((b) => b.code).join(",")}`);
-  return expectOk(await w.call("promotion.start", { planId: p.planId, planHash: p.planHash, requestId })).version.versionId;
+  return expectOk(await w.call("promotion.start", { planId: p.planId, planHash: p.planHash }, undefined, requestId)).version.versionId;
 };
 const activate = async (w: World, assetId: string, versionId: string): Promise<void> => {
   const { active } = expectOk(await w.call("version.list", { assetId }));
@@ -245,7 +245,7 @@ describe("collection completeness", () => {
     expect(codes(plan)).toContain("COLLECTION_INCOMPLETE");
     expect(plan.blockers.find((b) => b.code === "COLLECTION_INCOMPLETE")?.message).toContain("ground");
     expect(plan.blockers.find((b) => b.code === "COLLECTION_INCOMPLETE")?.message).not.toContain("sky");
-    const refused = await w.call("promotion.start", { planId: plan.planId, planHash: plan.planHash, requestId: "promote-env-0001" });
+    const refused = await w.call("promotion.start", { planId: plan.planId, planHash: plan.planHash }, undefined, "promote-env-0001");
     expect(refused.ok).toBe(false);
   });
 
@@ -268,7 +268,7 @@ describe("aggregate promotion", () => {
     ]);
     expect(plan.dependencyVersions).toEqual([{ assetId: "ground", versionId: ground }, { assetId: "sky", versionId: sky }]);
 
-    const version = expectOk(await w.call("promotion.start", { planId: plan.planId, planHash: plan.planHash, requestId: "promote-env-0001" })).version;
+    const version = expectOk(await w.call("promotion.start", { planId: plan.planId, planHash: plan.planHash }, undefined, "promote-env-0001")).version;
     const { manifest } = expectOk(await w.call("version.inspect", { versionId: version.versionId }));
     expect(manifest.dependencyVersions).toEqual(plan.dependencyVersions);
     expect(manifest.members?.map((m) => [m.assetId, m.versionId, m.source, m.family])).toEqual([["sky", sky, "active", "background"], ["ground", ground, "active", "tile"]]);
@@ -300,7 +300,7 @@ describe("aggregate promotion", () => {
     expect(explicit.dependencyVersions.map((d) => d.assetId)).toEqual(["fog", "ground", "sky"]);
 
     // start re-evaluates with exactly the pins the plan showed
-    const version = expectOk(await w.call("promotion.start", { planId: explicit.planId, planHash: explicit.planHash, requestId: "promote-env-0002" })).version;
+    const version = expectOk(await w.call("promotion.start", { planId: explicit.planId, planHash: explicit.planHash }, undefined, "promote-env-0002")).version;
     const { manifest } = expectOk(await w.call("version.inspect", { versionId: version.versionId }));
     expect(manifest.members?.map((m) => [m.assetId, m.versionId, m.source])).toEqual([["sky", sky1, "explicit"], ["ground", expect.any(String), "active"], ["fog", fog, "explicit"]]);
 
@@ -320,7 +320,7 @@ describe("aggregate promotion", () => {
     expect(codes(plan).filter((c) => c === "DIRECTION_MISMATCH")).toHaveLength(2);
     expect(plan.members.filter((m) => !m.directionMatches).map((m) => m.assetId)).toEqual(["sky", "ground"]);
     expect(plan.blockers.find((b) => b.code === "DIRECTION_MISMATCH")?.message).toContain(`${w.envBranch}`);
-    expect((await w.call("promotion.start", { planId: plan.planId, planHash: plan.planHash, requestId: "promote-env-0003" })).ok).toBe(false);
+    expect((await w.call("promotion.start", { planId: plan.planId, planHash: plan.planHash }, undefined, "promote-env-0003")).ok).toBe(false);
 
     // a member whose own requirements moved on is shown, not blocking, for the branch it matches
     await put(w.root, "brainforge/assets/sky/asset.yaml", childYaml("sky", "background", w.envBranch, { environment: SKY_ENV }).replace("A sky piece", "A hazy sky piece"));
@@ -386,7 +386,7 @@ describe("aggregate export", () => {
     expect(everything.blockers).toEqual([]);
     expect(everything.selection.find((s) => s.assetId === "sky")).toMatchObject({ versionId: sky1, source: "member" });
 
-    expectOk(await w.call("export.start", { planId: plan.planId, planHash: plan.planHash, requestId: "export-0001" }));
+    expectOk(await w.call("export.start", { planId: plan.planId, planHash: plan.planHash }, undefined, "export-0001"));
     const doc = JSON.parse(await readFile(join(w.root, "assets/brainforge/current/assets/flatlands/asset.json"), "utf8")) as { metadata: { members: { assetId: string; versionId: string; environment: { deliverableId: string; environment: Record<string, unknown> }[] }[] } };
     expect(doc.metadata.members.map((m) => [m.assetId, m.versionId])).toEqual([["sky", sky1], ["ground", ground]]);
     expect(doc.metadata.members.find((m) => m.assetId === "ground")?.environment[0]?.environment).toMatchObject({ layer: "ground", tileSize: { width: 16, height: 16 }, connections: { west: "grass", east: "grass" }, seamlessAxes: ["x"], parallax: { x: 1, y: 0 }, relativeScale: 1.5, pivot: { x: 8, y: 16 } });
@@ -406,7 +406,7 @@ describe("aggregate export", () => {
     const conflict = direct.blockers.find((b) => b.code === "EXPORT_CONFLICT");
     expect(conflict?.message).toContain(sky1);
     expect(conflict?.message).toContain(sky2);
-    const refused = await w.call("export.start", { planId: direct.planId, planHash: direct.planHash, requestId: "export-0002" });
+    const refused = await w.call("export.start", { planId: direct.planId, planHash: direct.planHash }, undefined, "export-0002");
     expect(refused.ok).toBe(false);
 
     const pinned = await planExport(w, { assetIds: ["flatlands", "sky"], versions: { sky: sky1 } });
