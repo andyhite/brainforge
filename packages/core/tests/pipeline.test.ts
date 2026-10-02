@@ -90,13 +90,11 @@ const call = <K extends OperationName>(f: GenerationFixture, name: K, input: unk
 
 const succeeded = (jobs: { state: string }[]) => jobs.length > 0 && jobs.every((j) => j.state === "succeeded");
 
-/** Budget → plan → start → wait. Returns the candidates of that step, newest first. */
-async function generate(f: GenerationFixture, stepId: string, branchId?: string, grant = true): Promise<Candidate[]> {
-  if (grant) await f.grant({ stepId });
+/** Plan → start → wait. Returns the candidates of that step, newest first. */
+async function generate(f: GenerationFixture, stepId: string, branchId?: string): Promise<Candidate[]> {
   const plan = await f.plan({ stepId, count: 1, ...(branchId ? { branchId } : {}) });
   expect(plan.blockers).toEqual([]);
-  const budget = plan.budgets[0]!;
-  expectOk(await call(f, "generation.start", { planId: plan.planId, planHash: plan.planHash, budgetId: budget.budgetId }));
+  expectOk(await call(f, "generation.start", { planId: plan.planId, planHash: plan.planHash }));
   await f.waitJobs((jobs) => succeeded(jobs.filter((j) => j.stepId === stepId)), `${stepId} jobs`).catch(async () => {
     throw new Error(`${stepId} jobs: ${JSON.stringify((await f.jobs()).map((j) => [j.stepId, j.state, j.error?.message]))}`);
   });
@@ -229,8 +227,6 @@ deliverables:
 describe("deliverable generation", () => {
   test("planning needs a branch, an approved dependency and names which; deliverable text is this step's own", async () => {
     const f = await game();
-    await f.grant({ stepId: "construction-sheet" });
-    await f.grant({ stepId: "idle-rest" });
     expect((await f.plan({ stepId: "construction-sheet" })).blockers.map((b) => b.code)).toContain("NO_BRANCH");
     expect((await f.plan({ stepId: "construction-sheet", branchId: "branch-nope" })).blockers.map((b) => b.code)).toContain("NO_BRANCH");
     expect((await f.plan({ stepId: "nothing-here", branchId: "x" })).blockers.map((b) => b.code)).toContain("STEP_UNKNOWN");
@@ -264,7 +260,6 @@ describe("deliverable generation", () => {
     project = patchYamlField(project, "defaults.palette", "PALETTE-MARKER");
     await put(f.root, "brainforge/project.yaml", `${project}artDirection: ART-MARKER\n`);
     await put(f.root, "brainforge/styles/marker.yaml", "schema: brainforge.style.v2\nid: marker\npalette: [STYLE-MARKER]\n");
-    await f.grant({ stepId: "construction-sheet" });
     const branchId = await lockedBranch(f);
     const sheet = await f.plan({ stepId: "construction-sheet", branchId, iterationInstructions: "CORRECTION-MARKER" });
     expect(sheet.blockers).toEqual([]);
@@ -282,7 +277,6 @@ describe("deliverable generation", () => {
       .replace("{ id: profile, x: 512, y: 0, width: 512, height: 768 }", "{ id: profile, x: 512, y: 0, width: 512, height: 768, view: side profile facing right }")
       .replace("    kind: reference-sheet\n", "    kind: reference-sheet\n    referenceStrength: 2\n");
     const f = await game(asset);
-    await f.grant({ stepId: "construction-sheet" });
     const branchId = await lockedBranch(f);
     const plan = await f.plan({ stepId: "construction-sheet", branchId });
     expect(plan.blockers).toEqual([]);
@@ -329,7 +323,6 @@ describe("deliverable generation", () => {
     const matted = sheet.outputs.find((o) => o.role === "matted")!;
     const crop = f.h.registry.get(f.root)!.db.query<{ file_id: string; sha256: string }, [string]>("SELECT file_id, sha256 FROM output_crops WHERE output_id = ? AND region_id = 'profile'").get(matted.outputId)!;
 
-    await f.grant({ stepId: "idle-rest" });
     const idle = await f.plan({ stepId: "idle-rest", branchId });
     expect(idle.blockers).toEqual([]);
     expect(idle.inputs.references).toEqual([{ role: "reference", id: crop.file_id, sha256: crop.sha256 }]);
@@ -341,31 +334,18 @@ describe("deliverable generation", () => {
     expect(idle.notes.join()).toContain("alone");
 
     const walk = await f.plan({ stepId: "walk-contact", branchId });
-    expect(walk.blockers.map((b) => b.code)).toEqual(["NO_BUDGET"]);
+    expect(walk.blockers).toEqual([]);
     expect(walk.inputs.references[0]?.id).toBe(expectOk(await call(f, "branch.list", { assetId: "cortex" })).branches[0]!.conceptOutputId);
     expect(walk.notes.join()).toContain("front, profile, rear");
-    await f.grant({ stepId: "walk-contact" });
-    const funded = await f.plan({ stepId: "walk-contact", branchId });
-    expect(funded.blockers).toEqual([]);
+    const funded = walk;
 
     // Rejecting the sheet withdraws the approval that planned walk-contact; start re-reads it instead of trusting the quote.
     const material = expectOk(await call(f, "review.material", { candidateId: sheet.candidateId }));
     expectOk(await call(f, "review.decide", { candidateId: sheet.candidateId, outputIds: [matted.outputId], requirementsHash: material.requirementsHash, decision: "reject", reasons: ["feet are wrong"] }));
     const sent = f.fake.submissionCount();
-    const refused = await call(f, "generation.start", { planId: funded.planId, planHash: funded.planHash, budgetId: funded.budgets[0]!.budgetId });
+    const refused = await call(f, "generation.start", { planId: funded.planId, planHash: funded.planHash });
     expect(refused.ok === false && refused.error.code).toBe("STEP_BLOCKED");
     expect(refused.ok === false && refused.error.message).toContain("construction-sheet");
     expect(f.fake.submissionCount()).toBe(sent);
-  });
-
-  test("attempt limits count per step: exhausting the sheet does not touch idle", async () => {
-    const f = await game();
-    const branchId = await lockedBranch(f);
-    await f.grant({ stepId: "construction-sheet", maxStarts: 10, maxCandidateSubmissions: 10 });
-    for (let i = 0; i < 3; i++) await generate(f, "construction-sheet", branchId, false);
-    const sheet = await f.plan({ stepId: "construction-sheet", branchId });
-    expect(sheet.blockers.map((b) => b.code)).toContain("ATTEMPTS_EXHAUSTED");
-    const idle = await f.plan({ stepId: "idle-rest", branchId });
-    expect(idle.blockers.map((b) => b.code)).not.toContain("ATTEMPTS_EXHAUSTED");
   });
 });

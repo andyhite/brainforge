@@ -1,4 +1,4 @@
-/* Generation: the room's empty-step stage, the plan dialog, budgets and compare. */
+/* Generation: the room's empty-step stage, the plan dialog and compare. */
 
 /* ---- stage ---- */
 .gen-stage { display: grid; height: 100%; min-height: 0; padding: 24px; overflow: auto; }
@@ -30,14 +30,6 @@
 .plan-refs .art > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .plan-notes, .plan-blockers { margin: 0; padding-left: 18px; }
 .plan-blockers { display: grid; gap: 8px; }
-.plan-budget h3 { margin-bottom: 6px; }
-
-/* ---- budgets ---- */
-.budget-bar { justify-content: space-between; }
-.budget-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; }
-.budget-main { flex: 1; min-width: 0; }
-.budget-revoke { gap: 6px; }
-.budget-revoke input { min-width: 200px; }
 
 /* ---- compare ---- */
 .compare { display: grid; gap: 12px; }

@@ -19,7 +19,7 @@
 - `complete`: selected output has an applicable approval AND no unresolved required revision note.
 - A static asset with no sheet/animations authored has only concept → its stills. Never expect reference steps it did not declare.
 - Cycles, duplicate ids, missing dependency ids and a deliverable called `concept` are reported on the affected steps only.
-- Generation: `generation.plan`/`generation.start` accept a deliverable `stepId` plus `branchId`, only when the step is `ready`. Budgets and attempt limits are per (asset, step). An animation step is ready once its guide poses are approved; its generated source frames never complete it, only an approved processed output does. See [motion-processing](motion-processing.md).
+- Generation: `generation.plan`/`generation.start` accept a deliverable `stepId` plus `branchId`, only when the step is `ready`. An animation step is ready once its guide poses are approved; its generated source frames never complete it, only an approved processed output does. See [motion-processing](motion-processing.md).
 - A `reference-sheet` candidate's `regions` are cropped into separately hashed outputs; they are shown in `review.material.visuals` and used as references for dependents.
 
 ## Review loop
@@ -30,7 +30,7 @@
 4. Sure: `review.decide {candidateId, outputIds, requirementsHash, decision:"approve"|"reject", reasons}`. `requirementsHash` MUST be the one just returned; rejecting needs at least one concrete reason (what is wrong, where).
 5. Unsure (policy `agent_with_escalation`): `review.escalate {candidateId, outputIds, reason}`. It waits for a human, is not approval, and blocks further agent decisions on that output.
 6. `review.history {candidateId}`: every decision, override, escalation with actor and reasons.
-7. After a rejection, do not regenerate automatically: change YAML / iteration instructions and start a new plan under a budget.
+7. After a rejection, do not regenerate automatically: change YAML / iteration instructions and start a new plan.
 
 ## Authority (enforced against actor type, never labels in YAML)
 
@@ -61,7 +61,7 @@ A decision is applicable only if its `requirementsHash` equals the current one A
 
 1. The reviewer marks a source-frame range (`annotation.create {candidateId, outputId, frameRange:{start,end}, text, requiresRevision:true}`; zero-based SOURCE indices, inclusive). The request waits with no agent connected.
 2. `revision.list {status:"open"}` -> `revision.inspect`: notes with ranges, originals, and annotated frames of the range (`visualFiles`), plus authored YAML in force. Also run `history.examples` for accepted/rejected precedent ([history-preferences](history-preferences.md)).
-3. Fix the cause: edit motion/identity YAML (edit the file, then `spec.read` until no `problems`), or pass `iterationInstructions` to `generation.plan` (they affect one run only, never become requirements). `generation.start` under a budget.
+3. Fix the cause: edit motion/identity YAML (edit the file, then `spec.read` until no `problems`), or pass `iterationInstructions` to `generation.plan` (they affect one run only, never become requirements). Then `generation.start`.
 4. `revision.respond {revisionRequestId, text, followUpJobIds}`. This links your attempt but does NOT resolve anything.
 5. Required notes keep blocking their branch/step lineage after new candidates exist, until an authorized reviewer calls `revision.resolve` or `revision.waive` (reason required). New output needs its own review; the old approval is not inherited.
 6. Unsure whether the fix is good: `review.escalate`; the human decides or overrides (`review.override`, recorded with identity and reasons).

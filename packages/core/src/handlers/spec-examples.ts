@@ -38,7 +38,6 @@ approval:
   promotion: human
   activation: human
 automation:
-  maxAttemptsPerStep: 3
   maxConcurrentGenerations: 1
   maxBatchCandidates: 4
   autoRegenerate: false

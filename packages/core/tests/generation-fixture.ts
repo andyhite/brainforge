@@ -1,5 +1,5 @@
 import { rm } from "node:fs/promises";
-import type { Budget, GenerationPlan, Job } from "@brainforge/contracts";
+import type { GenerationPlan, Job } from "@brainforge/contracts";
 import { ComfyClient } from "@brainforge/comfy";
 import { createFakeComfy, type FakeComfy, type FakeComfyOptions } from "@brainforge/comfy/testing";
 import { ASSET_YAML, createHarness, expectOk, initializedGame, put, type Harness } from "./helpers.ts";
@@ -21,7 +21,6 @@ export interface GenerationFixture {
   root: string;
   /** Whether the injected transport currently resolves (false = "no ComfyUI configured"). */
   online: { value: boolean };
-  grant(over?: Record<string, unknown>): Promise<Budget>;
   plan(over?: Record<string, unknown>): Promise<GenerationPlan>;
   jobs(): Promise<Job[]>;
   waitJobs(done: (jobs: Job[]) => boolean, what: string): Promise<Job[]>;
@@ -41,8 +40,6 @@ export async function generationFixture(options: { fake?: FakeComfyOptions; clie
 
   const fixture: GenerationFixture = {
     fake, client, h, root, online,
-    grant: async (over = {}) =>
-      expectOk(await h.call("budget.grant", { assetId: "cortex", stepId: "concept", maxStarts: 3, maxCandidateSubmissions: 12, expiresAt: new Date(Date.now() + 3600_000).toISOString(), ...over }, { project: root })).budget,
     plan: async (over = {}) => expectOk(await h.call("generation.plan", { assetId: "cortex", count: 2, ...over }, { project: root })).plan,
     jobs: async () => expectOk(await h.call("job.list", { limit: 200 }, { project: root })).jobs,
     waitJobs: (done, what) => waitFor(fixture.jobs, done, what),

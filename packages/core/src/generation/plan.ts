@@ -13,7 +13,7 @@ import { loadDescriptor } from "./descriptors.ts";
 import { resolveAlpha, workflowFor, type WorkflowStage } from "../families/index.ts";
 import { resolveDeliverable } from "./deliverable.ts";
 import { composePrompt, stylesFor } from "./prompt.ts";
-import { attemptsInWindow, budgetStatus, newId, toBudget, type BudgetRow } from "./store.ts";
+import { newId } from "./store.ts";
 
 /** A plan is a short-lived quote: start refuses one older than this and asks for a fresh inspection. */
 export const PLAN_TTL_MS = 2 * 60 * 60 * 1000;
@@ -42,12 +42,6 @@ export interface PinnedReference { role: string; id: string; sha256: string }
 interface ParentRow { candidate_id: string; asset_id: string; step_id: string; branch_id: string | null }
 interface OutputPath { output_id: string; path: string; sha256: string; role: string }
 
-const grantAction = (assetId: string, stepId: string, count: number): RecoveryAction => ({
-  label: "Ask the user to grant a generation budget (only a person can, in the Brainforge UI)",
-  operation: "budget.grant",
-  input: { assetId, stepId, maxStarts: 2, maxCandidateSubmissions: Math.max(count * 2, 4), expiresAt: new Date(Date.now() + 24 * 3600_000).toISOString() },
-});
-
 /**
  * Compose a generation plan. Problems become blockers instead of exceptions so the caller sees everything that
  * stands between it and a start in one answer.
@@ -72,7 +66,7 @@ export async function createPlan(env: PlanEnvironment, input: ParsedOperationInp
     ]);
   }
 
-  const automation = set.project?.spec?.automation ?? { maxAttemptsPerStep: 3, maxConcurrentGenerations: 1, maxBatchCandidates: 4, autoRegenerate: false };
+  const automation = set.project?.spec?.automation ?? { maxConcurrentGenerations: 1, maxBatchCandidates: 4, autoRegenerate: false };
   if (!set.project?.spec) {
     block("PROJECT_INVALID", "brainforge/project.yaml is missing or invalid, so prompt direction and limits are unknown.", [{ label: "Inspect the authored files", operation: "spec.list" }]);
   }
@@ -234,23 +228,6 @@ export async function createPlan(env: PlanEnvironment, input: ParsedOperationInp
     }
   }
 
-  // --- limits and budgets
-  const attempts = attemptsInWindow(project.db, input.assetId, input.stepId);
-  if (attempts >= automation.maxAttemptsPerStep) {
-    block("ATTEMPTS_EXHAUSTED", `${attempts} of ${automation.maxAttemptsPerStep} allowed attempts for ${input.assetId}/${input.stepId} are used. Only a new human-granted budget opens another window; return to the user.`, [grantAction(input.assetId, input.stepId, input.count)]);
-  }
-  const now = Date.now();
-  const budgetRows = project.db.query<BudgetRow, [string, string]>("SELECT * FROM generation_budgets WHERE asset_id = ? AND step_id = ? ORDER BY rowid").all(input.assetId, input.stepId);
-  const active = budgetRows.filter((r) => budgetStatus(r, now) === "active");
-  const budgets = active.map((r) => ({
-    budgetId: r.budget_id, remainingStarts: r.max_starts - r.used_starts,
-    remainingCandidateSubmissions: r.max_candidate_submissions - r.used_candidate_submissions, expiresAt: r.expires_at,
-  }));
-  if (!budgets.some((b) => b.remainingStarts >= 1 && b.remainingCandidateSubmissions >= input.count)) {
-    const states = budgetRows.map((r) => `${r.budget_id}: ${toBudget(r, now).status}`).join(", ");
-    block("NO_BUDGET", `No active budget covers 1 start and ${input.count} candidate submission(s) for ${input.assetId}/${input.stepId}${states ? ` (${states})` : " (none granted)"}. Only the user can authorize spending; ask them.`, [grantAction(input.assetId, input.stepId, input.count)]);
-  }
-
   const execution = wf?.execution ?? { computeLocation: "unknown (workflow unavailable)", externalServices: [], credentialKeys: [], costDescription: "unknown" };
   const content = {
     assetId: input.assetId, stepId: input.stepId, mode: input.mode, count: input.count,
@@ -266,10 +243,10 @@ export async function createPlan(env: PlanEnvironment, input: ParsedOperationInp
     ...(deliverable?.motion ? { motion: deliverable.motion } : {}),
     ...(deliverable && deliverable.directionPins.length > 0 ? { directionPins: deliverable.directionPins } : {}),
     execution: { computeLocation: execution.computeLocation, externalServices: execution.externalServices, credentialKeys: execution.credentialKeys, costDescription: execution.costDescription },
-    limits: { maxBatchCandidates: automation.maxBatchCandidates, maxConcurrentGenerations: automation.maxConcurrentGenerations, maxAttemptsPerStep: automation.maxAttemptsPerStep },
+    limits: { maxBatchCandidates: automation.maxBatchCandidates, maxConcurrentGenerations: automation.maxConcurrentGenerations },
   };
   return GenerationPlan.parse({
-    planId, planHash: normalizedHash(content), ...content, preflight: preflightResult, budgets, blockers, notes: deliverable?.notes ?? [], createdAt: new Date().toISOString(),
+    planId, planHash: normalizedHash(content), ...content, preflight: preflightResult, blockers, notes: deliverable?.notes ?? [], createdAt: new Date().toISOString(),
   });
 }
 

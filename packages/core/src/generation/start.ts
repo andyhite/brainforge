@@ -1,5 +1,5 @@
 import { rm } from "node:fs/promises";
-import { GenerationPlan, type Budget, type Job, type ParsedOperationInput, type RecoveryAction } from "@brainforge/contracts";
+import { GenerationPlan, type Job, type ParsedOperationInput, type RecoveryAction } from "@brainforge/contracts";
 import { graphHash, preflight, type ComfyTransport } from "@brainforge/comfy";
 import { paths, resolveIn, writeJsonAtomic } from "@brainforge/storage";
 import { discoverAuthored } from "../authored.ts";
@@ -15,7 +15,7 @@ import { motionBasis } from "./motion.ts";
 import { normalizedHash } from "../operations.ts";
 import { readPinnedReference } from "./references.ts";
 import { schedulerOf } from "./scheduler.ts";
-import { attemptsInWindow, budgetRow, budgetShortfall, jobRow, newId, toBudget, toJob } from "./store.ts";
+import { jobRow, newId, toJob } from "./store.ts";
 
 /** Plan blockers that describe the plan's own content. Everything else is environmental and re-checked live at start. */
 const CONTENT_BLOCKERS = new Set([
@@ -25,12 +25,6 @@ const CONTENT_BLOCKERS = new Set([
   "GUIDE_MISSING", "GUIDE_NOT_APPROVED", "GUIDE_CLIPPED", "FRAME_COUNT_INVALID", "ANCHOR_MISSING", "MODE_UNSUPPORTED", "SAVED_INPUTS_UNAVAILABLE",
 ]);
 
-const askForBudget = (assetId: string, stepId: string): RecoveryAction => ({
-  label: "Ask the user to grant a generation budget (only a person can, in the Brainforge UI)",
-  operation: "budget.grant",
-  input: { assetId, stepId, maxStarts: 2, maxCandidateSubmissions: 8, expiresAt: new Date(Date.now() + 24 * 3600_000).toISOString() },
-});
-
 export interface StartEnvironment {
   project: OpenProject;
   workflowsDir: string;
@@ -39,11 +33,10 @@ export interface StartEnvironment {
 }
 
 /**
- * Revalidate an inspected plan against the files, ComfyUI and the budget, then atomically charge the budget and
- * persist the run with its queued jobs. Nothing touches ComfyUI beyond the read-only preflight: the scheduler
- * submits later, one job at a time.
+ * Revalidate an inspected plan against the files and ComfyUI, then atomically persist the run with its queued jobs.
+ * Nothing touches ComfyUI beyond the read-only preflight: the scheduler submits later, one job at a time.
  */
-export async function startGeneration(env: StartEnvironment, input: ParsedOperationInput<"generation.start">): Promise<{ runId: string; jobs: Job[]; budget: Budget }> {
+export async function startGeneration(env: StartEnvironment, input: ParsedOperationInput<"generation.start">): Promise<{ runId: string; jobs: Job[] }> {
   const { project } = env;
   const stored = storedPlan(project, input.planId);
   const plan = stored.plan;
@@ -117,44 +110,19 @@ export async function startGeneration(env: StartEnvironment, input: ParsedOperat
       project.transact(() => {
         const again = project.db.query<{ started_run_id: string | null }, [string]>("SELECT started_run_id FROM generation_plans WHERE plan_id = ?").get(plan.planId);
         if (again?.started_run_id) throw new OperationFailure("STEP_BLOCKED", `Plan ${plan.planId} was already started as run ${again.started_run_id}.`, { runId: again.started_run_id });
-        const budget = budgetRow(project.db, input.budgetId);
-        if (budget.asset_id !== plan.assetId || budget.step_id !== plan.stepId) {
-          throw new OperationFailure("INVALID_INPUT", `Budget ${budget.budget_id} is for ${budget.asset_id}/${budget.step_id}, not ${plan.assetId}/${plan.stepId}.`, undefined, [{ label: "List budgets", operation: "budget.list", input: { assetId: plan.assetId } }]);
-        }
-        const shortfall = budgetShortfall(budget, { starts: 1, submissions: plan.count });
-        if (shortfall) throw new OperationFailure("HUMAN_AUTHORIZATION_REQUIRED", `${shortfall}. Only the user can authorize more generation; ask them.`, { budget: toBudget(budget) }, [askForBudget(plan.assetId, plan.stepId)]);
-        const attempts = attemptsInWindow(project.db, plan.assetId, plan.stepId);
-        if (attempts >= plan.limits.maxAttemptsPerStep) {
-          throw new OperationFailure("HUMAN_AUTHORIZATION_REQUIRED", `${attempts} of ${plan.limits.maxAttemptsPerStep} allowed attempts for ${plan.assetId}/${plan.stepId} are used; return to the user, whose new budget opens another window.`, { attempts }, [askForBudget(plan.assetId, plan.stepId)]);
-        }
-        const upper = wf.execution.upperBoundPerRunUsd;
-        if (budget.spend_cap_usd !== null && upper === undefined) {
-          throw new OperationFailure("HUMAN_AUTHORIZATION_REQUIRED", `Budget ${budget.budget_id} has a spend cap, but workflow ${wf.id} declares no cost upper bound, so the cap cannot be enforced. Cost is unknown, not zero.`, undefined, [askForBudget(plan.assetId, plan.stepId)]);
-        }
-        const charge = upper === undefined ? 0 : upper * plan.count;
-        if (budget.spend_cap_usd !== null && budget.spent_usd + charge > budget.spend_cap_usd) {
-          throw new OperationFailure("HUMAN_AUTHORIZATION_REQUIRED", `Starting would spend up to $${charge} against a remaining cap of $${budget.spend_cap_usd - budget.spent_usd}.`, undefined, [askForBudget(plan.assetId, plan.stepId)]);
-        }
-
         const now = new Date().toISOString();
-        project.db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, branch_id, plan_hash, plan_json, budget_id, started_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-          .run(runId, plan.assetId, plan.stepId, plan.branchId ?? null, plan.planHash, JSON.stringify(GenerationPlan.parse(plan)), budget.budget_id, env.actorId, now);
+        project.db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, branch_id, plan_hash, plan_json, started_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+          .run(runId, plan.assetId, plan.stepId, plan.branchId ?? null, plan.planHash, JSON.stringify(GenerationPlan.parse(plan)), env.actorId, now);
         slots.forEach(({ submission, jobId }, slot) => {
           project.db.query("INSERT INTO generation_jobs (job_id, run_id, asset_id, step_id, slot, attempt, label, identity, seed, state, submission_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, 'queued', ?, ?, ?)")
             .run(jobId, runId, plan.assetId, plan.stepId, slot, submission.label, `bf:${jobId}:1`, submission.seed, JSON.stringify(submission), now, now);
         });
-        project.db.query("UPDATE generation_budgets SET used_starts = used_starts + 1, used_candidate_submissions = used_candidate_submissions + ?, spent_usd = spent_usd + ? WHERE budget_id = ?")
-          .run(plan.count, charge, budget.budget_id);
         project.db.query("UPDATE generation_plans SET started_run_id = ? WHERE plan_id = ?").run(runId, plan.planId);
       }, [
-        { type: "generation.started", data: { runId, planId: plan.planId, assetId: plan.assetId, stepId: plan.stepId, budgetId: input.budgetId, count: plan.count }, actorId: env.actorId },
+        { type: "generation.started", data: { runId, planId: plan.planId, assetId: plan.assetId, stepId: plan.stepId, count: plan.count }, actorId: env.actorId },
         ...jobIds.map((jobId) => ({ type: "job.changed", data: { jobId, runId, assetId: plan.assetId, stepId: plan.stepId, state: "queued" }, actorId: env.actorId })),
       ]);
-      return {
-        runId,
-        jobs: jobIds.map((id) => toJob(jobRow(project.db, id))),
-        budget: toBudget(budgetRow(project.db, input.budgetId)),
-      };
+      return { runId, jobs: jobIds.map((id) => toJob(jobRow(project.db, id))) };
     }).then((result) => {
       schedulerOf(project)?.kick();
       return result;

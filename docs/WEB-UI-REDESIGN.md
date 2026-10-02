@@ -26,7 +26,7 @@ Three tabs (**Home · Review · Releases**). The top bar holds the activity stat
 | Home | `/` | What needs me, and how close is the game? | The first **Up next** item, ranked by what it unblocks (review › lock › recover › finish › redo › generate › promote › activate; optional assets rank lower) | "Show N more"; asset filters (All · Needs you · In progress · In the game); spec or policy problems appear only when they exist |
 | Asset sheet | `/assets/:id` | What does this asset still need? | The **Next card**. Promotion and activation open their confirmation in place | **Definition** tab (spec editing, references); **Versions** tab; the branch menu (switch, compare, continue, rebase) |
 | Room | `/assets/:id/steps/:step` | Is this candidate right? | The decision box: Approve, or the action that resolves the blocker; **Lock this concept…** for concepts | Details · Processing · History tabs; the ⋯ candidate menu; pivot and baseline, frames, atlas; compare |
-| Generation | the room of an empty cell | Can I make this now? | **Plan generation…** opens the exact plan. Nothing starts until **Start generation** | Budget…, plan details (workflow, hashes, inputs) |
+| Generation | the room of an empty cell | Can I make this now? | **Plan generation…** opens the exact plan. Nothing starts until **Start generation** | plan details (workflow, hashes, inputs, remote-GPU disclosure) |
 | Review | `/review` | What's waiting for me anywhere? | The same room in queue mode ("1 of 4 waiting", J/K); deciding advances to the next | The same as the room |
 | Releases | `/releases` | What's in the game, and what can go in? | **Export…** carries ink only when exporting would change the game. A row button appears only for a real gate (**Activate version N…**, **Promote…**) | Past exports, "Choose what to export", the plan, Inspect the current export |
 | Activity | `/activity` | What ran, what's running, what failed? | The job's recovery action | Jobs · Decisions · Preferences views; job detail via `?job=` |
@@ -63,7 +63,7 @@ Rules the build holds to:
 
 ## 4. Safety and product truth (unchanged behaviour)
 
-- Generation shows the exact plan before submitting and starts only under a budget the human grants. Budget grants are human-only.
+- Generation shows the exact plan before submitting and starts only when the user presses **Start generation**; there are no budgets.
 - Approval covers one exact output. Notes are tied to outputs and frames, and frame labels are one-based everywhere (strip, transport, note anchors).
 - Concept lock, promotion, activation and export are separate operations with separate confirmations and different names. None is combined or implied by another.
 - Branch context, draft persistence, stale-plan and conflict checks, and request idempotency use the existing operation contracts. No backend change was made for the redesign.
@@ -77,7 +77,7 @@ Rules the build holds to:
 - **Task completion:**
   - Approving from the Review queue recorded the decision, moved the queue from 4 to 3 waiting and opened the next candidate.
   - Activating Locker Key version 2 from the asset Next card went through its confirmation ("Version 2 is now active.").
-  - Granting a budget from the generation stage worked.
+  - Granting a budget from the generation stage worked. (Historical: budgets have since been removed; generation starts directly from the plan.)
   - A Stable Genius concept batch was planned and started (4 jobs), and 4 new concepts arrived in the strip.
   - A subset export of the three active assets completed ("Exported").
 - **Blocked states and recovery:**
@@ -116,3 +116,30 @@ Captures are in `apps/web/.impeccable/review/sprite-sheet/`, which is gitignored
 
 - A step can read "Ready to generate" while its plan is refused for a plan-time requirement, such as an animation guide. Readiness is server truth. Folding plan-time checks into step readiness would be a backend change.
 - The application ships as a single 1 MB chunk. Code-splitting by route would remove the build warning.
+
+## 7. Follow-up: the Definition tab
+
+**Problem.** After shipping, the user found the asset **Definition** tab "insanely long", with thousands of controls and hard to read. It rendered every field of every deliverable as an open form. On Cortex (26 deliverables) it was 30,600px tall with 1,125 controls, 676 of them "Depends on" checkboxes, and the prompt text sat among the settings.
+
+**Decision (user).** Read it like a spec and edit in place. The text sent to the image model (descriptions and motion) is what gets edited most. Mostly the page is read to check what is defined, because agents edit the YAML.
+
+| Before | Now |
+|---|---|
+| Every field of every deliverable open at once | One row per deliverable, in the Sheet's groups: the id and kind, then the description, motion and a facts line (loop, size, dependencies), in full at a 75ch measure |
+| Settings mixed with prompt text | Opening a row shows Description and Motion first. Id, kind, required, dependencies, timing, reference, output, tiles and UI state sit behind one **More** disclosure that names what is inside |
+| Identity, style, attachments and members always shown as forms | Read views with **Edit** and **Done** in place |
+| A checkbox for every other deliverable under "Depends on" | Removable chips plus one **Add…** select |
+| Checks listed `deliverables[8].referenceStrength`, and nothing opened it | Checks say `jump · referenceStrength` and open the row (and More) with the field focused. Part heads, row heads and More carry "2 to fix" or "1 to finish" |
+
+The YAML tab, the save bar, external-change and conflict handling, validation and `?section=` links are unchanged. The new-asset wizard uses the same editor. Its “Starter file” banner used to show the template's agent instructions (`spec.write`, `expectedHash: null`); it now tells people what to fill in. The starter file's `notes` starts empty instead of holding an agent instruction, so it is no longer a placeholder to finish.
+
+**Verification.** This ran on the user's project with their permission. Nothing was saved, and the file on disk was checked afterwards.
+
+- Cortex at 1440×757: 3,789px tall, with 41 controls and no checkboxes when the page opens. An open row adds about 23 controls.
+- Enter on a row's id opens and closes the row. Editing a description shows "Unsaved changes", the row and the YAML tab show the draft, and Discard restores it. Adding and removing a dependency round-trips. Removing a chip by keyboard moves focus to the next chip, then to the Add select.
+- A reference strength of 99 shows the field error, "1 to fix" on More and on the row, and `jump · referenceStrength` in Checks. Clicking that entry opens the row and More with the field focused.
+- `?section=style` opens and focuses Style and references.
+- Light and dark were checked at 1440, and dark at 1024, 800 and 740, with no horizontal overflow. The Sheet's grouping is unchanged. Wizard step 3 renders prop, UI and tile starter files with their placeholders in amber, and with nine-slice, tile size, connections and seamless axes under More.
+- `bun run typecheck` passes. The finish review listed 7 fixes: full text, measure, Checks, the motion placeholder, chip focus, kind labels and DESIGN.md. All are applied, and the confirmation round returned **ship**.
+
+Captures are in `apps/web/.impeccable/review/definition/`.

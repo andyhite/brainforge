@@ -7,7 +7,7 @@
    - `saved` (default): continue with the inputs the source candidate was generated from (its recorded authored-file texts). If that text is no longer retained → blocker `SAVED_INPUTS_UNAVAILABLE` with a recovery to plan with `current`.
    - `current`: use today's effective YAML. Choose it when you edited the YAML and want the new settings.
    - `kind:"rebase"` is derived, not requested: `inputMode:"current"` on a candidate that is SELECTED in its branch, when that branch was `saved`-mode or its inputs differ from today's. Pick the selected candidate of the furthest-downstream step you want to keep (selections downstream of the source step are cleared, siblings and upstream are kept or flagged).
-3. `branch.create {candidateId, outputId?, inputMode, planHash, name?, reason?}` with the plan's `planHash`. Failures: concept candidate → `INVALID_INPUT` (use `concept.lock`); candidate with no branch → `INVALID_INPUT`; agent without a human-granted generation budget → `HUMAN_AUTHORIZATION_REQUIRED`; changed YAML, selections or feedback since the plan → `REVISION_CONFLICT` (re-plan); plan `blockers` → `STEP_BLOCKED`.
+3. `branch.create {candidateId, outputId?, inputMode, planHash, name?, reason?}` with the plan's `planHash`. Failures: concept candidate → `INVALID_INPUT` (use `concept.lock`); candidate with no branch → `INVALID_INPUT`; changed YAML, selections or feedback since the plan → `REVISION_CONFLICT` (re-plan); plan `blockers` → `STEP_BLOCKED`.
 4. `branch.compare {assetId, branchIds?}` (read-only): branches side by side (concept, selections, basis, state).
 5. `branch.select {assetId, branchId, reason?}` makes a branch the asset's current one. It never changes active versions, approvals or other branches.
 
@@ -15,7 +15,7 @@
 
 A concept (unlocked or alternative) can only become a branch through `concept.lock {assetId, candidateId, outputId, inputMode}` under `approval.conceptLock`. `branch.plan` on a concept candidate reports `authorization.operation:"concept.lock"`; `branch.create` refuses concept sources and cannot swap a locked branch's concept. Policy `human` (or a pending, unconfirmed relaxation) → you are refused: ask the user which candidate and output to lock; never retry.
 
-`branch.create` takes a reference or animation candidate of an already locked branch. Humans may always; an agent needs a human-granted generation budget for that asset (`budget.list`).
+`branch.create` takes a reference or animation candidate of an already locked branch. Humans and agents may both call it; concept-lock and approval policy still apply.
 
 ## What is reused
 

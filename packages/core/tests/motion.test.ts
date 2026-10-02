@@ -54,10 +54,9 @@ const call = <K extends OperationName>(f: GenerationFixture, name: K, input: unk
 const succeeded = (jobs: { state: string }[]) => jobs.length > 0 && jobs.every((j) => j.state === "succeeded");
 
 async function generate(f: GenerationFixture, stepId: string, branchId?: string): Promise<Candidate[]> {
-  await f.grant({ stepId });
   const plan = await f.plan({ stepId, count: 1, ...(branchId ? { branchId } : {}) });
   expect(plan.blockers).toEqual([]);
-  expectOk(await call(f, "generation.start", { planId: plan.planId, planHash: plan.planHash, budgetId: plan.budgets[0]!.budgetId }));
+  expectOk(await call(f, "generation.start", { planId: plan.planId, planHash: plan.planHash }));
   await f.waitJobs((jobs) => succeeded(jobs.filter((j) => j.stepId === stepId)), `${stepId} jobs`);
   return expectOk(await call(f, "candidate.list", { assetId: "cortex", stepId, ...(branchId ? { branchId } : {}) })).candidates;
 }
@@ -96,8 +95,6 @@ describe("animation generation.plan", () => {
   test("a guide must be selected and approved; the planner names which guide and why", async () => {
     const f = await game();
     const branchId = await lockedBranch(f);
-    await f.grant({ stepId: "idle" });
-    await f.grant({ stepId: "idle-rest" });
     const noPose = await f.plan({ stepId: "idle", branchId });
     expect(codes(noPose.blockers)).toContain("DEPENDENCY_NOT_APPROVED");
     expect(noPose.blockers.find((b) => b.code === "GUIDE_MISSING")?.message).toContain("idle-rest");
@@ -108,7 +105,7 @@ describe("animation generation.plan", () => {
     const unapproved = await f.plan({ stepId: "idle", branchId });
     expect(codes(unapproved.blockers)).toContain("GUIDE_NOT_APPROVED");
     const sent = f.fake.submissionCount();
-    const refused = await call(f, "generation.start", { planId: unapproved.planId, planHash: unapproved.planHash, budgetId: unapproved.budgets[0]!.budgetId });
+    const refused = await call(f, "generation.start", { planId: unapproved.planId, planHash: unapproved.planHash });
     expect(refused.ok === false && refused.error.code).toBe("STEP_BLOCKED");
     expect(f.fake.submissionCount()).toBe(sent);
   });
@@ -116,11 +113,10 @@ describe("animation generation.plan", () => {
   test("sourceFrameCount must be 4n+1 for Wan", async () => {
     const f = await game({ asset: ASSET("{ motion: \"Breathes.\", loop: true, sourceFrameCount: 30 }") });
     const { branchId } = await branchWithPose(f);
-    await f.grant({ stepId: "idle" });
     const plan = await f.plan({ stepId: "idle", branchId });
     expect(codes(plan.blockers)).toEqual(["FRAME_COUNT_INVALID"]);
     const sent = f.fake.submissionCount();
-    const refused = await call(f, "generation.start", { planId: plan.planId, planHash: plan.planHash, budgetId: plan.budgets[0]!.budgetId });
+    const refused = await call(f, "generation.start", { planId: plan.planId, planHash: plan.planHash });
     expect(refused.ok === false && refused.error.code).toBe("STEP_BLOCKED");
     expect(f.fake.submissionCount()).toBe(sent);
   });
@@ -130,7 +126,6 @@ describe("animation generation.plan", () => {
     const branchId = await lockedBranch(f);
     const [pose] = await generate(f, "idle-rest", branchId);
     await selectAndApprove(f, branchId, "idle-rest", pose!);
-    await f.grant({ stepId: "idle" });
     const plan = await f.plan({ stepId: "idle", branchId });
     expect(codes(plan.blockers)).toContain("GUIDE_CLIPPED");
     expect(plan.blockers.find((b) => b.code === "GUIDE_CLIPPED")?.message).toContain("never refits");
@@ -139,7 +134,6 @@ describe("animation generation.plan", () => {
   test("without sizing.subjectHeightPx there is no scale to calibrate", async () => {
     const f = await game({ project: PROJECT_YAML });
     const { branchId } = await branchWithPose(f);
-    await f.grant({ stepId: "idle" });
     expect(codes((await f.plan({ stepId: "idle", branchId })).blockers)).toEqual(["ANCHOR_MISSING"]);
   });
 });
@@ -148,7 +142,6 @@ describe("animation generation", () => {
   test("one uniform scale normalizes the approved guide; Wan returns untouched and matted frame sequences that are published whole", async () => {
     const f = await game();
     const { branchId, poseOutputId } = await branchWithPose(f);
-    await f.grant({ stepId: "idle" });
     const plan = await f.plan({ stepId: "idle", branchId, count: 1 });
     expect(plan.blockers).toEqual([]);
     expect(plan.workflow.id).toBe("wan22-motion");
@@ -169,7 +162,7 @@ describe("animation generation", () => {
     expect(poseBounds.height * norm.scale).toBeCloseTo(norm.subjectHeightPx, 5);
     expect(plan.notes.join("\n")).toContain("guide idle-rest stands");
 
-    expectOk(await call(f, "generation.start", { planId: plan.planId, planHash: plan.planHash, budgetId: plan.budgets[0]!.budgetId }));
+    expectOk(await call(f, "generation.start", { planId: plan.planId, planHash: plan.planHash }));
     await f.waitJobs((jobs) => succeeded(jobs.filter((j) => j.stepId === "idle")), "the motion job");
     expect(f.fake.submissionCount()).toBe(3); // concept, pose, motion
 
@@ -247,10 +240,9 @@ describe("collection of frame sequences", () => {
   test("a sequence cut short midway publishes nothing, fails at download, and retry collect reuses the remote result", async () => {
     const f = await game();
     const { branchId } = await branchWithPose(f);
-    await f.grant({ stepId: "idle" });
     const plan = await f.plan({ stepId: "idle", branchId, count: 1 });
     f.fake.injectFault("view-truncate-late");
-    expectOk(await call(f, "generation.start", { planId: plan.planId, planHash: plan.planHash, budgetId: plan.budgets[0]!.budgetId }));
+    expectOk(await call(f, "generation.start", { planId: plan.planId, planHash: plan.planHash }));
     const failed = (await f.waitJobs((jobs) => jobs.some((j) => j.stepId === "idle" && j.state === "failed"), "the partial download to fail")).find((j) => j.stepId === "idle")!;
     expect(failed.error?.stage).toBe("download");
     expect(failed.error?.message).toMatch(/Frame \d+ of 33/);

@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import type { OperationData, Problem } from "@brainforge/contracts";
-import { Status } from "../../components/ui.tsx";
+import { Status, type LocateProblem } from "../../components/ui.tsx";
 import { FamilyEditor, ProblemSummary } from "../families/FamilyEditor.tsx";
 import { useSpecFile, type SpecFile } from "../../lib/spec-file.ts";
 import { ReferencesStep } from "./ReferencesStep.tsx";
@@ -10,14 +10,14 @@ import "../families/families.css";
 type Inspect = OperationData<"asset.inspect">;
 
 /** Everything beside the editor: checks, references, and where the files live. */
-function Side({ inspect, file, problems, pending }: { inspect: Inspect; file: SpecFile; problems: Problem[]; pending: boolean }) {
+function Side({ inspect, file, problems, pending, locate }: { inspect: Inspect; file: SpecFile; problems: Problem[]; pending: boolean; locate?: LocateProblem }) {
   const missing = inspect.yamlHash === undefined;
   return (
     <>
       {missing ? null : (
         <section id="def-problems" tabIndex={-1} className="def-section" aria-labelledby="def-problems-title">
           <h2 id="def-problems-title">Checks</h2>
-          <ProblemSummary problems={problems} pending={pending} file={file} />
+          <ProblemSummary problems={problems} pending={pending} file={file} locate={locate} />
         </section>
       )}
       <ReferencesStep assetId={inspect.summary.assetId} inspect={inspect} />
@@ -83,5 +83,5 @@ export function DefinitionStep({ inspect, autoCreate }: { inspect: Inspect; auto
       </div>
     );
   }
-  return <FamilyEditor file={file} assetId={summary.assetId} aside={({ problems, pending }) => <Side inspect={inspect} file={file} problems={problems} pending={pending} />} />;
+  return <FamilyEditor file={file} assetId={summary.assetId} aside={({ problems, pending, locate }) => <Side inspect={inspect} file={file} problems={problems} pending={pending} locate={locate} />} />;
 }

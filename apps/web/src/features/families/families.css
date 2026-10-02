@@ -62,17 +62,88 @@
 /* ---------------------------------------------------------------- editor */
 .fam-editor { min-width: 0; }
 .fam-editor-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 14px; }
-.fam-section { padding: 22px 0; border-top: 1px solid var(--border); }
-.fam-section:first-of-type { border-top: 0; padding-top: 4px; }
-.fam-section > h3 { margin: 0 0 10px; font-size: 15px; }
 .fam-group { min-width: 0; margin: 16px 0; }
 .fam-group legend { color: var(--text); font-size: 13px; }
 .fam-row { padding: 12px 0 4px; border-top: 1px solid var(--border); }
-.fam-deliverables { margin: 0 0 14px; padding: 0; list-style: none; overflow: hidden; border-radius: var(--radius-lg); background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); }
-ol.fam-deliverables > li + li { margin-top: 0; border-top: 1px solid var(--border); }
-.fam-deliverable { padding: 14px 16px; }
-.fam-deliverable h4 { font-size: 14px; }
-.fam-deliverable-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.field > legend { margin-bottom: 5px; color: var(--text); font-size: 12.5px; font-weight: 600; }
+
+/* ---------------------------------------------------------------- definition overview */
+/* The definition reads like the Sheet, as text: parts are a head over a panel, deliverables are rows in the Sheet's
+   groups. Edit turns a part's panel into its fields; a row opens its fields under its own head, aligned to its text. */
+.spec { display: grid; gap: 30px; }
+.spec-deliverables { display: grid; gap: 30px; }
+.spec-part, .spec-row { scroll-margin-top: 64px; }
+.spec-part:focus { outline: 0; }
+.spec-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-height: 26px; margin-bottom: 10px; }
+.spec-head h3 { font-size: 16px; font-weight: 640; letter-spacing: -0.01em; }
+.spec-head .n { font: 550 11.5px var(--mono); color: var(--text-faint); }
+.spec-head .spec-flag { align-self: center; }
+.spec-head .spec-edit-button { align-self: center; margin-left: auto; }
+.spec-text { display: grid; gap: 14px; }
+.spec-text p { margin: 0; }
+.spec-lede { max-width: 75ch; font-size: 14px; line-height: 1.55; }
+.spec-kv { display: grid; grid-template-columns: max-content minmax(0, 75ch); gap: 8px 22px; margin: 0; font-size: 13px; line-height: 1.5; }
+.spec-kv dt { color: var(--text-faint); }
+.spec-kv dd { margin: 0; overflow-wrap: anywhere; }
+.spec-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: 13px; }
+.spec-notes > summary { min-height: 24px; color: var(--text-muted); font-weight: 600; }
+.spec-notes > summary span { font-weight: 400; color: var(--text-faint); }
+.spec-notes p { max-width: 75ch; margin-top: 6px; color: var(--text-muted); font-size: 13px; line-height: 1.5; }
+.spec .placeholder { color: var(--warn); }
+.spec-fields > :last-child { margin-bottom: 0; }
+.spec-fields textarea, .spec-edit textarea { field-sizing: content; min-height: calc(2lh + 12px); max-height: 50vh; }
+
+.spec-rows { margin: 0; padding: 0; list-style: none; overflow: hidden; border-radius: var(--radius-lg); background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); }
+.spec-rows > li + li { border-top: 1px solid var(--border); }
+.spec-row-head { display: grid; grid-template-columns: 196px minmax(0, 1fr) auto; align-items: start; gap: 4px 20px; padding: 12px 16px; cursor: pointer; transition: background-color 120ms var(--ease); }
+.spec-row-head:hover, .spec-row.open > .spec-row-head { background: var(--accent-soft); }
+.spec-toggle { display: grid; justify-content: start; justify-items: start; gap: 1px; min-height: 0; padding: 0; border-radius: 4px; background: none; box-shadow: none; text-align: left; white-space: normal; }
+.spec-toggle:hover:not(:disabled), .spec-toggle:active:not(:disabled) { background: none; box-shadow: none; }
+.spec-toggle code { font-size: 12.5px; font-weight: 550; line-height: 19.5px; color: var(--text); overflow-wrap: anywhere; }
+.spec-row.open .spec-toggle code { font-weight: 650; }
+.spec-sub { font-size: 12px; font-weight: 400; color: var(--text-faint); }
+.spec-read { display: grid; gap: 3px; min-width: 0; }
+.spec-read p { max-width: 75ch; margin: 0; }
+.spec-desc, .spec-motion { font-size: 13px; line-height: 1.5; }
+.spec-motion { color: var(--text-muted); }
+.spec-motion > span { margin-right: 3px; font-size: 12px; font-weight: 600; color: var(--text-faint); }
+.spec-facts { display: flex; flex-wrap: wrap; font-size: 12px; line-height: 1.6; color: var(--text-faint); }
+.spec-facts > span + span::before { content: "·"; margin: 0 7px; }
+.spec-facts code { font-size: 11.5px; color: var(--text-muted); }
+.spec-mark { grid-column: 3; display: inline-flex; align-items: center; gap: 10px; min-height: 19.5px; color: var(--text-faint); }
+.spec-flag { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.spec-flag.bad { color: var(--danger); }
+.spec-flag.warn { color: var(--warn); }
+.spec-edit { padding: 16px 16px 6px 232px; border-top: 1px solid var(--border); }
+.spec-more { margin: 2px 0 10px; }
+.spec-more > summary { color: var(--text-muted); }
+.spec-more > summary:hover { color: var(--text); }
+.spec-more > summary .spec-flag { margin-left: 4px; }
+.spec-more-body { margin-top: 8px; padding-top: 14px; border-top: 1px solid var(--border); }
+.spec-actions { margin: 4px 0 6px; padding-top: 12px; border-top: 1px solid var(--border); }
+.spec-add { justify-self: start; }
+.spec-add > summary { color: var(--text-muted); }
+.spec-add > summary:hover { color: var(--text); }
+.spec-add[open] > summary { margin-bottom: 6px; }
+.spec-add > .secondary { margin-bottom: 10px; }
+
+/* Depends on: chosen ids as chips, the rest in one Add select. */
+.picks { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pick { display: inline-flex; align-items: center; gap: 4px; min-height: 26px; padding: 0 3px 0 10px; border-radius: 13px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); font-size: 12px; color: var(--text-faint); }
+.pick code { color: var(--text); }
+.pick button { width: 20px; min-height: 20px; padding: 0; border-radius: 50%; background: transparent; box-shadow: none; color: var(--text-faint); }
+.pick button:hover:not(:disabled) { background: var(--surface-3); color: var(--text); }
+.pick button .icon { width: 12px; height: 12px; }
+.picks select { width: auto; min-width: 128px; min-height: 26px; padding-top: 2px; padding-bottom: 2px; font-size: 12.5px; }
+
+@media (max-width: 760px) {
+  .spec-row-head { grid-template-columns: minmax(0, 1fr) auto; }
+  .spec-row-head .spec-read { grid-column: 1 / -1; grid-row: 2; }
+  .spec-mark { grid-column: 2; grid-row: 1; }
+  .spec-edit { padding-left: 16px; }
+  .spec-kv { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .spec-kv dd + dt { margin-top: 8px; }
+}
 .fam-identity-row { display: flex; align-items: flex-start; gap: 12px; }
 .fam-identity-row .field { flex: 1; min-width: 0; }
 .fam-identity-row button { margin-top: 24px; }

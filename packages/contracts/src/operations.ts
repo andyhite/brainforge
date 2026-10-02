@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ApprovalPolicy, AssetFamily, AuthoredKind } from "./authored.ts";
 import { NextAction, RecoveryAction } from "./envelope.ts";
-import { Annotation, Branch, Budget, Candidate, Decision, Escalation, FrameRange, GenerationPlan, Geometry, InputMode, Job, JobState, OutputApproval, RevisionRequest, RevisionStatus, StepId, StepState, Visual } from "./generation.ts";
+import { Annotation, Branch, Candidate, Decision, Escalation, FrameRange, GenerationPlan, Geometry, InputMode, Job, JobState, OutputApproval, RevisionRequest, RevisionStatus, StepId, StepState, Visual } from "./generation.ts";
 import { BranchComparison, BranchPlan } from "./branches.ts";
 import { HistoryExample, JudgmentSummary, Preference, PreferenceScope, PreferenceStatus } from "./history.ts";
 import { ActivationEvent, ActiveSelection, AssetVersion, CollectionState, ProductionManifest, PromotionPlan } from "./production.ts";
@@ -245,24 +245,6 @@ export const OPERATIONS = {
   },
 
   // ---- M2: concept generation, review, revisions
-  "budget.grant": {
-    input: z.object({ assetId: z.string(), stepId: StepId, maxStarts: z.number().int().min(1).max(50), maxCandidateSubmissions: z.number().int().min(1).max(200), expiresAt: z.string().datetime(), spendCapUsd: z.number().nonnegative().optional(), note: z.string().optional() }).strict(),
-    data: z.object({ budget: Budget }),
-    mutating: true, humanOnly: true, needsProject: true,
-    summary: "Human only. Authorize a bounded amount of generation for one asset step: maximum starts, maximum candidate submissions, expiry, optional spend cap. Counters persist; nothing resets them except a new human grant.",
-  },
-  "budget.list": {
-    input: z.object({ assetId: z.string().optional(), includeInactive: z.boolean().default(false) }).strict(),
-    data: z.object({ budgets: z.array(Budget) }),
-    mutating: false, humanOnly: false, needsProject: true,
-    summary: "Generation budgets with used and remaining counts. Agents use this to see what the user has authorized.",
-  },
-  "budget.revoke": {
-    input: z.object({ budgetId: z.string(), reason: z.string().min(1) }).strict(),
-    data: z.object({ budget: Budget }),
-    mutating: true, humanOnly: true, needsProject: true,
-    summary: "Human only. Stops further use of a budget; work already started continues.",
-  },
   "step.inspect": {
     input: z.object({ assetId: z.string(), stepId: StepId.default("concept"), branchId: z.string().optional() }).strict(),
     data: z.object({ step: StepState }),
@@ -281,13 +263,13 @@ export const OPERATIONS = {
     }).strict(),
     data: z.object({ plan: GenerationPlan }),
     mutating: true, humanOnly: false, needsProject: true,
-    summary: "Plan a concept batch without submitting anything: composed prompt with sources, workflow, execution and cost disclosure, pinned input hashes, remaining budget and blockers. variation needs parentCandidateId (continues from that candidate's matted output via the identity-edit workflow). Returns planId and planHash for generation.start.",
+    summary: "Plan a concept batch without submitting anything: composed prompt with sources, workflow, execution and cost disclosure, pinned input hashes, limits and blockers. variation needs parentCandidateId (continues from that candidate's matted output via the identity-edit workflow). Returns planId and planHash for generation.start.",
   },
   "generation.start": {
-    input: z.object({ planId: z.string(), planHash: z.string(), budgetId: z.string() }).strict(),
-    data: z.object({ runId: z.string(), jobs: z.array(Job), budget: Budget }),
+    input: z.object({ planId: z.string(), planHash: z.string() }).strict(),
+    data: z.object({ runId: z.string(), jobs: z.array(Job) }),
     mutating: true, humanOnly: false, needsProject: true,
-    summary: "Start an inspected plan under an active budget. Revalidates spec hashes, references, preflight and budget; consumes one start and one candidate submission per candidate. Returns immediately with queued jobs; poll job_inspect or watch events.",
+    summary: "Start an inspected plan. Revalidates spec hashes, references and preflight against the plan, then queues one job per candidate under the batch and concurrency limits. Returns immediately with queued jobs; poll job_inspect or watch events.",
   },
   "job.list": {
     input: z.object({ assetId: z.string().optional(), state: JobState.optional(), activeOnly: z.boolean().default(false), limit: z.number().int().min(1).max(200).default(50) }).strict(),
@@ -306,7 +288,7 @@ export const OPERATIONS = {
     input: z.object({ jobId: z.string(), mode: z.enum(["collect", "new-attempt"]).default("collect") }).strict(),
     data: z.object({ job: Job }),
     mutating: true, humanOnly: false, needsProject: true,
-    summary: "collect: retry downloading and publishing a remote result without regenerating. new-attempt: submit a fresh prompt for an unresolved job; human only, consumes budget, preserves the original attempt.",
+    summary: "collect: retry downloading and publishing a remote result without regenerating. new-attempt: submit a fresh prompt for an unresolved job; human only because the original submission may still be running on ComfyUI and a second prompt could duplicate it; preserves the original attempt.",
   },
   "job.cancel": {
     input: z.object({ jobId: z.string() }).strict(),

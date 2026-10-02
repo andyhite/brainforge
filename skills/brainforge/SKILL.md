@@ -15,8 +15,8 @@ Local asset-production tool for a game project. Humans review, approve, lock, an
 - NEVER learn the YAML format by hunting the filesystem or guessing. Run `spec.schema` first.
 - After every YAML edit, run `spec.read {path}` and fix until `problems` is empty.
 - NEVER hand-edit `brainforge/.state/`, any `versions/` or `work/` directory.
-- Generation spends the user's GPU. Only start jobs under a human-granted budget (`budget.list`), after showing the plan. Budgets are per step id: one grant for `concept` (size it to cover revision follow-ups) and one per deliverable, so ask the user for all of them up front. Details: [generation-review](references/generation-review.md).
-- Human decisions (grant budget, approve, lock concept, confirm policy, connection settings) are refused for agents. Tell the user to do it in the UI.
+- Generation uses the user's GPU, which may be remote. Start jobs only for generation the user asked for: asking you to iterate on a character, concept or deliverable authorizes the plan → start → review → revise loop without per-step grants. Always run `generation.plan` first and show the user the counts and compute disclosure. Stay inside the user's request; NEVER widen it. Details: [generation-review](references/generation-review.md).
+- Human decisions (approve when policy requires a human, lock concept, confirm policy, connection settings) are refused for agents. Tell the user to do it in the UI.
 </critical>
 
 ## CLI
@@ -53,7 +53,7 @@ Inputs are JSON objects; unknown keys are rejected.
 |Assets|`asset.list`, `asset.inspect {assetId}` (yaml path/hash, directories, registered artifacts), `asset.impact {assetId}` (read-only: per branch, which steps need reassessment after an edit and which inputs changed)|
 |References|`reference.import {sourcePath \| contentBase64+filename, label, scope:"project"\|"asset", assetId?}`, `reference.list {assetId?}`|
 |Workflows|`workflow.list`, `workflow.inspect {workflowId, version?}`, `workflow.preflight {workflowId, version?}` (read-only)|
-|Generation|`budget.list`, `step.inspect`, `generation.plan` (no submit), `generation.start {planId, planHash, budgetId}`, `job.list/inspect/reconcile/retry/cancel`, `candidate.list`, `candidate.inspect`, `candidate.favorite` (a marker only, never approval)|
+|Generation|`step.inspect`, `generation.plan` (no submit), `generation.start {planId, planHash}`, `job.list/inspect/reconcile/retry/cancel`, `candidate.list`, `candidate.inspect`, `candidate.favorite` (a marker only, never approval)|
 |Review|`annotation.create`, `annotation.update`, `annotation.delete`, `annotation.list`, `revision.list {status}`, `revision.inspect` (images), `revision.create`, `revision.respond`; `revision.resolve/waive` only if the user says so|
 |Branches/review|`concept.lock {assetId,candidateId,outputId,inputMode}`, `branch.list`, `step.list`, `candidate.select`, `review.list/material/decide/escalate/history`; `review.override` human only. [branches-review](references/branches-review.md)|
 |Continue|`branch.plan` (read-only) → `branch.create {candidateId,outputId?,inputMode,planHash}`, `branch.compare`, `branch.select {assetId,branchId}`. [branches-continue](references/branches-continue.md)|
@@ -62,7 +62,7 @@ Inputs are JSON objects; unknown keys are rejected.
 |Production|`promotion.plan {assetId, branchId?, members?}` (all blockers for the whole bundle; `members` pins versions for an environment aggregate), `promotion.start {planId, planHash, requestId}` (promote; does NOT activate), `version.list {assetId}`, `version.inspect {versionId}`, `version.activate {versionId, expectedRevision, acknowledgeObsolete?}`. [production-versions](references/production-versions.md)|
 |Export|`export.plan {assetIds?, versions?, confirmEmpty?}` (stores a plan; lists blockers/leaving/conflicts), `export.start {planId, planHash, requestId}`, `export.list`, `export.inspect {exportId}`. [export](references/export.md)|
 |Completeness|`project.completeness` (read-only): is every required asset (project.yaml `requirements.assets`) complete, i.e. an active version that matches current requirements with nothing awaiting reassessment or unresolved required notes; per-asset state and reasons, review-queue counts, and the separate export status. Call it to answer "what is left?"|
-|Human only|`budget.grant`, `budget.revoke`, `policy.authorize`, `connection.set`, `review.override`, `preference.confirm`, `preference.reject`|
+|Human only|`policy.authorize`, `connection.set`, `review.override`, `preference.confirm`, `preference.reject`|
 
 Authored files are only `brainforge/project.yaml`, `brainforge/styles/<style-id>.yaml`, `brainforge/assets/<asset-id>/asset.yaml`. Anything else under `brainforge/` is tool-managed.
 
@@ -128,5 +128,5 @@ The YAML text IS the image prompt. The model (Krea, cfg 1) obeys what you descri
 Trust: requests with a UI Origin are the human; the CLI is agent `agent:cli`. Setup: [references/cli-setup.md](references/cli-setup.md).
 
 <critical>
-Recap: `spec.schema` → edit the YAML file → `spec.read` until `problems` is empty; YAML is the prompt: read `plan.prompt` before starting; open `visualFiles` before judging images; never touch `.state/`, `versions/`, `work/`; start only under a human budget; respond to revisions, don't resolve them; human-only decisions go to the UI.
+Recap: `spec.schema` → edit the YAML file → `spec.read` until `problems` is empty; YAML is the prompt: read `plan.prompt` before starting; open `visualFiles` before judging images; never touch `.state/`, `versions/`, `work/`; start only generation the user asked for, after `generation.plan`; respond to revisions, don't resolve them; human-only decisions go to the UI.
 </critical>

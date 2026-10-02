@@ -2,7 +2,7 @@ import { Fragment, useState } from "react";
 import { Link } from "react-router-dom";
 import type { Candidate, GenerationPlan } from "@brainforge/contracts";
 import { useMutationOperation } from "../../api/hooks.ts";
-import { ActionLinks, Banner, ErrorBanner, formatTime, Modal, NetworkProblem, Seg, Status } from "../../components/ui.tsx";
+import { ActionLinks, Banner, ErrorBanner, Modal, NetworkProblem, Seg, Status } from "../../components/ui.tsx";
 import { outputUrl, pickOutput } from "./media.tsx";
 import { MotionPlanView } from "../processing/MotionPlanView.tsx";
 import { paths } from "../../lib/paths.ts";
@@ -11,8 +11,8 @@ import "./generation.css";
 
 export interface GenerateRequest { mode: "fresh" | "variation"; parentCandidateId?: string }
 
-export function GenerateDialog({ assetId, stepId = "concept", stepKind, branchId, candidates, initial, onClose, onGrantBudget }: {
-  assetId: string; stepId?: string; stepKind?: string; branchId?: string; candidates: Candidate[]; initial: GenerateRequest; onClose: () => void; onGrantBudget: () => void;
+export function GenerateDialog({ assetId, stepId = "concept", stepKind, branchId, candidates, initial, onClose }: {
+  assetId: string; stepId?: string; stepKind?: string; branchId?: string; candidates: Candidate[]; initial: GenerateRequest; onClose: () => void;
 }) {
   const stepNoun = stepId === "concept" ? "concepts" : stepId;
   const plan = useMutationOperation("generation.plan");
@@ -23,7 +23,6 @@ export function GenerateDialog({ assetId, stepId = "concept", stepKind, branchId
   const [count, setCount] = useState(animation ? 1 : 4);
   const [instructions, setInstructions] = useState("");
   const [planned, setPlanned] = useState<GenerationPlan | undefined>(undefined);
-  const [budgetId, setBudgetId] = useState("");
   const [started, setStarted] = useState<{ jobs: number } | undefined>(undefined);
 
   const project = useProject();
@@ -42,21 +41,18 @@ export function GenerateDialog({ assetId, stepId = "concept", stepKind, branchId
     });
     if (result.ok) {
       setPlanned(result.data.plan);
-      setBudgetId(result.data.plan.budgets[0]?.budgetId ?? "");
       start.reset();
     }
   };
 
   const begin = async () => {
-    if (!planned || !budgetId) return;
-    const result = await start.mutateAsync({ input: { planId: planned.planId, planHash: planned.planHash, budgetId } });
+    if (!planned) return;
+    const result = await start.mutateAsync({ input: { planId: planned.planId, planHash: planned.planHash } });
     if (result.ok) setStarted({ jobs: result.data.jobs.length });
   };
 
   const blocked = (planned?.blockers.length ?? 0) > 0;
-  const noBudget = planned !== undefined && planned.budgets.length === 0;
-  const selectedBudget = planned?.budgets.find((budget) => budget.budgetId === budgetId);
-  const startReason = !planned ? "Plan first." : blocked ? "Resolve the blockers above." : noBudget ? "No budget covers this plan." : !budgetId ? "Choose a budget." : undefined;
+  const startReason = !planned ? "Plan first." : blocked ? "Resolve the blockers above." : undefined;
 
   return (
     <Modal open wide onOpenChange={(open) => { if (!open) onClose(); }} title={`Plan generation: ${stepNoun}`} description="You see the exact plan before anything is submitted. Nothing starts until you press Start generation.">
@@ -100,7 +96,7 @@ export function GenerateDialog({ assetId, stepId = "concept", stepKind, branchId
               <div className="field">
                 <label htmlFor="gen-count">How many candidates</label>
                 <input id="gen-count" type="number" min={1} max={8} value={count} onChange={(event) => setCount(Number(event.target.value))} />
-                <div className="hint">{animation ? "Each candidate is one run with the same guides and motion but a different random seed. " : "Each one counts against your budget. "}The plan shows the limit.</div>
+                <div className="hint">{animation ? "Each candidate is one run with the same guides and motion but a different random seed. " : ""}The plan shows the limit.</div>
               </div>
               <div className="field">
                 <label htmlFor="gen-instr">Instructions for this run (optional)</label>
@@ -130,26 +126,6 @@ export function GenerateDialog({ assetId, stepId = "concept", stepKind, branchId
                   </ul>
                 </Banner>
               ) : null}
-              <section aria-label="Budget" className="plan-budget">
-                <h3>Budget</h3>
-                {noBudget ? (
-                  <Banner tone="warn" title="No budget covers this plan" actions={<button type="button" onClick={() => { onClose(); onGrantBudget(); }}>Grant a budget…</button>}>
-                    Generation only starts under a budget you grant. Nothing was submitted.
-                  </Banner>
-                ) : (
-                  <div className="field">
-                    <label htmlFor="gen-budget">Spend from</label>
-                    <select id="gen-budget" value={budgetId} onChange={(event) => setBudgetId(event.target.value)}>
-                      {planned.budgets.map((budget) => (
-                        <option key={budget.budgetId} value={budget.budgetId}>
-                          {budget.remainingStarts} {budget.remainingStarts === 1 ? "start" : "starts"} and {budget.remainingCandidateSubmissions} candidates left · expires {formatTime(budget.expiresAt)}
-                        </option>
-                      ))}
-                    </select>
-                    {selectedBudget && selectedBudget.remainingCandidateSubmissions < planned.count ? <div className="hint" role="alert">Only {selectedBudget.remainingCandidateSubmissions} candidates remain; this plan needs {planned.count}.</div> : null}
-                  </div>
-                )}
-              </section>
               {start.error ? <NetworkProblem error={start.error} /> : null}
               {start.data && !start.data.ok ? <ErrorBanner error={start.data.error} /> : null}
               {startReason ? <p className="secondary" role="status">Can’t start: {startReason}</p> : null}
@@ -192,7 +168,7 @@ function PlanView({ plan, candidates }: { plan: GenerationPlan; candidates: Cand
           {plan.preflight.missingNodes.length > 0 ? <div>Missing nodes: <span className="mono">{plan.preflight.missingNodes.join(", ")}</span></div> : null}
           {plan.preflight.missingModels.length > 0 ? <div>Missing models: <span className="mono">{plan.preflight.missingModels.join(", ")}</span></div> : null}
         </dd>
-        <dt>Limits</dt><dd>Up to {plan.limits.maxBatchCandidates} candidates per start · {plan.limits.maxConcurrentGenerations} at a time · {plan.limits.maxAttemptsPerStep} starts per deliverable</dd>
+        <dt>Limits</dt><dd>Up to {plan.limits.maxBatchCandidates} candidates per batch · {plan.limits.maxConcurrentGenerations} at a time</dd>
       </dl>
       {plan.notes.length > 0 ? <ul className="plan-notes">{plan.notes.map((note) => <li key={note}>{note}</li>)}</ul> : null}
       {plan.motion && projectId ? <MotionPlanView motion={plan.motion} projectId={projectId} /> : null}

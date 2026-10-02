@@ -52,7 +52,7 @@ async function seed(root: string, id: string, stepId: string, branchId: string |
   const rel = `brainforge/assets/cortex/work/candidates/${id}/original/out.png`;
   await put(root, rel, png);
   const now = new Date().toISOString();
-  db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, budget_id, started_by, created_at) VALUES (?, 'cortex', ?, 'p', '{}', 'b', 'human:local', ?)").run(`run_${id}`, stepId, now);
+  db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, started_by, created_at) VALUES (?, 'cortex', ?, 'p', '{}', 'human:local', ?)").run(`run_${id}`, stepId, now);
   db.query("INSERT INTO generation_jobs (job_id, run_id, asset_id, step_id, slot, label, identity, state, submission_json, created_at, updated_at) VALUES (?, ?, 'cortex', ?, 0, 'A', ?, 'succeeded', '{}', ?, ?)").run(`job_${id}`, `run_${id}`, stepId, `identity-${id}`, now, now);
   db.query("INSERT INTO candidates (candidate_id, asset_id, step_id, run_id, job_id, label, prompt, favorite, created_at, branch_id) VALUES (?, 'cortex', ?, ?, ?, 'A', 'a prompt', 0, ?, ?)").run(id, stepId, `run_${id}`, `job_${id}`, now, branchId ?? null);
   db.query("INSERT INTO candidate_outputs (output_id, candidate_id, role, file_id, path, sha256, width, height, media_type) VALUES (?, ?, 'matted', ?, ?, ?, 32, 32, 'image/png')").run(`out_${id}`, id, `out_${id}`, rel, sha256(png));

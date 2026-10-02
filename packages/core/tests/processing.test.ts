@@ -58,7 +58,7 @@ async function world(): Promise<World> {
   const call: World["call"] = (name, input, requestId) => h.call(name, input, { project: root, ...(requestId ? { requestId } : {}) });
 
   const seedRun = (runId: string, jobId: string, stepId: string, planJson: unknown) => {
-    open.db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, budget_id, started_by, created_at) VALUES (?, 'cortex', ?, 'x', ?, 'b', 'test', ?)").run(runId, stepId, JSON.stringify(planJson), NOW);
+    open.db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, started_by, created_at) VALUES (?, 'cortex', ?, 'x', ?, 'test', ?)").run(runId, stepId, JSON.stringify(planJson), NOW);
     open.db.query("INSERT INTO generation_jobs (job_id, run_id, asset_id, step_id, slot, label, identity, state, submission_json, created_at, updated_at) VALUES (?, ?, 'cortex', ?, 1, 'x', ?, 'succeeded', '{}', ?, ?)").run(jobId, runId, stepId, `id-${jobId}`, NOW, NOW);
   };
   const seedImage = async (candidateId: string, outputId: string, runId: string, jobId: string, png: Buffer) => {

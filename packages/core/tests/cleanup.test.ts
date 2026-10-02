@@ -63,9 +63,8 @@ interface World { f: GenerationFixture; open: OpenProject; stillCandidate: strin
 async function world(): Promise<World> {
   const f = await generationFixture();
   fixtures.push(f);
-  const budget = await f.grant();
   const plan = await f.plan({ count: 1 });
-  expectOk(await f.h.call("generation.start", { planId: plan.planId, planHash: plan.planHash, budgetId: budget.budgetId }, { project: f.root }));
+  expectOk(await f.h.call("generation.start", { planId: plan.planId, planHash: plan.planHash }, { project: f.root }));
   const [job] = await f.waitJobs((js) => js.length > 0 && js.every((j) => j.state === "succeeded"), "the concept job");
   const open = f.h.registry.get(f.root) as OpenProject;
   const base = open.db.query<{ run_id: string; job_id: string; candidate_id: string }, [string]>("SELECT run_id, job_id, candidate_id FROM candidates WHERE candidate_id = ?").get(job!.candidateId!)!;

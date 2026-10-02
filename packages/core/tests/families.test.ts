@@ -99,7 +99,6 @@ describe("family templates", () => {
     const id = `sample-${family}`;
     const t = expectOk(await f.h.call("family.template", { family, id, name: "Sample" }));
     await put(f.root, t.path, t.text);
-    expectOk(await f.h.call("budget.grant", { assetId: id, stepId: "concept", maxStarts: 2, maxCandidateSubmissions: 4, expiresAt: new Date(Date.now() + 3600_000).toISOString() }, { project: f.root }));
     const plan = expectOk(await f.h.call("generation.plan", { assetId: id, count: 1 }, { project: f.root })).plan;
     expect(plan.blockers).toEqual([]);
     expect(plan.workflow.id).toBe(workflowFor(family, "still", resolveAlpha(family)) ?? "");
@@ -189,7 +188,6 @@ describe("generation by family", () => {
   test("the character prompt and camera wording are byte-identical to the first release", async () => {
     const f = await generationFixture();
     fixtures.push(f);
-    await f.grant();
     const plan = await f.plan({ count: 1 });
     expect(plan.blockers).toEqual([]);
     expect(plan.workflow.id).toBe("krea2-still");
@@ -203,7 +201,6 @@ describe("generation by family", () => {
   test("style palette entries are joined with ', ', or '; ' when an entry itself contains a comma", async () => {
     const f = await generationFixture();
     fixtures.push(f);
-    await f.grant();
     const styleLine = async (palette: string): Promise<string | undefined> => {
       await put(f.root, "brainforge/styles/cranium.yaml", `schema: brainforge.style.v2\nid: cranium\npalette:\n${palette}`);
       await put(f.root, "brainforge/assets/cortex/asset.yaml", "schema: brainforge.asset.v2\nid: cortex\nname: Cortex\nfamily: character\ndescription: A guarded teenager with an exposed brain.\nstyleIds: [cranium]\n");
@@ -245,7 +242,6 @@ describe("generation by family", () => {
     fixtures.push(f);
     const write = async (id: string, family: string, extra: string): Promise<void> => {
       await put(f.root, `brainforge/assets/${id}/asset.yaml`, `schema: brainforge.asset.v2\nid: ${id}\nname: ${id}\nfamily: ${family}\ndescription: A concrete ${family}.\n${extra}`);
-      expectOk(await f.h.call("budget.grant", { assetId: id, stepId: "concept", maxStarts: 2, maxCandidateSubmissions: 4, expiresAt: new Date(Date.now() + 3600_000).toISOString() }, { project: f.root }));
     };
     await write("hills", "background", "");
     await write("burst", "effect", "");
@@ -278,19 +274,14 @@ deliverables:
     expectOk(await f.h.call("project.open", { path: f.root }));
     await seedConcept(f);
     const branchId = expectOk(await f.h.call("concept.lock", { assetId: "cortex", candidateId: "cand_c", outputId: "out_cand_c" }, { project: f.root })).branch.branchId;
-    await f.grant({ stepId: "small" });
-    await f.grant({ stepId: "huge" });
-    await f.grant({ stepId: "exact" });
     const plan = async (stepId: string) => expectOk(await f.h.call("generation.plan", { assetId: "cortex", stepId, branchId, count: 1 }, { project: f.root })).plan;
     const small = await plan("small");
     expect(small.submissions[0]?.values).toMatchObject({ width: 1024, height: 720 });
     expect(small.notes.join(" ")).toContain("Target output 100x70px; generating 1024x720px");
     const exact = await plan("exact");
     expect(exact.submissions[0]?.values).toMatchObject({ width: 512, height: 768 });
-    await f.grant({ stepId: "tiny" });
     expect((await plan("tiny")).submissions[0]?.values).toMatchObject({ width: 1024, height: 1024 });
     expect((await plan("tiny")).prompt).toContain("proportions, colours and drawing style identical to the reference image.");
-    await f.grant({ stepId: "tiny-off" });
     const off = await plan("tiny-off");
     expect(off.prompt).toContain("this deliverable's description names what changes, including colours");
     expect(off.prompt).not.toContain("colours and drawing style identical");
@@ -328,7 +319,7 @@ describe("static and optional motion", () => {
       const png = makePng(16, 16, [shade++, 60, 60]);
       const rel = `brainforge/assets/lamp/work/candidates/${id}/original/out.png`;
       await put(root, rel, png);
-      open.db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, budget_id, started_by, created_at) VALUES (?, 'lamp', ?, 'p', '{}', 'b', 'human:local', ?)").run(`run_${id}`, stepId, NOW);
+      open.db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, started_by, created_at) VALUES (?, 'lamp', ?, 'p', '{}', 'human:local', ?)").run(`run_${id}`, stepId, NOW);
       open.db.query("INSERT INTO generation_jobs (job_id, run_id, asset_id, step_id, slot, label, identity, state, submission_json, created_at, updated_at) VALUES (?, ?, 'lamp', ?, 0, 'A', ?, 'succeeded', '{}', ?, ?)").run(`job_${id}`, `run_${id}`, stepId, `identity-${id}`, NOW, NOW);
       open.db.query("INSERT INTO candidates (candidate_id, asset_id, step_id, run_id, job_id, label, prompt, favorite, created_at, branch_id) VALUES (?, 'lamp', ?, ?, ?, 'A', 'p', 0, ?, ?)").run(id, stepId, `run_${id}`, `job_${id}`, NOW, branchId ?? null);
       open.db.query("INSERT INTO candidate_outputs (output_id, candidate_id, role, file_id, path, sha256, width, height, media_type) VALUES (?, ?, 'untouched', ?, ?, ?, 16, 16, 'image/png')").run(`out_${id}`, id, `out_${id}`, rel, sha256(png));
@@ -361,10 +352,9 @@ deliverables:
     await put(f.root, "brainforge/assets/smoke/asset.yaml", effect(alpha));
     const call = <K extends OperationName>(name: K, input: unknown) => f.h.call(name, input, { project: f.root });
     const generate = async (stepId: string, branchId?: string) => {
-      await f.grant({ assetId: "smoke", stepId });
       const plan = expectOk(await call("generation.plan", { assetId: "smoke", stepId, count: 1, ...(branchId ? { branchId } : {}) })).plan;
       expect(plan.blockers).toEqual([]);
-      expectOk(await call("generation.start", { planId: plan.planId, planHash: plan.planHash, budgetId: plan.budgets[0]!.budgetId }));
+      expectOk(await call("generation.start", { planId: plan.planId, planHash: plan.planHash }));
       await f.waitJobs((jobs) => succeeded(jobs.filter((j) => j.stepId === stepId)), stepId);
       return { plan, candidates: expectOk(await call("candidate.list", { assetId: "smoke", stepId, ...(branchId ? { branchId } : {}) })).candidates };
     };
@@ -410,7 +400,7 @@ async function seedConcept(f: GenerationFixture): Promise<void> {
   const png = makePng(16, 16, [90, 60, 60]);
   const rel = "brainforge/assets/cortex/work/candidates/cand_c/original/out.png";
   await put(f.root, rel, png);
-  open.db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, budget_id, started_by, created_at) VALUES ('run_c', 'cortex', 'concept', 'p', '{}', 'b', 'human:local', ?)").run(NOW);
+  open.db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, started_by, created_at) VALUES ('run_c', 'cortex', 'concept', 'p', '{}', 'human:local', ?)").run(NOW);
   open.db.query("INSERT INTO generation_jobs (job_id, run_id, asset_id, step_id, slot, label, identity, state, submission_json, created_at, updated_at) VALUES ('job_c', 'run_c', 'cortex', 'concept', 0, 'A', 'identity-c', 'succeeded', '{}', ?, ?)").run(NOW, NOW);
   open.db.query("INSERT INTO candidates (candidate_id, asset_id, step_id, run_id, job_id, label, prompt, favorite, created_at, branch_id) VALUES ('cand_c', 'cortex', 'concept', 'run_c', 'job_c', 'A', 'p', 0, ?, NULL)").run(NOW);
   open.db.query("INSERT INTO candidate_outputs (output_id, candidate_id, role, file_id, path, sha256, width, height, media_type) VALUES ('out_cand_c', 'cand_c', 'matted', 'out_cand_c', ?, ?, 16, 16, 'image/png')").run(rel, sha256(png));

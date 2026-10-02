@@ -15,7 +15,7 @@ import { ALPHA_SHORT, MOTION_TEXT, useFamilies } from "./useFamilies.tsx";
 import { mutate, parseDraft, pushAt, setAt } from "./yaml-patch.ts";
 import "./families.css";
 
-interface Template { path: string; text: string; notes: string[] }
+interface Template { path: string; text: string }
 
 function FamilyCards({ profiles, value, onChange, memberOf }: { profiles: FamilyProfile[]; value: AssetFamily | undefined; onChange: (family: AssetFamily) => void; memberOf: string | undefined }) {
   const shown = memberOf ? profiles.filter((p) => p.collection === "member" || p.collection === "either") : profiles;
@@ -112,7 +112,7 @@ function EditStep({ template, memberOf, listInEnvironment }: { template: Templat
       assetId={assetId}
       banner={
         <>
-          {template.notes.length > 0 && !(file.savedHash && !file.dirty) ? <Banner tone="info" title="Starter file">{template.notes.join(" ")}</Banner> : null}
+          {saved ? null : <Banner tone="info" title="Starter file">Amber “REPLACE:” text marks what to write. Fill it in before you generate. The deliverables are examples: remove the ones the game doesn&rsquo;t need and add any that are missing.</Banner>}
           {memberOf && branchList !== undefined && !branchId ? <Banner tone="warn" title={`${memberOf} has no locked concept yet`}>Lock its concept, then pick the branch in each deliverable&rsquo;s “Reference roles”. Until then the member has no shared direction.</Banner> : null}
           {memberOf && branchId ? <Banner tone="info" title="Direction pre-filled">Deliverables are bound to {memberOf}&rsquo;s current locked branch as the shared direction. Change it under “Reference roles”.</Banner> : null}
         </>
@@ -169,7 +169,7 @@ export function NewAssetWizard() {
     setError(undefined);
     try {
       const result = await callOperation("family.template", { project: root, input: { family, id: assetId, name: name.trim(), ...(description.trim() ? { description: description.trim() } : {}) } });
-      if (result.ok) setTemplate({ path: result.data.path, text: result.data.text, notes: result.data.notes });
+      if (result.ok) setTemplate({ path: result.data.path, text: result.data.text });
       else setError(result.error);
     } catch (e) {
       setError({ message: e instanceof Error ? e.message : "Request failed" });

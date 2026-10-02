@@ -99,24 +99,34 @@ export function NextActions({ actions }: { actions: NextAction[] }) {
   );
 }
 
-export function ProblemList({ problems, blocked, onOpenFile }: { problems: Problem[]; blocked?: string; onOpenFile?: (file: string) => string }) {
+/** Where a problem's field lives in the current editor, as a label and a way to go there. */
+export type LocateProblem = (problem: Problem) => { label: string; go: () => void } | undefined;
+
+export function ProblemList({ problems, blocked, onOpenFile, locate }: { problems: Problem[]; blocked?: string; onOpenFile?: (file: string) => string; locate?: LocateProblem }) {
   if (problems.length === 0) return null;
   return (
     <div>
       {blocked ? <p className="secondary" style={{ margin: "8px 0" }}>{blocked}</p> : null}
       <ul className="problem-list" aria-label="Problems">
-        {problems.map((problem, index) => (
-          <li key={`${problem.file ?? ""}-${problem.line ?? ""}-${problem.column ?? ""}-${index}`}>
-            <Status tone={problem.severity === "warning" ? "warn" : "bad"}>{problem.severity === "warning" ? "Warning" : "Error"}</Status>
-            <span>
-              {problem.file ? (onOpenFile ? <Link to={onOpenFile(problem.file)} className="mono">{problem.file}</Link> : <code>{problem.file}</code>) : null}
-              {problem.line !== undefined ? <span className="mono"> {problem.line}:{problem.column ?? 1}</span> : null}
-              {problem.field ? <span className="mono"> · {problem.field}</span> : null}
-              <br />
-              {problem.message}
-            </span>
-          </li>
-        ))}
+        {problems.map((problem, index) => {
+          const target = locate?.(problem);
+          return (
+            <li key={`${problem.file ?? ""}-${problem.line ?? ""}-${problem.column ?? ""}-${index}`}>
+              <Status tone={problem.severity === "warning" ? "warn" : "bad"}>{problem.severity === "warning" ? "Warning" : "Error"}</Status>
+              <span>
+                {target ? <button type="button" className="link mono" onClick={target.go}>{target.label}</button> : (
+                  <>
+                    {problem.file ? (onOpenFile ? <Link to={onOpenFile(problem.file)} className="mono">{problem.file}</Link> : <code>{problem.file}</code>) : null}
+                    {problem.line !== undefined ? <span className="mono"> {problem.line}:{problem.column ?? 1}</span> : null}
+                    {problem.field ? <span className="mono"> · {problem.field}</span> : null}
+                  </>
+                )}
+                <br />
+                {problem.message}
+              </span>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

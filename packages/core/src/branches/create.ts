@@ -57,9 +57,6 @@ export async function createBranch(open: OpenProject, context: OperationContext,
       { label: "Lock this concept (policy applies)", operation: "concept.lock", input: { assetId: plan.assetId, candidateId: plan.source.candidateId, outputId: plan.source.outputId, inputMode: input.inputMode } },
     ]);
   }
-  if (!plan.authorization.allowed) {
-    throw new OperationFailure("HUMAN_AUTHORIZATION_REQUIRED", plan.authorization.reason ?? "You may not create branches under the current policy.", undefined, [{ label: "Ask the user to grant a generation budget", operation: "budget.grant", input: { assetId: plan.assetId } }]);
-  }
   if (plan.planHash !== input.planHash) {
     throw new OperationFailure("REVISION_CONFLICT", "The branch plan changed since it was inspected (authored files, selections or feedback moved). Inspect it again.", { expected: plan.planHash, got: input.planHash }, [{ label: "Plan again", operation: "branch.plan", input: { candidateId: input.candidateId, inputMode: input.inputMode } }]);
   }

@@ -1,6 +1,7 @@
 import { OperationFailure } from "../runtime.ts";
 import type { Database } from "bun:sqlite";
-import type { InputMode } from "@brainforge/contracts";
+import type { AuthoredKind, InputMode } from "@brainforge/contracts";
+import { parseDocument } from "yaml";
 import { parseAuthored, classifyAuthoredPath, type AuthoredAsset, type AuthoredFile, type AuthoredProject, type AuthoredSet, type AuthoredStyle } from "../authored.ts";
 
 export interface BranchBasisRow {
@@ -26,6 +27,21 @@ function assemble(files: readonly AuthoredFile[], bareAssetDirs: string[]): Auth
   styles.sort((a, b) => (a.path < b.path ? -1 : 1));
   assets.sort((a, b) => (a.path < b.path ? -1 : 1));
   return { project, styles, assets, bareAssetDirs, all: () => [...(project ? [project] : []), ...styles, ...assets] };
+}
+
+/**
+ * Retained project.yaml texts written before budgets were removed carry `automation.maxAttemptsPerStep`, which the
+ * current schema rejects. Parse them without that obsolete field; text and hash stay exactly as retained.
+ */
+function parseRetained(kind: AuthoredKind, path: string, id: string, text: string, hash: string): AuthoredFile {
+  if (kind === "project") {
+    const doc = parseDocument(text);
+    if (doc.hasIn(["automation", "maxAttemptsPerStep"])) {
+      doc.deleteIn(["automation", "maxAttemptsPerStep"]);
+      return { ...parseAuthored(kind, path, id, String(doc)), text, hash };
+    }
+  }
+  return parseAuthored(kind, path, id, text);
 }
 
 const cache = new WeakMap<AuthoredSet, Map<string, SavedInputs>>();
@@ -55,7 +71,7 @@ export function savedInputs(db: Database, current: AuthoredSet, specHashes: Read
       // The current file stands in so the set stays whole; callers must treat `unavailable` as a blocker.
       continue;
     }
-    byPath.set(path, parseAuthored(c.kind, c.path, c.id, row.text));
+    byPath.set(path, parseRetained(c.kind, c.path, c.id, row.text, hash));
   }
   const resolved: SavedInputs = { set: assemble([...byPath.values()], current.bareAssetDirs), unavailable };
   perSet.set(key, resolved);

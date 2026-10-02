@@ -1,11 +1,7 @@
-import type { RecoveryAction } from "@brainforge/contracts";
 import type { ComfyTransport } from "@brainforge/comfy";
 import type { OpenProject } from "../project-runtime.ts";
 import { OperationFailure } from "../runtime.ts";
-import {
-  budgetRow, budgetShortfall, jobEventData, jobRow, newId, patchJob, toBudget, jobError,
-  type JobRow,
-} from "./store.ts";
+import { jobEventData, jobRow, newId, patchJob, jobError, type JobRow } from "./store.ts";
 
 export type ReconcileOutcome = "attached" | "no-match" | "multiple-matches" | "unreachable";
 
@@ -52,8 +48,8 @@ export async function lookupByIdentity(project: OpenProject, row: JobRow, comfy:
 
 /**
  * A new attempt for the same candidate slot: a new job row with identity bf:<newJobId>:<attempt>. The original row
- * stays visible (an unresolved original is marked cancelled and points at its successor). Costs one more candidate
- * submission from the run's budget; the budget is the user's authorization.
+ * stays visible (an unresolved original is marked cancelled and points at its successor). The handler restricts this
+ * to humans: the original submission may still be running on ComfyUI, so a second prompt could duplicate it.
  */
 export async function newAttempt(project: OpenProject, jobId: string, actorId: string): Promise<JobRow> {
   return project.mutate(async () => {
@@ -65,23 +61,13 @@ export async function newAttempt(project: OpenProject, jobId: string, actorId: s
     if (superseded) {
       throw new OperationFailure("STEP_BLOCKED", `Job ${jobId} already has a newer attempt (${superseded.job_id}).`, { newerJobId: superseded.job_id }, [{ label: "Inspect the newer attempt", operation: "job.inspect", input: { jobId: superseded.job_id } }]);
     }
-    const run = project.db.query<{ budget_id: string }, [string]>("SELECT budget_id FROM generation_runs WHERE run_id = ?").get(original.run_id);
-    if (!run) throw new OperationFailure("NOT_FOUND", `Run ${original.run_id} of job ${jobId} is missing`);
     const newJobId = newId("job");
     const attempt = original.attempt + 1;
     const now = new Date().toISOString();
-    const grant: RecoveryAction = {
-      label: "Ask the user to grant a generation budget (only a person can, in the Brainforge UI)", operation: "budget.grant",
-      input: { assetId: original.asset_id, stepId: original.step_id, maxStarts: 1, maxCandidateSubmissions: 2, expiresAt: new Date(Date.now() + 24 * 3600_000).toISOString() },
-    };
     const priorUnresolved = original.unresolved_json;
     project.transact(() => {
-      const budget = budgetRow(project.db, run.budget_id);
-      const shortfall = budgetShortfall(budget, { starts: 0, submissions: 1 });
-      if (shortfall) throw new OperationFailure("HUMAN_AUTHORIZATION_REQUIRED", `${shortfall}. A new attempt spends one more candidate submission; only the user can authorize that.`, { budget: toBudget(budget) }, [grant]);
       project.db.query("INSERT INTO generation_jobs (job_id, run_id, asset_id, step_id, slot, attempt, label, identity, seed, state, submission_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)")
         .run(newJobId, original.run_id, original.asset_id, original.step_id, original.slot, attempt, original.label, `bf:${newJobId}:${attempt}`, original.seed, original.submission_json, now, now);
-      project.db.query("UPDATE generation_budgets SET used_candidate_submissions = used_candidate_submissions + 1 WHERE budget_id = ?").run(budget.budget_id);
       if (original.state === "unresolved") {
         const detail = priorUnresolved === null ? { reason: "no-match", matches: [] } : (JSON.parse(priorUnresolved) as Record<string, unknown>);
         project.db.query("UPDATE generation_jobs SET state = 'cancelled', unresolved_json = ?, updated_at = ? WHERE job_id = ?").run(JSON.stringify({ ...detail, supersededBy: newJobId }), now, original.job_id);
@@ -111,7 +97,6 @@ export async function retryCollect(project: OpenProject, row: JobRow, actorId: s
 /**
  * Cancel only what is safe to cancel: a job still local to Brainforge, or a prompt still pending on ComfyUI (deleted
  * by id). A running prompt cannot be stopped without interrupting the shared instance, which Brainforge never does.
- * The budget is not refunded: it paid for the slot, not for the result.
  */
 export async function cancelJob(project: OpenProject, row: JobRow, comfy: ComfyTransport | undefined, actorId: string): Promise<JobRow> {
   const unavailable = (why: string): OperationFailure => new OperationFailure("CANCEL_UNAVAILABLE", why, { state: row.state }, [{ label: "Inspect the job", operation: "job.inspect", input: { jobId: row.job_id } }]);

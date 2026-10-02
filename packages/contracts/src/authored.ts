@@ -40,7 +40,6 @@ export const ApprovalPolicy = z.object({
 export type ApprovalPolicy = z.infer<typeof ApprovalPolicy>;
 
 export const Automation = z.object({
-  maxAttemptsPerStep: z.number().int().positive().default(3),
   maxConcurrentGenerations: z.number().int().positive().default(1),
   maxBatchCandidates: z.number().int().positive().default(4),
   autoRegenerate: z.boolean().default(false),
@@ -92,7 +91,7 @@ export const ProjectSpec = z.object({
   layers: z.array(z.object({ id: KebabId, description: z.string().default("") }).strict()).default([]),
   requirements: z.object({ assets: z.array(KebabId).default([]) }).strict().default({ assets: [] }),
   approval: ApprovalPolicy.default({ conceptLock: "human", productionReview: "agent_with_escalation", promotion: "human", activation: "human" }),
-  automation: Automation.default({ maxAttemptsPerStep: 3, maxConcurrentGenerations: 1, maxBatchCandidates: 4, autoRegenerate: false }),
+  automation: Automation.default({ maxConcurrentGenerations: 1, maxBatchCandidates: 4, autoRegenerate: false }),
   export: ExportSettings,
 }).strict().superRefine((spec, ctx) => {
   for (const message of findNonPortableValues(spec)) ctx.addIssue({ code: "custom", message });

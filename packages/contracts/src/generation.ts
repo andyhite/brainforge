@@ -243,28 +243,6 @@ export const Candidate = z.object({
 });
 export type Candidate = z.infer<typeof Candidate>;
 
-// --------------------------------------------------------------------------- budgets
-
-export const BudgetStatus = z.enum(["active", "exhausted", "expired", "revoked"]);
-export const Budget = z.object({
-  budgetId: z.string(),
-  assetId: z.string(),
-  stepId: StepId,
-  maxStarts: z.number().int().positive(),
-  maxCandidateSubmissions: z.number().int().positive(),
-  usedStarts: z.number().int(),
-  usedCandidateSubmissions: z.number().int(),
-  spendCapUsd: z.number().nonnegative().optional(),
-  spentUsd: z.number().nonnegative(),
-  expiresAt: z.string(),
-  note: z.string().optional(),
-  createdBy: z.string(),
-  createdAt: z.string(),
-  revokedAt: z.string().optional(),
-  status: BudgetStatus,
-});
-export type Budget = z.infer<typeof Budget>;
-
 // --------------------------------------------------------------------------- plan
 
 export const PlanBlocker = z.object({ code: z.string(), message: z.string(), recoveryActions: z.array(RecoveryAction) });
@@ -349,9 +327,7 @@ export const GenerationPlan = z.object({
   submissions: z.array(z.object({ submissionId: z.string(), label: z.string(), seed: z.number().int(), values: z.record(z.string(), z.union([z.string(), z.number()])) })),
   execution: z.object({ computeLocation: z.string(), externalServices: z.array(z.string()), credentialKeys: z.array(z.string()), costDescription: z.string() }),
   preflight: z.object({ ok: z.boolean(), missingNodes: z.array(z.string()), missingModels: z.array(z.string()), comfyHost: z.string().optional() }),
-  limits: z.object({ maxBatchCandidates: z.number().int(), maxConcurrentGenerations: z.number().int(), maxAttemptsPerStep: z.number().int() }),
-  /** Active budgets that could cover this plan, with what remains. */
-  budgets: z.array(z.object({ budgetId: z.string(), remainingStarts: z.number().int(), remainingCandidateSubmissions: z.number().int(), expiresAt: z.string() })),
+  limits: z.object({ maxBatchCandidates: z.number().int(), maxConcurrentGenerations: z.number().int() }),
   /** Non-empty means `generation.start` would be refused; each entry says how to recover. */
   blockers: z.array(PlanBlocker),
   /** Honest limits of the chosen inputs (for example which reference the single-reference workflow could use). */

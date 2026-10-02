@@ -306,7 +306,7 @@ The palette is near-neutral graphite with a faint cool cast in both themes, plus
 
 ### Primary
 - **Ink** (`accent`, same value as `text`): the one filled control colour. It is the next-action button (`.primary`), the current-tab underline, count badges, note numbers and markers drawn on art, the selection highlight, and the default tag on an asset card. On dark it is near-white and on light near-black. `accent-text` is the label colour set on ink.
-- **Ink Wash** (`accent-soft`): a 7–9% ink tint for the current or hovered row in Releases, the selected version on Versions and a selected family card. It is never used as a fill on a control.
+- **Ink Wash** (`accent-soft`): a 7–9% ink tint for the current or hovered row in Releases, the selected version on Versions, a selected family card, and the hovered or open row on Definition. It is never used as a fill on a control.
 
 ### Secondary
 - **Approved Green** (`ok`, `ok-soft`): the check mark on approved cells and "In the game" stamps, and the success notice in the room. The icon carries the colour and the text stays neutral.
@@ -371,7 +371,7 @@ The palette is near-neutral graphite with a faint cool cast in both themes, plus
 **Screen map (IA).**
 - **Top bar**: project menu (sheet mark, name, chevron), then tabs **Home · Review (count) · Releases**. At the end: jobs-attention status (dot + text, linking to Activity), live-connection status (shown only when unhealthy), Jump (⌘K palette), theme menu and Settings.
 - **Home** (`/`): title with a mini-sheet progress line, then **Up next** ranked rows (the lead row has art thumbs and the screen's one ink button), then the **Assets** art grid with filter chips (All / Needs you / In progress / In the game).
-- **Asset** (`/assets/:id`): crumbs, title, meta, branch button, mini-sheet line and subtabs **Sheet · Definition · Versions** on the left; the **Next for <asset>** card on the right. On Sheet, the locked concept and references stay sticky in a 296px column, with grouped deliverable cells on the right.
+- **Asset** (`/assets/:id`): crumbs, title, meta, branch button, mini-sheet line and subtabs **Sheet · Definition · Versions** on the left; the **Next for <asset>** card on the right. On Sheet, the locked concept and references stay sticky in a 296px column, with grouped deliverable cells on the right. Definition reads as a spec: Overview · YAML, the save bar, the parts and the deliverable rows in the Sheet's groups, with Checks, references and files in a 320px side column.
 - **Room** (`/assets/:id/steps/:step`): room head (Back to the asset, location crumb, deliverable name, Compare or queue nav). The stage column has an overlay toolbar, a transport and a candidate strip. The 372px inspector holds What was asked, Decision and Notes, with Details · Processing · History tabs pinned at its foot. Empty cells host generation on the stage. **Review** (`/review`) is the same room in queue mode with J/K next and previous.
 - **Releases** (`/releases`): Export panel and past exports, then asset rows with one action each. **Versions** (asset subtab) shows the four-step key, version rows and the promote aside.
 - **Activity** (`/activity`): Needs attention / Running / Recent job rows with a 400px sticky detail at ≥1100px, plus Decisions and Preferences.
@@ -465,6 +465,13 @@ Quiet tints with one ink exception.
 - **Rows:** one `surface` with a 12px ring and 1px `border` separators, so rows are never cards inside a card. Up next rows use a 148px art column, 14px 18px padding and 20px gaps. The lead row gets 20px block padding, 54px thumbs and a 16px title. Other rows use 34px thumbs or a glyph tile, and each row has one action on the right.
 - **Next card:** a 400px panel in the asset head with one line (14px at 600 plus the ink action) and a 12.5px muted reason beneath.
 - **Panel:** `surface`, 12px corners, 18px 20px padding. A panel inside a panel becomes a hairline-topped band, not a second card.
+
+### Definition: parts and spec rows
+- **Part:** a 16px/640 head with its problem flag and an Edit button on the right, over a panel that reads as text: a 75ch lede, then a `max-content` key/value list at 13px with `text-faint` keys. Edit swaps the panel for the part's fields in place and the button becomes Done. A `?section=<part>` link arrives with that part open.
+- **Spec row:** one per deliverable in the Rows surface. A 196px column holds the mono id (kind beneath in `text-faint` when the group mixes kinds). The text column holds the description at 13px, a muted Motion line and a 12px faint facts line (loop, size, dependencies), each capped at 75ch. The problem flag and a chevron sit on the right. Hover and open tint the head with Ink Wash.
+- **Open row:** the editor opens under the row's head, aligned to its text column. Description and Motion come first. Everything else sits behind one **More** disclosure whose summary names what is inside and carries the problem count, and a row reopened with a problem there opens More too.
+- **Problem flag:** 12px/600, an icon plus "2 to fix" in `danger` or "1 to finish" in `warn`, on part heads, row heads and More. A Checks entry names its row or part and opens it with the field focused. `REPLACE:` placeholders read in `warn` wherever they show.
+- **Picks:** a multi-value field (Depends on) shows the chosen values as removable mono chips with one **Add…** select after them, never a checkbox per option.
 
 ### Room: stage, transport, candidate strip, inspector
 - **Stage:** 10px corners on `stage-b` with a 20px checker, or the fixed Light/Dark backdrop. The over-art toolbar floats 10px inside the edges. Notes draw in ink (rectangles 2px, 3.5px when selected, dashed while drafting) or in `note` when required, with 24px numbered markers. Cell size is shown in mono above a dashed 4/3 guide.

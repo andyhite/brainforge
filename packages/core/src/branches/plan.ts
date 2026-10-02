@@ -1,7 +1,5 @@
-import type { Database } from "bun:sqlite";
 import type { BranchPlan, FieldDifference, OperationContext, ParsedOperationInput, PlanBlocker } from "@brainforge/contracts";
 import { discoverAuthored, type AuthoredSet } from "../authored.ts";
-import { budgetStatus, type BudgetRow } from "../generation/store.ts";
 import { normalizedHash } from "../operations.ts";
 import { buildPipeline } from "../pipeline.ts";
 import { policyView } from "../policy.ts";
@@ -26,17 +24,6 @@ export interface PlannedBranch {
   sourceBranch: BranchRow | undefined;
   inherited: InheritedSelection[];
   sourceOutputId: string;
-}
-
-/**
- * Whether an agent may start generation work on an asset: a human grants that with a budget. Humans always may.
- * This is the same gate generation.plan applies (it reports NO_BUDGET when none is active).
- */
-export function generationCapability(db: Database, assetId: string, actorType: OperationContext["actorType"]): { allowed: boolean; reason?: string } {
-  if (actorType === "human") return { allowed: true };
-  const rows = db.query<BudgetRow, [string]>("SELECT * FROM generation_budgets WHERE asset_id = ?").all(assetId);
-  if (rows.some((r) => budgetStatus(r) === "active")) return { allowed: true };
-  return { allowed: false, reason: `No active generation budget covers ${assetId}. Only the user can grant one (budget.grant); ask them, then retry.` };
 }
 
 interface SelectionRow { deliverable_id: string; candidate_id: string; output_id: string | null }
@@ -191,8 +178,7 @@ export async function planBranch(open: OpenProject, context: OperationContext, i
       ...(allowed ? {} : { reason: pending ? "Policy requests that agents may lock concepts, but a human has not confirmed that change. Ask the user to confirm it in Settings." : `Only the user may lock a concept under the current approval policy (conceptLock: ${view.effective.conceptLock}). Recommend this candidate and ask them to lock it.` }),
     };
   } else {
-    const capability = generationCapability(db, assetId, context.actorType);
-    authorization = { operation: "branch.create", policy: "generation capability (humans always; agents need a human-granted budget)", allowed: capability.allowed, ...(capability.reason ? { reason: capability.reason } : {}) };
+    authorization = { operation: "branch.create", policy: "no additional approval (an agent may continue from any reference or animation candidate)", allowed: true };
   }
 
   const isSelected = sourceBranch !== undefined && db.query("SELECT 1 FROM branch_selections WHERE branch_id = ? AND deliverable_id = ? AND candidate_id = ?").get(sourceBranch.branch_id, stepId, cand.candidate_id) !== null;

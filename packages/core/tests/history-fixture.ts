@@ -42,7 +42,7 @@ export async function seedCandidate(g: HistoryGame, id: string, assetId: string,
   const png = makePng(32, 32, [shade++ % 250, 60, 60]);
   const rel = `brainforge/assets/${assetId}/work/candidates/${id}/original/out.png`;
   await put(g.root, rel, png);
-  db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, budget_id, started_by, created_at) VALUES (?, ?, ?, 'p', '{}', 'b', 'human:local', ?)").run(`run_${id}`, assetId, stepId, createdAt);
+  db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, started_by, created_at) VALUES (?, ?, ?, 'p', '{}', 'human:local', ?)").run(`run_${id}`, assetId, stepId, createdAt);
   db.query("INSERT INTO generation_jobs (job_id, run_id, asset_id, step_id, slot, label, identity, state, submission_json, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?, 'succeeded', '{}', ?, ?)").run(`job_${id}`, `run_${id}`, assetId, stepId, id.toUpperCase(), `identity-${id}`, createdAt, createdAt);
   db.query("INSERT INTO candidates (candidate_id, asset_id, step_id, run_id, job_id, label, prompt, favorite, created_at, branch_id) VALUES (?, ?, ?, ?, ?, ?, 'a prompt', 0, ?, ?)").run(id, assetId, stepId, `run_${id}`, `job_${id}`, id.toUpperCase(), createdAt, branchId ?? null);
   db.query("INSERT INTO candidate_outputs (output_id, candidate_id, role, file_id, path, sha256, width, height, media_type) VALUES (?, ?, 'matted', ?, ?, ?, 32, 32, 'image/png')").run(`out_${id}`, id, `out_${id}`, rel, sha256(png));

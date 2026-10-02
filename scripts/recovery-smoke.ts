@@ -11,7 +11,7 @@
  * never read. The server under test is `apps/server/src/test-entry.ts` run as a CHILD process on a free port; it is
  * the only process this script kills (SIGKILL) and restarts. Exactly one hold or failure is armed per scenario.
  *
- * Fixture seeding: generation runs through the real operations (budget.grant -> generation.plan/start -> the real
+ * Fixture seeding: generation runs through the real operations (generation.plan/start -> the real
  * scheduler against the fake). Candidates for promotion/export/processing are inserted DIRECTLY into the project DB
  * (and via the real publishFrameSequence) before the server starts, because no operation imports finished candidates;
  * everything after that (concept.lock, review, promotion, activation, export, processing) uses the real operations.
@@ -293,11 +293,10 @@ function dbRows<T>(fx: Fixture, sql: string): T[] {
 
 // --------------------------------------------------------------------------- shared steps
 
-async function startGeneration(server: Server, count = 1): Promise<{ jobId: string; budgetId: string }> {
-  const budget = must(await server.call("budget.grant", { assetId: "cortex", stepId: "concept", maxStarts: 3, maxCandidateSubmissions: 12, expiresAt: new Date(Date.now() + 3600_000).toISOString() }), "budget.grant").budget;
+async function startGeneration(server: Server, count = 1): Promise<{ jobId: string }> {
   const plan = must(await server.call("generation.plan", { assetId: "cortex", count }), "generation.plan").plan;
-  const started = must(await server.call("generation.start", { planId: plan.planId, planHash: plan.planHash, budgetId: budget.budgetId }), "generation.start");
-  return { jobId: started.jobs[0]!.jobId, budgetId: budget.budgetId };
+  const started = must(await server.call("generation.start", { planId: plan.planId, planHash: plan.planHash }), "generation.start");
+  return { jobId: started.jobs[0]!.jobId };
 }
 
 const jobOf = async (server: Server, jobId: string) => must(await server.call("job.inspect", { jobId }), "job.inspect").job;
@@ -393,7 +392,7 @@ async function seedWalker(fx: Fixture): Promise<void> {
     const policy = must(await api.call("settings.inspect", {}), "settings.inspect").policy.requestedPolicyHash;
     must(await api.call("policy.authorize", { requestedPolicyHash: policy }), "policy.authorize");
     const run = (runId: string, jobId: string, stepId: string, planJson: unknown) => {
-      open.db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, budget_id, started_by, created_at) VALUES (?, 'fixture-walker', ?, 'x', ?, 'b', 'recovery-smoke', ?)").run(runId, stepId, JSON.stringify(planJson), NOW);
+      open.db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, started_by, created_at) VALUES (?, 'fixture-walker', ?, 'x', ?, 'recovery-smoke', ?)").run(runId, stepId, JSON.stringify(planJson), NOW);
       open.db.query("INSERT INTO generation_jobs (job_id, run_id, asset_id, step_id, slot, label, identity, state, submission_json, created_at, updated_at) VALUES (?, ?, 'fixture-walker', ?, 1, 'x', ?, 'succeeded', '{}', ?, ?)").run(jobId, runId, stepId, `id-${jobId}`, NOW, NOW);
     };
     const figure = (x: number, y: number, w: number, h: number, size = 48): Buffer => makeRgbaPng(size, size, (px, py) => (px >= x && px < x + w && py >= y && py < y + h ? [200, 40, 40, 255] : [0, 0, 0, 0]));
@@ -468,7 +467,7 @@ async function seedProp(fx: Fixture): Promise<void> {
       const rel = `brainforge/assets/fixture-prop/work/candidates/${id}/original/out.png`;
       await mkdir(dirname(join(fx.root, rel)), { recursive: true });
       await writeFile(join(fx.root, rel), png);
-      open.db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, budget_id, started_by, created_at) VALUES (?, 'fixture-prop', ?, 'p', '{}', 'b', 'recovery-smoke', ?)").run(`run_${id}`, stepId, NOW);
+      open.db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, started_by, created_at) VALUES (?, 'fixture-prop', ?, 'p', '{}', 'recovery-smoke', ?)").run(`run_${id}`, stepId, NOW);
       open.db.query("INSERT INTO generation_jobs (job_id, run_id, asset_id, step_id, slot, label, identity, state, submission_json, created_at, updated_at) VALUES (?, ?, 'fixture-prop', ?, 0, 'A', ?, 'succeeded', '{}', ?, ?)").run(`job_${id}`, `run_${id}`, stepId, `identity-${id}`, NOW, NOW);
       open.db.query("INSERT INTO candidates (candidate_id, asset_id, step_id, run_id, job_id, label, prompt, favorite, created_at, branch_id) VALUES (?, 'fixture-prop', ?, ?, ?, 'A', 'a prompt', 0, ?, ?)").run(id, stepId, `run_${id}`, `job_${id}`, NOW, branchId ?? null);
       open.db.query("INSERT INTO candidate_outputs (output_id, candidate_id, role, file_id, path, sha256, width, height, media_type) VALUES (?, ?, 'matted', ?, ?, ?, 16, 16, 'image/png')").run(`out_${id}`, id, `out_${id}`, rel, sha(png));

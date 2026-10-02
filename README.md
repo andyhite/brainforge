@@ -5,7 +5,7 @@ A local, single-user asset-production workbench for 2D games. You describe an as
 Brainforge never generates art by itself. All image and motion generation goes through a ComfyUI server you run (Krea 2 for stills, Wan 2.2 for motion). Brainforge plans, tracks, reviews, processes, versions and exports the results.
 
 - Everything lives inside your game directory, under `brainforge/`. Move or snapshot the project and the history goes with it.
-- Humans decide: concept lock, approvals that policy reserves for humans, promotion, activation. Agents author YAML, plan, generate under a budget, review, and respond to notes.
+- Humans decide: concept lock, approvals that policy reserves for humans, promotion, activation. Agents author YAML, plan, generate when the user has asked for that work, review, and respond to notes.
 - Full requirements are in [docs/SPEC.md](docs/SPEC.md). Requirement coverage and known gaps are in [docs/COVERAGE.md](docs/COVERAGE.md). A recorded end-to-end run is in [docs/FIRST-CHARACTER-RUN.md](docs/FIRST-CHARACTER-RUN.md).
 
 ## Requirements
@@ -45,7 +45,7 @@ Open <http://127.0.0.1:3210>. The server only accepts requests whose `Host` is l
 
 Set the URL once in the UI (Settings → ComfyUI connection). It is a machine setting, never stored in the project. For scripts and the feasibility CLI you can use `BF_COMFY_URL=http://127.0.0.1:8188`.
 
-Loopback does not mean free or local compute. The ComfyUI server may be a remote GPU behind a tunnel. Workflows list their compute location and cost description, and generation only runs under a human-granted budget.
+Loopback does not mean free or local compute. The ComfyUI server may be a remote GPU behind a tunnel. Workflows list their compute location and cost description, and every generation plan discloses it before you start. There are no budgets: what you ask for is the scope, and only the batch size and concurrency caps in `project.yaml` limit a run.
 
 #### Four-view construction sheets
 
@@ -99,6 +99,18 @@ produced a square-on front body. ComfyUI history showed only the prompt and seed
 from the initial run; proportions and crops still require review. No candidate was approved
 and the default workflow was not changed.
 
+Portrait-free Cortex tests (2026-10-02) use three 512×1024 regions on a 1536×1024 canvas.
+Both `krea2-variation` and `krea2-quadview` produced three bodies without a portrait panel.
+Twelve candidates/variations were generated and visually inspected after budget removal:
+native identity-edit preserved proportions better but resisted exact profile shoes; QuadView
+at reference strength 1 reduced head size. Strength 2 plus an explicit reference-derived
+head-height ratio improved proportions (Candidate 18, `cand-45ad3e2298`).
+Targeted variation from that sheet improved the frontal face (Variation 20, `cand-85b18fce54`);
+its front/profile/rear crops contain complete figures, but the front torso/shoes still retain
+some three-quarter rotation. Neither result is approved or selected. Cortex now uses the
+three-view QuadView recipe at strength 2; artistic fidelity and strict front orientation remain
+review requirements, not a claim of production readiness. Opaque three-view output is untested.
+
 Workflow override keys are `still`, `variation`, `motion`, and their `Opaque` counterparts.
 They inherit project → family → asset → deliverable settings; alpha selects the exact key.
 Overrides cannot enable a generation stage the asset family does not support.
@@ -117,7 +129,7 @@ In your game repo (the **game root**):
 |---|---|
 |**Home**|What needs you next (one ranked list, one action each), how close the game is, and every asset.|
 |**Asset sheet**|One asset as a sheet of its deliverables. Each cell shows its art, what's waiting for you, or what it's blocked on. The **Definition** and **Versions** tabs hold the spec, the references and the immutable versions.|
-|**Room**|One deliverable: judge candidates on the stage (backgrounds, zoom, playback, compare), add notes tied to exact outputs and frames, and decide. An empty cell's room plans budgeted generation instead.|
+|**Room**|One deliverable: judge candidates on the stage (backgrounds, zoom, playback, compare), add notes tied to exact outputs and frames, and decide. An empty cell's room plans generation instead.|
 |**Review**|The room in queue mode across assets ("1 of 4 waiting", J/K to move).|
 |**Releases**|What's in the game. Promotion, activation and export remain separate, explicit actions.|
 |**Activity** and **Settings**|Behind the top-bar status and the gear: jobs, decisions and preferences; project, art direction, connection and agent setup.|
@@ -183,7 +195,7 @@ flowchart LR
 ### Expected steps
 
 1. **Author.** Write `project.yaml` (art direction, sizing, fps, required assets, review policy), a style, and `assets/<id>/asset.yaml` (family, description, identity, deliverables). The YAML text is the image prompt: describe the picture in concrete, positive phrasing. Validate with `spec.validate` before saving; saves use `expectedHash` so concurrent edits surface as a conflict instead of overwriting.
-2. **Explore.** Plan a concept batch (`generation.plan` shows the exact prompt, counts and budget). A human grants a budget; then `generation.start`. Compare candidates, favorite, annotate with whole-image, pin or rectangle notes, and request revisions. Variations reuse a selected candidate as an identity reference.
+2. **Explore.** Plan a concept batch (`generation.plan` shows the exact prompt, counts and remote-GPU disclosure), then `generation.start {planId, planHash}` once the user has asked for that generation. Compare candidates, favorite, annotate with whole-image, pin or rectangle notes, and request revisions. Variations reuse a selected candidate as an identity reference.
 3. **Lock.** A human locks one concept output. This creates a **branch** and unlocks production. A lock is a choice, not a production version.
 4. **Reference deliverables.** Only what the family needs. A character gets a front/profile/rear construction sheet and pose guides; a static prop gets none. Each is generated, reviewed and approved before anything depends on it.
 5. **Produce.** Generate the required stills and, for animations, Wan clips bound to approved start/end guides. Motion produces **source frames**; those are not yet the deliverable.
@@ -199,8 +211,8 @@ Throughout, `project.completeness` answers "what is left?" and `asset.impact` sh
 
 |Action|Who|
 |---|---|
-|Author specs, plan, generate under budget, annotate, respond to revisions|Agent or human|
-|Grant budgets, confirm policy changes, set connection, propose-confirm preferences|Human only|
+|Author specs, plan, generate what the user asked for, annotate, respond to revisions|Agent or human|
+|Confirm policy changes, set connection, propose-confirm preferences|Human only|
 |Lock concept, approve, promote, activate|Per policy; the default requires a human for lock, promotion and activation|
 
 Identity comes from the transport: the browser UI is the human, CLI calls are agents (`x-brainforge-agent: cli`). This guards against accidents and cross-site requests on a trusted local machine; it is not a sandbox against hostile local code.

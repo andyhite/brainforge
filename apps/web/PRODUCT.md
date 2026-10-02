@@ -20,7 +20,7 @@ A gated, versioned pipeline: nothing advances unreviewed, nothing is approved ju
 
 ## Operating Context
 
-- Local server on loopback (127.0.0.1:3210); Vite on 5173 in dev. Loopback does not imply local compute: ComfyUI may be a remote GPU, so workflow compute location and cost are shown and generation runs only under a human-granted budget.
+- Local server on loopback (127.0.0.1:3210); Vite on 5173 in dev. Loopback does not imply local compute: ComfyUI may be a remote GPU, so workflow compute location and cost are shown in every generation plan before the user starts it. There are no budgets; only batch and concurrency caps limit a run.
 - Everything lives in the game directory under `brainforge/`; the project is portable.
 - Review judges transparency, so results are viewed on light, dark and checkerboard backgrounds, with frame stepping and actual atlas playback.
 - Annotations: whole-image, pin and rectangle notes; frame and frame-range notes on animation.

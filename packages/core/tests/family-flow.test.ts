@@ -58,11 +58,10 @@ export function deliverablesOfSpec(text: string, id: string) {
 export const deliverablesOf = (text: string, id: string) => deliverablesOfSpec(text, id).deliverables;
 
 async function generate(f: GenerationFixture, assetId: string, stepId: string, branchId?: string): Promise<Candidate> {
-  expectOk(await call(f, "budget.grant", { assetId, stepId, maxStarts: 3, maxCandidateSubmissions: 6, expiresAt: new Date(Date.now() + 3600_000).toISOString() }));
   const plan = expectOk(await call(f, "generation.plan", { assetId, stepId, count: 1, ...(branchId ? { branchId } : {}) })).plan;
   expect(plan.blockers).toEqual([]);
   const before = (await f.jobs()).filter((j) => j.assetId === assetId && j.stepId === stepId).length;
-  expectOk(await call(f, "generation.start", { planId: plan.planId, planHash: plan.planHash, budgetId: plan.budgets[0]!.budgetId }));
+  expectOk(await call(f, "generation.start", { planId: plan.planId, planHash: plan.planHash }));
   await f.waitJobs((jobs) => { const mine = jobs.filter((j) => j.assetId === assetId && j.stepId === stepId); return mine.length > before && succeeded(mine); }, `${assetId}/${stepId}`);
   const list = expectOk(await call(f, "candidate.list", { assetId, stepId, ...(branchId ? { branchId } : {}) })).candidates;
   return list.at(-1)!;

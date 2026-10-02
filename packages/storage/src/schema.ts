@@ -616,6 +616,19 @@ CREATE TABLE current_branches (
 );
 `,
   },
+  {
+    version: 11,
+    sql: `
+-- Budgets no longer gate generation. The run -> budget link and the budget rows stay as inert history; runs stop
+-- requiring a budget_id so new runs can be recorded without one. Nothing else in a run is touched.
+CREATE TABLE generation_run_budget_history (
+  run_id TEXT PRIMARY KEY REFERENCES generation_runs (run_id),
+  budget_id TEXT NOT NULL
+);
+INSERT INTO generation_run_budget_history (run_id, budget_id) SELECT run_id, budget_id FROM generation_runs;
+ALTER TABLE generation_runs DROP COLUMN budget_id;
+`,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

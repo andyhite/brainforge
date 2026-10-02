@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { Budget, BudgetStatus, Job, JobState, NextAction } from "@brainforge/contracts";
+import type { Job, JobState, NextAction } from "@brainforge/contracts";
 import type { OpenProject } from "../project-runtime.ts";
 import { OperationFailure, type ProjectHandle } from "../runtime.ts";
 
@@ -19,66 +19,10 @@ export interface JobRow {
   created_at: string; updated_at: string; submitted_at: string | null; collected_at: string | null;
 }
 
-export interface BudgetRow {
-  budget_id: string; asset_id: string; step_id: string; max_starts: number; max_candidate_submissions: number;
-  used_starts: number; used_candidate_submissions: number; spend_cap_usd: number | null; spent_usd: number;
-  expires_at: string; note: string | null; created_by: string; created_at: string; revoked_at: string | null; revoke_reason: string | null;
-}
-
 export function jobRow(db: ProjectHandle["db"], jobId: string): JobRow {
   const row = db.query<JobRow, [string]>("SELECT * FROM generation_jobs WHERE job_id = ?").get(jobId);
   if (!row) throw new OperationFailure("NOT_FOUND", `No job ${jobId}`, undefined, [{ label: "List jobs", operation: "job.list" }]);
   return row;
-}
-
-export function budgetRow(db: ProjectHandle["db"], budgetId: string): BudgetRow {
-  const row = db.query<BudgetRow, [string]>("SELECT * FROM generation_budgets WHERE budget_id = ?").get(budgetId);
-  if (!row) throw new OperationFailure("NOT_FOUND", `No budget ${budgetId}`, undefined, [{ label: "List budgets", operation: "budget.list" }]);
-  return row;
-}
-
-export function budgetStatus(row: BudgetRow, now = Date.now()): Budget["status"] {
-  if (row.revoked_at !== null) return "revoked";
-  if (Date.parse(row.expires_at) <= now) return "expired";
-  if (row.used_starts >= row.max_starts || row.used_candidate_submissions >= row.max_candidate_submissions) return "exhausted";
-  return "active";
-}
-
-export function toBudget(row: BudgetRow, now = Date.now()): Budget {
-  return {
-    budgetId: row.budget_id, assetId: row.asset_id, stepId: row.step_id,
-    maxStarts: row.max_starts, maxCandidateSubmissions: row.max_candidate_submissions,
-    usedStarts: row.used_starts, usedCandidateSubmissions: row.used_candidate_submissions,
-    ...(row.spend_cap_usd === null ? {} : { spendCapUsd: row.spend_cap_usd }),
-    spentUsd: row.spent_usd, expiresAt: row.expires_at, ...(row.note === null ? {} : { note: row.note }),
-    createdBy: row.created_by, createdAt: row.created_at, ...(row.revoked_at === null ? {} : { revokedAt: row.revoked_at }),
-    status: budgetStatus(row, now),
-  };
-}
-
-/**
- * Why a budget cannot pay for `needs`, or undefined when it can. Starting needs one start plus its candidate
- * submissions; a new attempt for an existing slot needs one submission only.
- */
-export function budgetShortfall(row: BudgetRow, needs: { starts: number; submissions: number }, now = Date.now()): string | undefined {
-  if (row.revoked_at !== null) return `Budget ${row.budget_id} was revoked${row.revoke_reason ? `: ${row.revoke_reason}` : ""}`;
-  if (Date.parse(row.expires_at) <= now) return `Budget ${row.budget_id} expired at ${row.expires_at}`;
-  if (row.used_starts + needs.starts > row.max_starts) return `Budget ${row.budget_id} has no starts left (${row.used_starts}/${row.max_starts} used)`;
-  if (row.used_candidate_submissions + needs.submissions > row.max_candidate_submissions) {
-    return `Budget ${row.budget_id} cannot cover ${needs.submissions} more candidate submission(s) (${row.used_candidate_submissions}/${row.max_candidate_submissions} used)`;
-  }
-  return undefined;
-}
-
-/**
- * Starts since the most recent human grant for this asset step. A fresh grant opens a new attempt window, which is
- * why neither an agent nor a spec edit can reset the count.
- */
-export function attemptsInWindow(db: ProjectHandle["db"], assetId: string, stepId: string): number {
-  return db.query<{ n: number }, [string, string, string, string]>(
-    `SELECT COUNT(*) AS n FROM generation_runs r JOIN generation_budgets b ON b.budget_id = r.budget_id
-     WHERE r.asset_id = ? AND r.step_id = ? AND b.rowid >= COALESCE((SELECT MAX(rowid) FROM generation_budgets WHERE asset_id = ? AND step_id = ?), 0)`,
-  ).get(assetId, stepId, assetId, stepId)?.n ?? 0;
 }
 
 export function jobError(row: JobRow): JobError | undefined {
@@ -96,19 +40,19 @@ function actionsFor(row: JobRow): NextAction[] {
   const error = jobError(row);
   switch (row.state) {
     case "queued":
-      return [{ label: "Cancel this queued job (the budget is not refunded)", operation: "job.cancel", input: { jobId: row.job_id } }];
+      return [{ label: "Cancel this queued job", operation: "job.cancel", input: { jobId: row.job_id } }];
     case "submitting":
       return [{ label: "Look the prompt up on ComfyUI by its saved identity", operation: "job.reconcile", input: { jobId: row.job_id } }];
     case "running":
       return isCancellable(row)
-        ? [{ label: "Cancel while still pending on ComfyUI (the budget is not refunded)", operation: "job.cancel", input: { jobId: row.job_id } }]
+        ? [{ label: "Cancel while still pending on ComfyUI", operation: "job.cancel", input: { jobId: row.job_id } }]
         : [{ label: "Wait: ComfyUI is generating. Running prompts cannot be cancelled and finish on their own", operation: "job.inspect", input: { jobId: row.job_id } }];
     case "collecting":
       return [{ label: "Wait: downloading and publishing the result", operation: "job.inspect", input: { jobId: row.job_id } }];
     case "unresolved":
       return [
         { label: "Search ComfyUI again by the saved identity", operation: "job.reconcile", input: { jobId: row.job_id } },
-        { label: "Ask the user to authorize a new attempt (spends one more candidate submission)", operation: "job.retry", input: { jobId: row.job_id, mode: "new-attempt" } },
+        { label: "Ask the user to authorize a new attempt (resubmits the prompt; only they can judge whether the original is truly lost)", operation: "job.retry", input: { jobId: row.job_id, mode: "new-attempt" } },
       ];
     case "failed": {
       const out: NextAction[] = [];

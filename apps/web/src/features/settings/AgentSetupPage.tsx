@@ -11,7 +11,7 @@ export function AgentSetupPage() {
         The <code>brainforge</code> skill lives in <code>skills/brainforge</code> of the checkout and is symlinked into <code>~/.agents/skills</code>.
         See the brainforge skill for client-specific setup.
       </p>
-      <p className="secondary">Agents can’t confirm preferences, grant budgets, or take other human-only actions, whatever the client.</p>
+      <p className="secondary">Agents can’t confirm preferences or take other human-only actions, whatever the client.</p>
     </section>
   );
 }

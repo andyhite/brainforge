@@ -2,12 +2,11 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import type { Candidate } from "@brainforge/contracts";
 import { useOperation } from "../../api/hooks.ts";
-import { Banner, ErrorBanner, Modal, NetworkProblem } from "../../components/ui.tsx";
+import { Banner, ErrorBanner, NetworkProblem } from "../../components/ui.tsx";
 import { Icon } from "../../components/Icon.tsx";
 import { paths } from "../../lib/paths.ts";
 import { useProject } from "../../lib/use-project.ts";
 import { kindLabel } from "../../lib/steps.ts";
-import { BudgetPanel } from "../generation/BudgetPanel.tsx";
 import { GenerateDialog, type GenerateRequest } from "../generation/GenerateDialog.tsx";
 import { GenerateStage } from "../generation/GenerateStage.tsx";
 import { CandidateStrip } from "./CandidateStrip.tsx";
@@ -118,8 +117,6 @@ export function Room(props: RoomProps) {
   const canCompare = current?.outputs.some((o) => o.mediaKind === "frames") ? framesCompare : stillsCompare;
 
   const [dialog, setDialog] = useState<GenerateRequest | undefined>();
-  const [budgetOpen, setBudgetOpen] = useState(false);
-  const [grantOpen, setGrantOpen] = useState(false);
   const canGenerate = stepState !== undefined && stepState.state !== "blocked";
 
   const inQueue = waiting.findIndex((c) => c.candidateId === pickedId);
@@ -205,13 +202,8 @@ export function Room(props: RoomProps) {
       {dialog && stepState ? (
         <GenerateDialog
           assetId={assetId} stepId={stepId} {...(concept ? {} : { stepKind: stepState.kind })} {...(branchId ? { branchId } : {})}
-          candidates={strip} initial={dialog} onClose={() => setDialog(undefined)} onGrantBudget={() => { setBudgetOpen(true); setGrantOpen(true); }}
+          candidates={strip} initial={dialog} onClose={() => setDialog(undefined)}
         />
-      ) : null}
-      {budgetOpen ? (
-        <Modal open wide onOpenChange={(open) => { if (!open) { setBudgetOpen(false); setGrantOpen(false); } }} title={`Budget for ${concept ? "concepts" : stepId}`} description="The limit you set on generating this deliverable.">
-          <BudgetPanel assetId={assetId} stepId={stepId} grantOpen={grantOpen} onGrantOpen={setGrantOpen} />
-        </Modal>
       ) : null}
     </div>
   );

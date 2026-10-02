@@ -155,7 +155,6 @@ function FieldsForm({ file }: { file: SpecFile }) {
         <SelectField {...common} id="dir-activation" label="Activation" path={["approval", "activation"]} options={REVIEW_OPTIONS} />
       </Section>
       <Section title="Automation" hint="Limits for unattended generation work.">
-        <NumberField {...common} required id="dir-attempts" label="Max attempts per step" path={["automation", "maxAttemptsPerStep"]} />
         <NumberField {...common} required id="dir-concurrent" label="Max concurrent generations" path={["automation", "maxConcurrentGenerations"]} />
         <NumberField {...common} required id="dir-batch" label="Max batch candidates" path={["automation", "maxBatchCandidates"]} />
         <div className="field">

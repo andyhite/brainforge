@@ -27,7 +27,7 @@ async function seeded(): Promise<Seed> {
   await put(root, rel, png);
   const hashes = { "brainforge/project.yaml": sha256(PROJECT_YAML), "brainforge/assets/cortex/asset.yaml": sha256(ASSET_YAML) };
   const now = new Date().toISOString();
-  db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, budget_id, started_by, created_at) VALUES ('run_1','cortex','concept','p','" + PLAN(hashes).replaceAll("'", "''") + "','b','human:local',?)").run(now);
+  db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, started_by, created_at) VALUES ('run_1','cortex','concept','p','" + PLAN(hashes).replaceAll("'", "''") + "','human:local',?)").run(now);
   db.query("INSERT INTO generation_jobs (job_id, run_id, asset_id, step_id, slot, label, identity, state, submission_json, created_at, updated_at) VALUES ('job_1','run_1','cortex','concept',0,'A','id1','succeeded','{}',?,?)").run(now, now);
   db.query("INSERT INTO candidates (candidate_id, asset_id, step_id, run_id, job_id, parent_candidate_id, label, seed, prompt, favorite, created_at) VALUES ('cand_1','cortex','concept','run_1','job_1',NULL,'A',7,'a prompt',0,?)").run(now);
   db.query("INSERT INTO candidate_outputs (output_id, candidate_id, role, file_id, path, sha256, width, height, media_type) VALUES ('out_1','cand_1','matted','out_1',?,?,200,100,'image/png')").run(rel, sha256(png));

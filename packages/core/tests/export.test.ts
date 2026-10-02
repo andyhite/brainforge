@@ -54,14 +54,14 @@ async function seedStill(w: World, id: string, stepId: string, branchId: string 
   const png = makePng(16, 16, [shade++, 60, 60]);
   const rel = `brainforge/assets/cortex/work/candidates/${id}/original/out.png`;
   await put(w.root, rel, png);
-  w.open.db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, budget_id, started_by, created_at) VALUES (?, 'cortex', ?, 'p', '{}', 'b', 'human:local', ?)").run(`run_${id}`, stepId, NOW);
+  w.open.db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, started_by, created_at) VALUES (?, 'cortex', ?, 'p', '{}', 'human:local', ?)").run(`run_${id}`, stepId, NOW);
   w.open.db.query("INSERT INTO generation_jobs (job_id, run_id, asset_id, step_id, slot, label, identity, state, submission_json, created_at, updated_at) VALUES (?, ?, 'cortex', ?, 0, 'A', ?, 'succeeded', '{}', ?, ?)").run(`job_${id}`, `run_${id}`, stepId, `identity-${id}`, NOW, NOW);
   w.open.db.query("INSERT INTO candidates (candidate_id, asset_id, step_id, run_id, job_id, label, prompt, favorite, created_at, branch_id) VALUES (?, 'cortex', ?, ?, ?, 'A', 'a prompt', 0, ?, ?)").run(id, stepId, `run_${id}`, `job_${id}`, NOW, branchId ?? null);
   w.open.db.query("INSERT INTO candidate_outputs (output_id, candidate_id, role, file_id, path, sha256, width, height, media_type) VALUES (?, ?, 'matted', ?, ?, ?, 16, 16, 'image/png')").run(`out_${id}`, id, `out_${id}`, rel, sha256(png));
 }
 
 async function seedClip(w: World, id: string): Promise<void> {
-  w.open.db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, budget_id, started_by, created_at) VALUES (?, 'cortex', 'walk', 'p', '{}', 'b', 'human:local', ?)").run(`run_${id}`, NOW);
+  w.open.db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, started_by, created_at) VALUES (?, 'cortex', 'walk', 'p', '{}', 'human:local', ?)").run(`run_${id}`, NOW);
   w.open.db.query("INSERT INTO generation_jobs (job_id, run_id, asset_id, step_id, slot, label, identity, state, submission_json, created_at, updated_at) VALUES (?, ?, 'cortex', 'walk', 0, 'A', ?, 'succeeded', '{}', ?, ?)").run(`job_${id}`, `run_${id}`, `identity-${id}`, NOW, NOW);
   const packaged = await packageClip({
     outputId: `out_${id}`, canvas: { width: 16, height: 16 }, pivot: { x: 0.5, y: 0.9 }, loop: true, sourceFps: 16, playbackFps: 12, packaging: "both",

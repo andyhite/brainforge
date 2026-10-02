@@ -8,7 +8,7 @@ import { OutputArt } from "../../components/OutputArt.tsx";
 import { useReviewQueue } from "../../lib/attention.ts";
 import { hasOpenFeedback, upstreamPending, waitsOnlyForUpstream } from "../../lib/next.ts";
 import { paths } from "../../lib/paths.ts";
-import { kindLabel } from "../../lib/steps.ts";
+import { groupByKind } from "../../lib/steps.ts";
 import { useProject } from "../../lib/use-project.ts";
 import { ReassessmentReasons } from "../branches/shared.tsx";
 import { CollectionView } from "../families/CollectionView.tsx";
@@ -18,11 +18,6 @@ import "./sheet.css";
 type QueueItem = OperationData<"review.list">["items"][number];
 interface OutputPick { candidateId: string; outputId?: string | undefined }
 
-const GROUPS: Array<{ title: string; kinds: string[] }> = [
-  { title: "Poses & expressions", kinds: ["pose", "expression", "view"] },
-  { title: "Animations", kinds: ["animation"] },
-  { title: "Variants & stills", kinds: ["still", "variant"] },
-];
 const isReference = (step: StepState) => step.kind.startsWith("reference");
 /** "expression-wonder" reads "wonder" inside its own kind's group. */
 const shortName = (step: StepState) => (step.stepId.startsWith(`${step.kind}-`) && step.stepId.length > step.kind.length + 1 ? step.stepId.slice(step.kind.length + 1) : step.stepId);
@@ -228,11 +223,7 @@ export function AssetSheet() {
   const ctx: CellContext = { assetId, branchId: view.branchId, branchParam: view.branchParam, steps: list, queue: queue.items, marked };
   const deliverables = list.filter((step) => step.stepId !== "concept");
   const references = deliverables.filter(isReference);
-  const groups = [
-    ...GROUPS.map((group) => ({ title: group.title, kind: group.kinds[0] ?? "", steps: deliverables.filter((step) => !isReference(step) && group.kinds.includes(step.kind)) })),
-    ...[...new Set(deliverables.filter((step) => !isReference(step) && !GROUPS.some((group) => group.kinds.includes(step.kind))).map((step) => step.kind))]
-      .map((kind) => ({ title: kindLabel(kind), kind, steps: deliverables.filter((step) => step.kind === kind) })),
-  ].filter((group) => group.steps.length > 0);
+  const groups = groupByKind(deliverables.filter((step) => !isReference(step)), (step) => step.kind);
   const stale = list.filter((step) => step.needsReassessment);
   const concept = list.find((step) => step.stepId === "concept");
   const family = inspect.data?.ok ? inspect.data.data.summary.family : undefined;
@@ -255,14 +246,14 @@ export function AssetSheet() {
         ) : null}
 
         {groups.map((group) => {
-          const required = group.steps.filter((step) => step.required);
+          const required = group.items.filter((step) => step.required);
           const approved = required.filter((step) => step.state === "complete").length;
           const id = `group-${group.kind}`;
           return (
             <section className="group" key={group.title} aria-labelledby={id}>
               <div className="group-head"><h2 id={id}>{group.title}</h2><span className="n">{required.length > 0 ? `${approved} of ${required.length} approved` : "optional"}</span></div>
               <div className={`cells${group.kind === "animation" ? " strips" : ""}`}>
-                {group.steps.map((step) => <Cell key={step.stepId} step={step} ctx={ctx} />)}
+                {group.items.map((step) => <Cell key={step.stepId} step={step} ctx={ctx} />)}
               </div>
             </section>
           );

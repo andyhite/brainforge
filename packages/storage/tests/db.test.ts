@@ -1,10 +1,11 @@
 import type { Subprocess } from "bun";
 import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LATEST_SCHEMA_VERSION, ProjectDbError, ProjectLeaseError, acquireProjectLease, appendEvents, openProjectDb, readEventsAfter } from "../src/index.ts";
+import { MIGRATIONS } from "../src/schema.ts";
 
 async function tempRoot(): Promise<string> {
   return realpath(await mkdtemp(join(tmpdir(), "bf-storage-")));
@@ -36,6 +37,22 @@ describe("openProjectDb", () => {
     expect(p.upgradeInstruction).toContain("newer");
     expect(p.db.query<{ n: number }, []>("SELECT count(*) AS n FROM project_revision").get()?.n).toBe(1);
     expect(() => p.db.exec("UPDATE project_revision SET revision = 5")).toThrow();
+    p.close();
+  });
+
+  test("dropping the run budget requirement keeps historical runs and their budget link", async () => {
+    const root = await tempRoot();
+    await mkdir(join(root, "brainforge/.state"), { recursive: true });
+    const raw = new Database(join(root, "brainforge/.state/project.sqlite"));
+    for (const m of MIGRATIONS.filter((x) => x.version <= 10)) raw.exec(m.sql);
+    raw.exec("PRAGMA user_version = 10");
+    raw.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, budget_id, started_by, created_at) VALUES ('run_old', 'a', 'concept', 'h', '{}', 'budget_old', 'human:local', 't')").run();
+    raw.close();
+
+    const p = openProjectDb(root);
+    expect(p.db.query<{ budget_id: string }, []>("SELECT budget_id FROM generation_run_budget_history WHERE run_id = 'run_old'").get()?.budget_id).toBe("budget_old");
+    p.db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, started_by, created_at) VALUES ('run_new', 'a', 'concept', 'h', '{}', 'human:local', 't')").run();
+    expect(p.db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM generation_runs").get()?.n).toBe(2);
     p.close();
   });
 

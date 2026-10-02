@@ -35,7 +35,7 @@ async function seed(w: World, assetId: string, id: string, stepId: string, branc
   const png = makePng(16, 16, [shade++, 60, 60]);
   const rel = `brainforge/assets/${assetId}/work/candidates/${id}/original/out.png`;
   await put(w.root, rel, png);
-  w.open.db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, branch_id, plan_hash, plan_json, budget_id, started_by, created_at) VALUES (?, ?, ?, ?, 'p', ?, 'b', 'human:local', ?)").run(`run_${id}`, assetId, stepId, branchId ?? null, JSON.stringify(plan), NOW);
+  w.open.db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, branch_id, plan_hash, plan_json, started_by, created_at) VALUES (?, ?, ?, ?, 'p', ?, 'human:local', ?)").run(`run_${id}`, assetId, stepId, branchId ?? null, JSON.stringify(plan), NOW);
   w.open.db.query("INSERT INTO generation_jobs (job_id, run_id, asset_id, step_id, slot, label, identity, state, submission_json, created_at, updated_at) VALUES (?, ?, ?, ?, 0, 'A', ?, 'succeeded', '{}', ?, ?)").run(`job_${id}`, `run_${id}`, assetId, stepId, `identity-${id}`, NOW, NOW);
   w.open.db.query("INSERT INTO candidates (candidate_id, asset_id, step_id, run_id, job_id, label, prompt, favorite, created_at, branch_id) VALUES (?, ?, ?, ?, ?, 'A', 'a prompt', 0, ?, ?)").run(id, assetId, stepId, `run_${id}`, `job_${id}`, NOW, branchId ?? null);
   w.open.db.query("INSERT INTO candidate_outputs (output_id, candidate_id, role, file_id, path, sha256, width, height, media_type) VALUES (?, ?, 'matted', ?, ?, ?, 16, 16, 'image/png')").run(`out_${id}`, id, `out_${id}`, rel, sha256(png));

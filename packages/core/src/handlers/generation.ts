@@ -1,56 +1,14 @@
-import { discoverAuthored } from "../authored.ts";
 import { PLAN_TTL_MS, createPlan } from "../generation/plan.ts";
 import { transportOf } from "../generation/comfy.ts";
 import { cancelJob, lookupByIdentity, newAttempt, retryCollect } from "../generation/jobs.ts";
 import { schedulerOf } from "../generation/scheduler.ts";
 import { startGeneration } from "../generation/start.ts";
-import { ACTIVE_STATES, budgetRow, budgetStatus, jobRow, newId, toBudget, toJob, type BudgetRow, type JobRow } from "../generation/store.ts";
+import { ACTIVE_STATES, jobRow, toJob, type JobRow } from "../generation/store.ts";
 import { candidateRow, requirementsResolver, toCandidate } from "../review/records.ts";
 import { OperationFailure, type HandlerMap } from "../runtime.ts";
 import { requireOpen } from "./common.ts";
 
 export const generationHandlers: HandlerMap = {
-  "budget.grant": async ({ input, project, context }) => {
-    const open = requireOpen(project);
-    const set = await discoverAuthored(open.root);
-    if (!set.assets.some((a) => a.fileId === input.assetId) && !set.bareAssetDirs.includes(input.assetId)) {
-      throw new OperationFailure("NOT_FOUND", `Asset ${input.assetId} does not exist`, undefined, [{ label: "List assets", operation: "asset.list" }]);
-    }
-    if (Date.parse(input.expiresAt) <= Date.now()) {
-      throw new OperationFailure("INVALID_INPUT", "expiresAt must be in the future");
-    }
-    const budgetId = newId("budget");
-    const { revision } = await open.mutate(async () =>
-      open.transact(() => {
-        open.db.query("INSERT INTO generation_budgets (budget_id, asset_id, step_id, max_starts, max_candidate_submissions, spend_cap_usd, expires_at, note, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-          .run(budgetId, input.assetId, input.stepId, input.maxStarts, input.maxCandidateSubmissions, input.spendCapUsd ?? null, input.expiresAt, input.note ?? null, context.actorId, new Date().toISOString());
-      }, [{ type: "budget.granted", data: { budgetId, assetId: input.assetId, stepId: input.stepId, maxStarts: input.maxStarts, maxCandidateSubmissions: input.maxCandidateSubmissions, expiresAt: input.expiresAt }, actorId: context.actorId }]),
-    );
-    return {
-      data: { budget: toBudget(budgetRow(open.db, budgetId)) }, revision,
-      nextActions: [{ label: "Plan a generation under this budget", operation: "generation.plan", input: { assetId: input.assetId } }],
-    };
-  },
-
-  "budget.list": async ({ input, project }) => {
-    const open = requireOpen(project);
-    const rows = open.db.query<BudgetRow, [string | null, string | null]>("SELECT * FROM generation_budgets WHERE (?1 IS NULL OR asset_id = ?2) ORDER BY rowid DESC").all(input.assetId ?? null, input.assetId ?? null);
-    const now = Date.now();
-    return { data: { budgets: rows.filter((r) => input.includeInactive || budgetStatus(r, now) === "active").map((r) => toBudget(r, now)) } };
-  },
-
-  "budget.revoke": async ({ input, project, context }) => {
-    const open = requireOpen(project);
-    const before = budgetRow(open.db, input.budgetId);
-    if (before.revoked_at !== null) return { data: { budget: toBudget(before) } };
-    const { revision } = await open.mutate(async () =>
-      open.transact(() => {
-        open.db.query("UPDATE generation_budgets SET revoked_at = ?, revoke_reason = ? WHERE budget_id = ?").run(new Date().toISOString(), input.reason, input.budgetId);
-      }, [{ type: "budget.revoked", data: { budgetId: input.budgetId, assetId: before.asset_id, reason: input.reason }, actorId: context.actorId }]),
-    );
-    return { data: { budget: toBudget(budgetRow(open.db, input.budgetId)) }, revision };
-  },
-
   "generation.plan": async ({ input, project, runtime, context }) => {
     const open = requireOpen(project);
     const comfy = transportOf(runtime);
@@ -61,13 +19,12 @@ export const generationHandlers: HandlerMap = {
           .run(plan.planId, plan.planHash, JSON.stringify(plan), plan.branchId ?? null, context.actorId, plan.createdAt);
       }, [{ type: "generation.planned", data: { planId: plan.planId, assetId: plan.assetId, stepId: plan.stepId, mode: plan.mode, count: plan.count, blockers: plan.blockers.length }, actorId: context.actorId }]),
     );
-    const budget = plan.budgets.find((b) => b.remainingStarts >= 1 && b.remainingCandidateSubmissions >= plan.count);
     const expires = new Date(Date.parse(plan.createdAt) + PLAN_TTL_MS).toISOString();
     return {
       data: { plan }, revision,
       nextActions: plan.blockers.length > 0
         ? plan.blockers.flatMap((b) => b.recoveryActions)
-        : [{ label: `Start this plan (valid until ${expires})`, operation: "generation.start", input: { planId: plan.planId, planHash: plan.planHash, budgetId: budget?.budgetId } }],
+        : [{ label: `Start this plan (valid until ${expires})`, operation: "generation.start", input: { planId: plan.planId, planHash: plan.planHash } }],
     };
   },
 
@@ -121,7 +78,7 @@ export const generationHandlers: HandlerMap = {
     const open = requireOpen(project);
     const row = jobRow(open.db, input.jobId);
     if (input.mode === "new-attempt" && context.actorType !== "human") {
-      throw new OperationFailure("HUMAN_AUTHORIZATION_REQUIRED", "A new attempt resubmits to ComfyUI and spends budget; ask the user to do it in the Brainforge UI after they have looked at the unresolved job.", { jobId: row.job_id }, [
+      throw new OperationFailure("HUMAN_AUTHORIZATION_REQUIRED", "A new attempt resubmits to ComfyUI, and the original submission may still be running there, so a second prompt could duplicate it; ask the user to do it in the Brainforge UI after they have looked at the unresolved job.", { jobId: row.job_id }, [
         { label: "Inspect the job to show the user", operation: "job.inspect", input: { jobId: row.job_id } },
       ]);
     }

@@ -12,6 +12,9 @@ export interface EditorContext {
   patch: (fn: (doc: Document) => void) => void;
   disabled: boolean;
   assetId: string;
+  /** Parts showing their fields instead of their text: "identity", "style", "deliverable:<id>", … */
+  open: ReadonlySet<string>;
+  setOpen: (part: string, open: boolean) => void;
 }
 
 export const Ctx = createContext<EditorContext | undefined>(undefined);
@@ -30,7 +33,7 @@ export function getAt(data: unknown, path: Path): unknown {
   return cur;
 }
 
-const idOf = (path: Path): string => `fe-${path.join("-").replace(/[^\w-]/g, "_")}`;
+export const idOf = (path: Path): string => `fe-${path.join("-").replace(/[^\w-]/g, "_")}`;
 
 /** Problems that belong to this exact field or anything beneath it. */
 export function problemsFor(problems: Problem[], path: Path): Problem[] {
@@ -57,6 +60,15 @@ export function FieldProblems({ id, problems }: { id: string; problems: Problem[
       ))}
     </div>
   );
+}
+
+/** The count of problems inside a part that is not showing its fields: "2 to fix", else "1 to finish". */
+export function ProblemFlag({ problems }: { problems: Problem[] }) {
+  const errors = problems.filter((p) => p.severity !== "warning").length;
+  if (problems.length === 0) return null;
+  return errors > 0
+    ? <span className="spec-flag bad"><Icon name="bad" size="sm" />{errors} to fix</span>
+    : <span className="spec-flag warn"><Icon name="warn" size="sm" />{problems.length} to finish</span>;
 }
 
 interface FieldBase {
@@ -255,36 +267,45 @@ export function ListField({ path, ...base }: FieldBase) {
   );
 }
 
-/** Pick several of the given values (checkbox group). */
+/** Several of the given values: the chosen ones as removable chips, the rest in one Add select. */
 export function MultiPick({ path, label, options, hint, emptyText }: { path: Path; label: string; options: string[]; hint?: ReactNode; emptyText: string }) {
   const { data, patch, disabled, problems } = useEditor();
   const raw = getAt(data, path);
   const selected = Array.isArray(raw) ? raw.map(String) : [];
   const id = idOf(path);
   const mine = problemsFor(problems, path);
-  const all = [...options, ...selected.filter((s) => !options.includes(s))];
+  const rest = options.filter((option) => !selected.includes(option));
   return (
-    <fieldset className="pick-group" aria-describedby={hint ? `${id}-hint` : undefined}>
+    <fieldset className="field" aria-describedby={hint ? `${id}-hint` : undefined}>
       <legend>{label}</legend>
-      {all.length === 0 ? <p className="secondary">{emptyText}</p> : (
-        <div className="row">
-          {all.map((option) => {
-            const checked = selected.includes(option);
-            return (
-              <label key={option} className="check">
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  disabled={disabled}
-                  onChange={(e) => {
-                    const next = e.target.checked ? [...selected, option] : selected.filter((s) => s !== option);
-                    patch((doc) => setAt(doc, path, next.length === 0 ? undefined : next));
-                  }}
-                />
-                {option}{options.includes(option) ? "" : " (unknown)"}
-              </label>
-            );
-          })}
+      {options.length === 0 && selected.length === 0 ? <p className="secondary">{emptyText}</p> : (
+        <div className="picks">
+          {selected.map((value) => (
+            <span key={value} className="pick">
+              <code>{value}</code>
+              {options.includes(value) ? null : <span className="faint">not in this asset</span>}
+              <button
+                type="button"
+                disabled={disabled}
+                aria-label={`Remove ${value}`}
+                onClick={(event) => {
+                  const picks = event.currentTarget.closest(".picks");
+                  const at = selected.indexOf(value);
+                  patch((doc) => { const next = selected.filter((s) => s !== value); setAt(doc, path, next.length === 0 ? undefined : next); });
+                  // The chip leaves with its button: focus moves to the next chip's, else to the Add select.
+                  requestAnimationFrame(() => (picks?.querySelectorAll<HTMLElement>(".pick button")[at] ?? document.getElementById(id))?.focus());
+                }}
+              >
+                <Icon name="close" size="sm" />
+              </button>
+            </span>
+          ))}
+          {rest.length > 0 ? (
+            <select id={id} aria-label={`Add to ${label}`} value="" disabled={disabled} onChange={(e) => { const added = e.target.value; if (added !== "") patch((doc) => setAt(doc, path, [...selected, added])); }}>
+              <option value="">{selected.length === 0 ? "Choose…" : "Add…"}</option>
+              {rest.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          ) : null}
         </div>
       )}
       {hint ? <div id={`${id}-hint`} className="hint">{hint}</div> : null}

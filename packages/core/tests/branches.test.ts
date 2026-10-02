@@ -12,12 +12,14 @@ setDefaultTimeout(30_000);
 const NOW = "2026-10-01T00:00:00.000Z";
 const OLD_DESCRIPTION = "A guarded teenager with an exposed brain.";
 const NEW_DESCRIPTION = "A cheerful toddler with a tiny hat.";
+const OLD_SHEET = "Front, profile and rear.";
+const NEW_SHEET = "Three views on a flat grey ground.";
 
 const projectYaml = (fps = 12, notes = ""): string =>
   `${PROJECT_YAML}${notes ? `notes: ${notes}\n` : ""}defaults:\n  animation:\n    playbackFps: ${fps}\n  sizing:\n    width: 64\n    height: 64\n`
   + "approval:\n  conceptLock: human\n  productionReview: agent_with_escalation\n  promotion: human\n  activation: human\n";
 
-const assetYaml = (over: { name?: string; description?: string; motion?: string } = {}): string => `schema: brainforge.asset.v2
+const assetYaml = (over: { name?: string; description?: string; sheet?: string; motion?: string } = {}): string => `schema: brainforge.asset.v2
 id: cortex
 name: ${over.name ?? "Cortex"}
 family: character
@@ -25,7 +27,7 @@ description: ${over.description ?? OLD_DESCRIPTION}
 deliverables:
   - id: construction-sheet
     kind: reference-sheet
-    description: Front, profile and rear.
+    description: ${over.sheet ?? OLD_SHEET}
     regions:
       - { id: front, x: 0, y: 0, width: 4, height: 8 }
   - id: idle-rest
@@ -62,7 +64,7 @@ async function hashesNow(w: World): Promise<Record<string, string>> {
 
 async function seedRun(w: World, id: string, stepId: string, branchId: string | undefined, hashes: Record<string, string>): Promise<void> {
   const plan = JSON.stringify({ workflow: { id: "krea2-still", version: 1, graphHash: "g".repeat(64) }, inputs: { specHashes: hashes, references: [] } });
-  w.open.db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, budget_id, started_by, created_at, branch_id) VALUES (?, 'cortex', ?, 'p', ?, 'b', 'human:local', ?, ?)").run(`run_${id}`, stepId, plan, NOW, branchId ?? null);
+  w.open.db.query("INSERT INTO generation_runs (run_id, asset_id, step_id, plan_hash, plan_json, started_by, created_at, branch_id) VALUES (?, 'cortex', ?, 'p', ?, 'human:local', ?, ?)").run(`run_${id}`, stepId, plan, NOW, branchId ?? null);
   w.open.db.query("INSERT INTO generation_jobs (job_id, run_id, asset_id, step_id, slot, label, identity, state, submission_json, created_at, updated_at) VALUES (?, ?, 'cortex', ?, 0, 'A', ?, 'succeeded', '{}', ?, ?)").run(`job_${id}`, `run_${id}`, stepId, `identity-${id}`, NOW, NOW);
 }
 
@@ -210,7 +212,7 @@ describe("saved inputs", () => {
     const w = await world();
     const oldHashes = await hashesNow(w);
     await seedStill(w, "cand_concept_b", "concept", undefined, oldHashes);
-    await edit(w, "brainforge/assets/cortex/asset.yaml", assetYaml({ description: NEW_DESCRIPTION }));
+    await edit(w, "brainforge/assets/cortex/asset.yaml", assetYaml({ description: NEW_DESCRIPTION, sheet: NEW_SHEET }));
     return { w, conceptB: "cand_concept_b", oldAssetHash: oldHashes["brainforge/assets/cortex/asset.yaml"]! };
   }
 
@@ -222,13 +224,13 @@ describe("saved inputs", () => {
 
     const savedPlan = expectOk(await w.call("generation.plan", { assetId: "cortex", stepId: "construction-sheet", branchId: saved.branchId, count: 1 })).plan;
     expect(savedPlan.inputMode).toBe("saved");
-    expect(savedPlan.prompt).toContain(OLD_DESCRIPTION);
-    expect(savedPlan.prompt).not.toContain(NEW_DESCRIPTION);
+    expect(savedPlan.prompt).toContain(OLD_SHEET);
+    expect(savedPlan.prompt).not.toContain(NEW_SHEET);
     expect(savedPlan.inputs.specHashes["brainforge/assets/cortex/asset.yaml"]).toBe(saved.specHashes["brainforge/assets/cortex/asset.yaml"]);
 
     const currentPlan = expectOk(await w.call("generation.plan", { assetId: "cortex", stepId: "construction-sheet", branchId: w.branchId, count: 1 })).plan;
     expect(currentPlan.inputMode).toBe("current");
-    expect(currentPlan.prompt).toContain(NEW_DESCRIPTION);
+    expect(currentPlan.prompt).toContain(NEW_SHEET);
   });
 
   test("saved text that is no longer retained is a blocker naming the file, with current as the way out", async () => {
@@ -363,17 +365,11 @@ describe("continue and rebase", () => {
     expect(expectOk(await w.call("version.list", { assetId: "cortex" })).active.versionId).toBe(v2.versionId);
   });
 
-  test("an agent may continue only with a human-granted generation budget, and is recorded as an agent", async () => {
+  test("an agent may continue a branch from a sheet, and is recorded as an agent", async () => {
     const w = await world();
     const a = await produce(w, w.branchId, "a");
-    const p = await plan(w, a.sheet, "current", agent);
-    expect(p.authorization).toMatchObject({ operation: "branch.create", allowed: false });
-    expect(errorOf(await w.call("branch.create", { candidateId: a.sheet, inputMode: "current", planHash: p.planHash }, agent)).code).toBe("HUMAN_AUTHORIZATION_REQUIRED");
-
-    expectOk(await w.call("budget.grant", { assetId: "cortex", stepId: "construction-sheet", maxStarts: 1, maxCandidateSubmissions: 2, expiresAt: new Date(Date.now() + 3600_000).toISOString() }));
     const granted = await plan(w, a.sheet, "current", agent);
-    expect(granted.authorization.allowed).toBe(true);
-    expect(granted.planHash).toBe(p.planHash);
+    expect(granted.authorization).toMatchObject({ operation: "branch.create", allowed: true });
     const made = expectOk(await w.call("branch.create", { candidateId: a.sheet, inputMode: "current", planHash: granted.planHash }, agent)).branch;
     expect(made.lockedByType).toBe("agent");
     // continuing from the sheet rebuilds what is built on it and keeps nothing stale

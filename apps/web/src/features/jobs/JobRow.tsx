@@ -77,7 +77,7 @@ function JobThumb({ job, heading }: { job: Job; heading: string }) {
 
 /**
  * Recovery and control actions for one job. `compact` (list rows) shows only the one safe action;
- * the full set, including the budget-spending new attempt behind an authorization, lives in the detail.
+ * the full set, including the new attempt behind an authorization (it can duplicate work), lives in the detail.
  */
 export function JobActions({ job, compact = false }: { job: Job; compact?: boolean }) {
   const reconcile = useMutationOperation("job.reconcile");
@@ -109,15 +109,15 @@ export function JobActions({ job, compact = false }: { job: Job; compact?: boole
       {failure && !failure.ok ? <p className="secondary job-fail" role="alert">{failure.error.message}</p> : null}
       {confirmNew ? (
         <Modal open onOpenChange={(next) => { setConfirmNew(next); setAuthorized(false); }} title="Start a new attempt?" description="This asks ComfyUI to generate this candidate again.">
-          <p>The first attempt is kept. If it did reach ComfyUI, a second image will be made. A new attempt spends <strong>one candidate submission from this step’s budget</strong>.</p>
-          <label className="check"><input type="checkbox" checked={authorized} onChange={(event) => setAuthorized(event.target.checked)} /> I authorize spending one candidate submission</label>
+          <p>The first attempt is kept. If it did reach ComfyUI, a second image will be made.</p>
+          <label className="check"><input type="checkbox" checked={authorized} onChange={(event) => setAuthorized(event.target.checked)} /> I understand this may create a duplicate image</label>
           <div className="dialog-actions">
             <button type="button" onClick={() => { setConfirmNew(false); setAuthorized(false); }}>Keep as is</button>
             <button
               type="button" className="primary danger" disabled={!authorized || retry.isPending}
               onClick={() => void retry.mutateAsync({ input: { jobId: job.jobId, mode: "new-attempt" } }).then((result) => { if (result.ok) { setConfirmNew(false); setAuthorized(false); } })}
             >
-              {retry.isPending ? "Submitting…" : "Spend one submission and retry"}
+              {retry.isPending ? "Submitting…" : "Start new attempt"}
             </button>
           </div>
           {retry.data && !retry.data.ok ? <p role="alert" className="field-error">{retry.data.error.message}</p> : null}
@@ -175,7 +175,7 @@ export function JobDetail({ job, heading, onClose }: { job: Job; heading: string
         <Banner tone="bad" title={STAGE_TEXT[job.error.stage]}>
           {canCollect
             ? "The image was generated; only getting it into the project failed. Retrying downloads the same result again and doesn’t generate anything new."
-            : "Fix the cause, then authorize a new attempt. A new attempt spends one candidate submission from this step’s budget."}
+            : "Fix the cause, then authorize a new attempt. If the first attempt reached ComfyUI, a duplicate image may be made."}
         </Banner>
       ) : null}
       {job.unresolved ? <Banner tone="warn" title="Brainforge can’t tell if this was sent">{UNRESOLVED_TEXT[job.unresolved.reason]}</Banner> : null}

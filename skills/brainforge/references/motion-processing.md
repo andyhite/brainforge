@@ -41,7 +41,7 @@ Processing never edits a source. Every run creates a NEW processed output (`pare
 
 ## Loop
 
-1. `step.list`: animation step `ready`. `generation.plan {assetId, branchId, stepId, mode:"fresh", count:1}`; read `plan.prompt`, blockers, budget; `generation.start` under a human budget (`budget.list`); poll `job.inspect`.
+1. `step.list`: animation step `ready`. `generation.plan {assetId, branchId, stepId, mode:"fresh", count:1}`; read `plan.prompt`, blockers, disclosure; `generation.start {planId, planHash}`; poll `job.inspect`.
 2. `candidate.inspect {candidateId}`: source outputs (untouched + matted, `stage:"source"`). Review the matted one; you do not approve it.
 3. `processing.plan {candidateId, outputId?, recipe?}`. Read the plan before running it:
    - `recipe` with `sources` (every defaulted field and where it came from), `sourceFrameCount`, `frames` (output index -> `sourceFrame`, `durationMs`), `totalDurationMs`, `canvas`, `pivotPx`, `foregroundBounds`, `warnings`, `blockers`.

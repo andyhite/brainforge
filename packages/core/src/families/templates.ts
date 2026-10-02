@@ -228,7 +228,7 @@ export function familyTemplate(family: AssetFamily, id: string, name: string, de
     `name: ${q(name)}`,
     `family: ${family}`,
     `description: ${description ? q(description) : todo(`one concrete sentence describing the ${family}`)}`,
-    `notes: ${q("Starter file from family.template. Replace every REPLACE: text, then check it with spec.validate.")}`,
+    'notes: ""',
     "identity:",
     ...identity.map((k) => `  ${k}: ${todo(`concrete visible features (${k})`)}`),
     "styleIds: []",

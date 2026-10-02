@@ -109,7 +109,7 @@ export function assetNext({ assetId, name, steps, queue, completeness }: {
     if (concept.state === "failed") return { ...base, key: `${assetId}:failed`, rank: RANK.recover, tone: "bad", title: `${name}’s concepts didn’t generate`, reason: "Open the concepts to see what failed and how to recover.", action: "See what failed", to };
     if (concept.state === "blocked") return { ...base, key: `${assetId}:definition`, rank: RANK.definition, tone: "warn", title: `${name} can’t start yet`, reason: concept.blockers[0]?.message ?? "Something in its definition is in the way.", action: "Open definition", to: paths.assetDefinition(assetId) };
     if (concept.counts.candidates === 0) {
-      return { ...base, key: `${assetId}:generate`, rank: RANK.generate, title: `Explore concepts for ${name}`, reason: "Nothing has been generated yet. Plan a first batch; it only starts under a budget you set.", action: "Plan concepts", to };
+      return { ...base, key: `${assetId}:generate`, rank: RANK.generate, title: `Explore concepts for ${name}`, reason: "Nothing has been generated yet. Plan a first batch and review it before it starts.", action: "Plan concepts", to };
     }
     const notes = concept.counts.openRevisions;
     return {
