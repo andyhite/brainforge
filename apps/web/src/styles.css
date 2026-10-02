@@ -53,6 +53,7 @@
 
 /* ---------------------------------------------------------------- base */
 * { box-sizing: border-box; }
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
 html, body, #root { height: 100%; }
 body { margin: 0; font: 14px/1.5 var(--font); background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; }
 h1, h2, h3, h4 { text-wrap: balance; margin: 0; }
