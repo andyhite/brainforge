@@ -18,7 +18,7 @@ export type FaultName = (typeof FAULT_NAMES)[number];
 /** Fired once on the next matching request, then removed. The others stay armed until cleared. */
 const ONE_SHOT: ReadonlySet<FaultName> = new Set(["submit-timeout-after-accept", "submit-timeout-before-accept", "view-500-once", "server-restart"]);
 
-const BUNDLED_WORKFLOWS = ["krea2-still", "krea2-variation", "wan22-motion", "krea2-still-opaque", "krea2-variation-opaque", "wan22-motion-opaque"];
+const BUNDLED_WORKFLOWS = ["krea2-still", "krea2-variation", "wan22-motion", "krea2-still-opaque", "krea2-variation-opaque", "wan22-motion-opaque", "krea2-construction-sheet", "krea2-construction-sheet-opaque"];
 const STILL_SIZE = 512;
 const SEQUENCE_SIZE = 128;
 const SEQUENCE_MAX_FRAMES = 81;

@@ -92,6 +92,8 @@ The YAML text IS the image prompt. The model (Krea, cfg 1) obeys what you descri
 |---|---|
 |asset `description`, EVERY `identity.*` value (unlabelled), effective `perspective` and `palette`, project `artDirection`, style `palette` entries, a fixed single-figure framing sentence; plus the generated deliverable's own `description` (only that one) or, for an animation, its `animation.motion`|asset `notes`, project `notes`, style `description`, other deliverables' text, names, ids|
 
+`reference-sheet` exception: the reference image supplies identity and style. Only the identity-lock instruction, that sheet's `description`, its `regions[].view` layout and per-run iteration instructions reach the prompt. Asset `description`/`identity`, project art direction, palette and style prose are omitted. MUST describe the requested views, not redescribe or redesign the locked character.
+
 - Describe the picture, not the design process. Put status, proposals, open questions, doc references, lore, setting in `notes`.
 - Every feature gets shape + colour + position: "two big round white eyes with dark pupils in the middle of the front of the brain". Never "large integrated eyes".
 - Positive phrasing only: no "not", "without", "do not", no mention of things you do not want (it gets drawn).

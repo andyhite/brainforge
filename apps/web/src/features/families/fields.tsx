@@ -149,7 +149,7 @@ export function NumberField({ path, min, step, unit, ...base }: FieldBase & { mi
   return (
     <Wrap path={path} {...base}>
       {({ id, describedBy, invalid }) => (
-        <span className="row" style={{ gap: 8 }}>
+        <span className="row">
           <input
             id={id}
             type="number"
@@ -267,7 +267,7 @@ export function MultiPick({ path, label, options, hint, emptyText }: { path: Pat
     <fieldset className="pick-group" aria-describedby={hint ? `${id}-hint` : undefined}>
       <legend>{label}</legend>
       {all.length === 0 ? <p className="secondary">{emptyText}</p> : (
-        <div className="row" style={{ gap: 12 }}>
+        <div className="row">
           {all.map((option) => {
             const checked = selected.includes(option);
             return (
@@ -295,9 +295,9 @@ export function MultiPick({ path, label, options, hint, emptyText }: { path: Pat
 
 export function Group({ legend, hint, children }: { legend: string; hint?: ReactNode; children: ReactNode }) {
   return (
-    <fieldset className="recipe-group fam-group">
+    <fieldset className="fam-group">
       <legend>{legend}</legend>
-      {hint ? <p className="secondary" style={{ marginTop: 0 }}>{hint}</p> : null}
+      {hint ? <p className="secondary">{hint}</p> : null}
       {children}
     </fieldset>
   );

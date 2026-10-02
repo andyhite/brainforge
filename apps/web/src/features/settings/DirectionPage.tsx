@@ -5,13 +5,14 @@ import { parseDocument, type Document } from "yaml";
 import { ConflictDialog, ExternalChangeBanner, SaveBar, SpecEditor } from "../../components/SpecEditor.tsx";
 import { EffectiveSettings } from "../../components/EffectiveSettings.tsx";
 import { PolicyPanel } from "../../components/PolicyPanel.tsx";
-import { Banner, ErrorBanner } from "../../components/ui.tsx";
+import { Banner, ErrorBanner, Seg } from "../../components/ui.tsx";
 import { readField, readString, readStringList, splitList, writeField, type FieldPath } from "../../lib/yaml-fields.ts";
 import { specRoute } from "../../lib/use-project.ts";
 import { useSpecFile, type SpecFile } from "../../lib/spec-file.ts";
 
 const PROJECT_FILE = "brainforge/project.yaml";
 const REVIEW_OPTIONS = ["human", "agent", "agent_with_escalation"];
+const OPTION_LABEL: Record<string, string> = { human: "A person", agent: "An agent", agent_with_escalation: "An agent, escalating to a person", generic: "Generic files", godot4: "Godot 4" };
 
 interface FieldProps {
   id: string;
@@ -79,7 +80,7 @@ function SelectField({ id, label, path, draft, file, doc, hint, options }: Field
       <label htmlFor={id}>{label}</label>
       <select id={id} value={value} onChange={(event) => file.setDraft(writeField(draft, path, event.target.value === "" ? undefined : event.target.value))}>
         {value === "" ? <option value="">(not set)</option> : null}
-        {options.map((option) => <option key={option} value={option}>{option}</option>)}
+        {options.map((option) => <option key={option} value={option}>{OPTION_LABEL[option] ?? option}</option>)}
       </select>
       {hint ? <span className="secondary">{hint}</span> : null}
     </div>
@@ -185,12 +186,9 @@ export function DirectionPage() {
   return (
     <div className="settings-stack">
       <div className="settings-head">
-        <h2>Direction, defaults &amp; policy</h2>
+        <h2>Art direction</h2>
         {file === PROJECT_FILE ? (
-          <div className="row" role="group" aria-label="Editor view">
-            <button type="button" aria-pressed={view === "fields"} onClick={() => setView("fields")}>Fields</button>
-            <button type="button" aria-pressed={view === "yaml"} onClick={() => setView("yaml")}>YAML</button>
-          </div>
+          <Seg label="Editor view" value={view} options={[{ value: "fields", label: "Fields" }, { value: "yaml", label: "YAML" }]} onChange={setView} />
         ) : (
           <span className="secondary mono">{file}</span>
         )}
@@ -209,7 +207,7 @@ export function DirectionPage() {
       )}
       <PolicyPanel />
       <details>
-        <summary>Effective settings (where each value comes from)</summary>
+        <summary>Where each setting comes from</summary>
         <EffectiveSettings />
       </details>
     </div>

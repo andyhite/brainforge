@@ -4,6 +4,8 @@ import { useMutationOperation, useOperation } from "../api/hooks.ts";
 import { Banner, ErrorBanner, formatTime, NetworkProblem, Status } from "./ui.tsx";
 
 const FIELDS = ["conceptLock", "productionReview", "promotion", "activation"] as const;
+const FIELD_LABEL: Record<(typeof FIELDS)[number], string> = { conceptLock: "Concept lock", productionReview: "Production review", promotion: "Promotion", activation: "Activation" };
+const WHO: Record<string, string> = { human: "A person", agent: "An agent", agent_with_escalation: "An agent, escalating to a person" };
 
 type Outcome = { kind: "ok" } | { kind: "conflict" } | { kind: "error"; error: OperationError };
 
@@ -32,24 +34,24 @@ export function PolicyPanel() {
   };
 
   return (
-    <section className="panel" aria-labelledby="policy-heading">
-      <h2 id="policy-heading">Approval policy</h2>
-      <p className="secondary">Who may approve each step. The effective policy is the last one a human confirmed; edits to project.yaml are requests until confirmed.</p>
+    <section className="settings-policy" aria-labelledby="policy-heading">
+      <h2 id="policy-heading">Who approves</h2>
+      <p className="secondary">Who may approve each step. The policy in force is the last one a person confirmed; edits to project.yaml are requests until you confirm them here.</p>
       {policy.pendingRelaxation ? (
-        <Banner tone="warn" title="Policy change waiting">Requested policy is more permissive than the confirmed one and is not in effect until you confirm it.</Banner>
+        <Banner tone="warn" title="Policy change waiting">The requested policy is more permissive than the confirmed one. It isn’t in effect until you confirm it.</Banner>
       ) : null}
       <div className="table-wrap">
         <table>
           <thead>
-            <tr><th scope="col">Field</th><th scope="col">Requested</th><th scope="col">Effective</th><th scope="col">State</th></tr>
+            <tr><th scope="col">Step</th><th scope="col">Requested</th><th scope="col">In force</th><th scope="col">State</th></tr>
           </thead>
           <tbody>
             {FIELDS.map((field) => (
               <tr key={field}>
-                <th scope="row" className="mono">{field}</th>
-                <td>{policy.requested[field]}</td>
-                <td>{policy.effective[field]}</td>
-                <td>{differing[field] ? <Status tone="warn">differs</Status> : <Status tone="ok">same</Status>}</td>
+                <th scope="row">{FIELD_LABEL[field]}</th>
+                <td>{WHO[policy.requested[field]] ?? policy.requested[field]}</td>
+                <td>{WHO[policy.effective[field]] ?? policy.effective[field]}</td>
+                <td>{differing[field] ? <Status tone="warn">Waiting for you</Status> : <Status tone="ok">Same</Status>}</td>
               </tr>
             ))}
           </tbody>
@@ -60,16 +62,16 @@ export function PolicyPanel() {
       ) : null}
       {hasDiff ? (
         <div className="row">
-          <button type="button" className="primary" disabled={authorize.isPending} onClick={() => void confirm()}>
+          <button type="button" disabled={authorize.isPending} onClick={() => void confirm()}>
             {authorize.isPending ? "Confirming…" : "Confirm this exact policy"}
           </button>
         </div>
       ) : (
-        <Status tone="ok">Effective policy matches the requested policy</Status>
+        <Status tone="ok">The policy in force matches the requested one</Status>
       )}
       {outcome?.kind === "ok" ? <div><Status tone="ok">Policy confirmed</Status></div> : null}
       {outcome?.kind === "conflict" ? (
-        <Banner tone="warn" title="Policy changed">project.yaml changed since you looked — the view has been refreshed, review and confirm again</Banner>
+        <Banner tone="warn" title="Policy changed">project.yaml changed since you looked. The view has been refreshed; review it and confirm again.</Banner>
       ) : null}
       {outcome?.kind === "error" ? <ErrorBanner error={outcome.error} /> : null}
       {authorize.error ? <NetworkProblem error={authorize.error} /> : null}

@@ -38,11 +38,11 @@ export function SourceFramePreview({ projectId, frames, recipe, backdrop, onPivo
         >
           <title>Click inside the crop rectangle to place the pivot</title>
           <rect x={crop.x} y={crop.y} width={crop.width} height={crop.height} fill="none" stroke="var(--accent)" strokeWidth={2} vectorEffect="non-scaling-stroke" strokeDasharray="6 4" />
-          <path d={`M${marker.x - arm} ${marker.y}H${marker.x + arm}M${marker.x} ${marker.y - arm}V${marker.y + arm}`} stroke="#e5484d" strokeWidth={2.5} vectorEffect="non-scaling-stroke" />
+          <path d={`M${marker.x - arm} ${marker.y}H${marker.x + arm}M${marker.x} ${marker.y - arm}V${marker.y + arm}`} stroke="var(--guide)" strokeWidth={2.5} vectorEffect="non-scaling-stroke" />
         </svg>
       </div>
       <figcaption className="secondary">
-        Dashed rectangle: crop. Red cross: pivot. Click inside the crop to move the pivot, or type it below.
+        Dashed rectangle: crop. Cross: pivot. Click inside the crop to move the pivot, or type it below.
         {outside ? <strong role="alert"> That click was outside the crop, so the pivot did not move.</strong> : null}
       </figcaption>
       {frames.length > 1 ? (
@@ -73,11 +73,11 @@ export function OutputCanvasPreview({ plan, recipe, backdrop, onPivot }: { plan:
           }}
         >
           <rect x={0.5} y={0.5} width={width - 1} height={height - 1} fill="none" stroke="var(--border-control)" vectorEffect="non-scaling-stroke" />
-          {bounds ? <rect x={bounds.x} y={bounds.y} width={bounds.width} height={bounds.height} fill="rgba(26,86,184,0.12)" stroke="var(--accent)" strokeDasharray="5 3" vectorEffect="non-scaling-stroke" strokeWidth={2} /> : null}
-          <path d={`M${px.x - arm} ${px.y}H${px.x + arm}M${px.x} ${px.y - arm}V${px.y + arm}`} stroke="#e5484d" strokeWidth={2.5} vectorEffect="non-scaling-stroke" />
+          {bounds ? <rect x={bounds.x} y={bounds.y} width={bounds.width} height={bounds.height} fill="none" stroke="var(--accent)" strokeDasharray="5 3" vectorEffect="non-scaling-stroke" strokeWidth={2} /> : null}
+          <path d={`M${px.x - arm} ${px.y}H${px.x + arm}M${px.x} ${px.y - arm}V${px.y + arm}`} stroke="var(--guide)" strokeWidth={2.5} vectorEffect="non-scaling-stroke" />
         </svg>
       </div>
-      <figcaption className="secondary">Output canvas {width}×{height}: blue = union of exported foreground, red cross = pivot (click to move).</figcaption>
+      <figcaption className="secondary">Output canvas {width}×{height}. Dashed rectangle: union of the exported foreground. Cross: pivot (click to move).</figcaption>
     </figure>
   );
 }

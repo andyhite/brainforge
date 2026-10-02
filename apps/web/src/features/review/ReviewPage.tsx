@@ -1,105 +1,63 @@
-import "./review.css";
-import { ReviewQueue } from "./ReviewQueue.tsx";
-import { Link } from "react-router-dom";
-import { fileUrl, useOperation } from "../../api/hooks.ts";
-import { ApprovalBadge } from "./ApprovalBadge.tsx";
-import { ErrorBanner, NetworkProblem, PageHeader, Status } from "../../components/ui.tsx";
+import { useState, type ReactNode } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useOperation } from "../../api/hooks.ts";
+import { EmptyState, ErrorBanner, NetworkProblem, PageHeader } from "../../components/ui.tsx";
+import { Icon } from "../../components/Icon.tsx";
+import { useReviewQueue } from "../../lib/attention.ts";
+import { paths } from "../../lib/paths.ts";
 import { useProject } from "../../lib/use-project.ts";
-import { RevisionList } from "./RevisionList.tsx";
+import { Room } from "./Room.tsx";
+import "./room.css";
 
+/** `/review`: the room in queue mode over every candidate waiting for a decision (or one asset's, with `?asset=`). */
 export function ReviewPage() {
   const project = useProject();
-  const enabled = project.root !== undefined;
-  const revisions = useOperation("revision.list", { limit: 200 }, { enabled });
-  const jobs = useOperation("job.list", { limit: 200 }, { enabled });
+  const queue = useReviewQueue();
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const [notice, setNotice] = useState<string | undefined>();
+  // The last candidate decided from an empty-ahead queue: the queue may not have refetched yet, so it is left out by hand.
+  const [decided, setDecided] = useState<string | undefined>();
+  const asset = params.get("asset") ?? undefined;
+  const candidateParam = params.get("candidate") ?? undefined;
+  const waiting = queue.items.map((item) => item.candidate).filter((c) => (!asset || c.assetId === asset) && (c.candidateId !== decided || c.candidateId === candidateParam));
+  const inQueue = waiting.find((c) => c.candidateId === candidateParam);
+  // A candidate named in the URL that is no longer waiting (just decided, or opened from elsewhere) is still opened.
+  const lookup = useOperation("candidate.inspect", { candidateId: candidateParam ?? "" }, { enabled: candidateParam !== undefined && !inQueue && queue.loaded });
+  const target = inQueue ?? (candidateParam ? (lookup.data?.ok ? lookup.data.data.candidate : undefined) : waiting[0]);
 
-  if (!enabled) return <><PageHeader title="Review" /><p>No project selected. <Link to="/projects/open">Open a project</Link>.</p></>;
-  if (project.networkError) return <><PageHeader title="Review" /><NetworkProblem error={project.networkError} /></>;
-  const assets = project.data?.assets ?? [];
-
-  const pending = revisions.data?.ok ? revisions.data.data.revisions.filter((r) => r.status === "open" || r.status === "responded") : undefined;
-  const attention = jobs.data?.ok ? jobs.data.data.jobs.filter((j) => j.state === "failed" || j.state === "unresolved") : undefined;
+  const frame = (children: ReactNode) => <div className="room-host"><div className="room-empty">{children}</div></div>;
+  if (project.root === undefined) return frame(<><PageHeader title="Review" /><p>No project is open. <Link to={paths.openProject()}>Open a project</Link>.</p></>);
+  if (project.networkError) return frame(<><PageHeader title="Review" /><NetworkProblem error={project.networkError} /></>);
+  if (!queue.loaded) return frame(<p className="secondary" role="status">Loading what is waiting for you…</p>);
+  if (candidateParam && !target) {
+    if (lookup.data && !lookup.data.ok) return frame(<><PageHeader title="Review" /><ErrorBanner error={lookup.data.error} extra={<Link className="button sm" to={paths.review(asset ? { asset } : {})}>Back to the queue</Link>} /></>);
+    return frame(<p className="secondary" role="status">Opening the candidate…</p>);
+  }
+  if (!target) {
+    return frame(
+      <EmptyState title="Nothing is waiting for your decision">
+        {notice ? <p role="status"><Icon name="check" size="sm" /> {notice}</p> : null}
+        <p>{asset ? "This asset has nothing left to decide." : "Every candidate has an answer."} New ones show up here as they’re generated.</p>
+        <Link className="button" to={paths.home()}>Back to Home</Link>
+      </EmptyState>,
+    );
+  }
 
   return (
-    <>
-      <PageHeader title="Review" />
-      <div className="review-queue-page">
-        <div className="review-queue-main"><ReviewQueue /></div>
-        <div className="review-side stack">
-        <section aria-labelledby="q-revisions">
-          <h2 id="q-revisions">Revision requests{pending ? ` (${pending.length})` : ""}</h2>
-          {revisions.error ? <NetworkProblem error={revisions.error} /> : !revisions.data ? <p className="secondary" role="status">Loading revision requests…</p> : !revisions.data.ok ? <ErrorBanner error={revisions.data.error} /> : pending && pending.length === 0 ? (
-            <p className="secondary">No open revision requests.</p>
-          ) : <RevisionList revisions={pending ?? []} projectId={project.data?.project.projectId} showCandidateLink />}
-        </section>
-
-        <section aria-labelledby="q-candidates">
-          <h2 id="q-candidates">Concept candidates</h2>
-          <p className="secondary">Concepts are compared and locked, not approved. Assets with no concept candidates are omitted.</p>
-          {project.loading ? <p className="secondary" role="status">Loading assets…</p> : assets.length === 0 ? <p className="secondary">This project has no assets yet.</p> : (
-            <ul className="plain stack">
-              {assets.map((a) => <li key={a.assetId}><AwaitingReview assetId={a.assetId} name={a.name ?? a.assetId} projectId={project.data?.project.projectId} /></li>)}
-            </ul>
-          )}
-        </section>
-
-        <section aria-labelledby="q-jobs">
-          <h2 id="q-jobs">Jobs needing attention{attention ? ` (${attention.length})` : ""}</h2>
-          {jobs.error ? <NetworkProblem error={jobs.error} /> : !jobs.data ? <p className="secondary" role="status">Loading jobs…</p> : !jobs.data.ok ? <ErrorBanner error={jobs.data.error} /> : attention && attention.length === 0 ? (
-            <p className="secondary">No failed or unresolved jobs.</p>
-          ) : (
-            <ul className="plain stack">
-              {(attention ?? []).map((job) => (
-                <li key={job.jobId} className="panel">
-                  <div className="row" style={{ justifyContent: "space-between" }}>
-                    <strong>{job.label}</strong>
-                    {job.state === "failed" ? <Status tone="bad">Failed{job.error ? ` at ${job.error.stage}` : ""}</Status> : <Status tone="warn">Unresolved — inspect before retrying</Status>}
-                  </div>
-                  <p className="secondary">{job.error?.message ?? (job.unresolved ? `Submission could not be matched: ${job.unresolved.reason}` : "")}</p>
-                  <Link to={`/jobs?jobId=${encodeURIComponent(job.jobId)}`}>Open in Jobs</Link>{" · "}
-                  <Link to={`/assets/${encodeURIComponent(job.assetId)}`}>{job.assetId}</Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-        </div>
-      </div>
-    </>
-  );
-}
-
-function AwaitingReview({ assetId, name, projectId }: { assetId: string; name: string; projectId: string | undefined }) {
-  const step = useOperation("step.inspect", { assetId, stepId: "concept" });
-  const waiting = step.data?.ok && step.data.data.step.counts.candidates > 0;
-  const candidates = useOperation("candidate.list", { assetId, stepId: "concept" }, { enabled: waiting === true });
-  if (step.error) return <NetworkProblem error={step.error} />;
-  if (!step.data) return <p className="secondary" role="status">Loading {name}…</p>;
-  if (!step.data.ok) return <p className="secondary">{name}: {step.data.error.message}</p>;
-  const state = step.data.data.step;
-  if (!waiting) return null;
-  return (
-    <div className="panel stack">
-      <div className="row" style={{ justifyContent: "space-between" }}>
-        <strong><Link to={`/assets/${encodeURIComponent(assetId)}`}>{name}</Link></strong>
-        <Status tone="info">Concept — {state.counts.candidates} {state.counts.candidates === 1 ? "candidate" : "candidates"} · step is {state.state.replace("_", " ")}</Status>
-      </div>
-      {state.needsReassessment ? <Status tone="warn">Needs reassessment</Status> : null}
-      {candidates.data?.ok ? (
-        <ul className="plain row" aria-label={`${name} candidates`}>
-          {candidates.data.data.candidates.map((c) => {
-            const out = c.outputs.find((o) => o.role === "matted") ?? c.outputs[0];
-            return (
-              <li key={c.candidateId}>
-                <Link to={`/assets/${encodeURIComponent(assetId)}/candidates/${encodeURIComponent(c.candidateId)}`}>
-                  {out && projectId ? <img className="thumb" src={fileUrl(projectId, out.fileId)} alt="" /> : null}
-                  <div className="secondary">{c.label}{c.annotationCount > 0 ? ` · ${c.annotationCount} notes` : ""}{c.openRevisionCount > 0 ? ` · ${c.openRevisionCount} open revisions` : ""}</div>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
-    </div>
+    <Room
+      key={`${target.assetId}/${target.stepId}`}
+      mode="queue"
+      assetId={target.assetId}
+      stepId={target.stepId}
+      branchParam={target.branchId}
+      candidateParam={candidateParam}
+      waiting={waiting}
+      advance
+      notice={notice}
+      onNotice={setNotice}
+      onQueueEmpty={(from) => { setDecided(from.candidateId); void navigate(paths.review(asset ? { asset } : {}), { replace: true }); }}
+      hrefFor={(candidate, outputId) => paths.review({ ...(asset ? { asset } : {}), candidate: candidate.candidateId, ...(outputId ? { output: outputId } : {}) })}
+    />
   );
 }

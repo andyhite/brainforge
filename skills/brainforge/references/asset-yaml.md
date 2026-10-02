@@ -12,9 +12,9 @@ Schema `brainforge.asset.v2`. `.strict()` everywhere. `id` MUST equal the parent
 |`id`|yes|kebab-case = directory name|
 |`name`|yes|non-empty string|
 |`family`|yes|`character creature item equipment prop environment background tile ui icon effect`|
-|`description`|yes|non-empty string. SENT to the model: one or two concrete sentences of what the picture shows|
+|`description`|yes|non-empty string. SENT to the model except for reference-sheet edits: one or two concrete sentences of what the picture shows|
 |`notes`|no|string, `""`. NEVER sent to the model: status, open questions, proposals, doc references, lore, setting|
-|`identity`|no|map string -> string. EVERY value is SENT to the model, unlabelled (keys are not): short concrete appearance sentences, shape + colour + position per feature; values MUST be strings (`age: 16` fails, write `age: "16"`)|
+|`identity`|no|map string -> string. EVERY value is SENT to the model except for reference-sheet edits, unlabelled (keys are not): short concrete appearance sentences, shape + colour + position per feature; values MUST be strings (`age: 16` fails, write `age: "16"`)|
 |`styleIds`|no|kebab ids of existing styles, `[]`; real and checked, not decoration|
 |`references`|no|string[] reference ids, `[]`|
 |`overrides`|no|Defaults block (see project-yaml.md), `{}`|
@@ -46,6 +46,8 @@ Animation timing: exact generation size, required images and `4n+1` frame counts
 Precedence for settings: project `defaults` → `familyDefaults` → asset `overrides` → deliverable `overrides`. Scalars/arrays replace, objects merge. Check with `settings.inspect {assetId, deliverableId}`.
 
 Prompt rules (full list: SKILL.md "Writing prompt-bearing YAML"): SENT = `description`, every `identity` value, effective `perspective`/`palette` from `overrides`, and, only when that deliverable is generated, that deliverable's own `description` (other deliverables' text is never sent, so each description MUST follow the same rules: concrete picture, positive phrasing). NEVER sent = `notes`, `name`, ids, other deliverables' fields. Describe the picture, no doc references/status/other characters' names; front/profile/rear wording only in the construction-sheet deliverable description. Changing a sent field invalidates art; `name` and `notes` do not.
+
+For `reference-sheet` edits, the reference image supplies identity and style instead: only the identity-lock instruction, sheet `description`, region layout and per-run iteration instructions are sent. Asset description/identity, effective palette/perspective, project art direction and style palettes are omitted. MUST keep sheet descriptions focused on the requested views.
 
 `dependsOn` (same-asset deliverable ids): a deliverable step is `ready` only after a concept is locked (branch) and every listed deliverable has a selected output with an applicable approval. Independent deliverables are ready independently; cycles, missing ids and a deliverable named `concept` are reported as problems on the affected steps only. Declare only dependencies the art needs: a static prop with no `dependsOn` never gets reference steps. Changing a dependency's approved output makes dependents need reassessment. See [branches-review](branches-review.md).
 

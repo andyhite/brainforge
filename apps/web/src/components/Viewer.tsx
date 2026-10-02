@@ -1,3 +1,4 @@
+import "../features/families/families.css";
 import { useState } from "react";
 
 type Background = "light" | "dark" | "checker";
@@ -15,14 +16,17 @@ export function Viewer({ src, alt, caption }: { src: string; alt: string; captio
   const [background, setBackground] = useState<Background>("checker");
   const [failed, setFailed] = useState(false);
   return (
-    <figure style={{ margin: 0 }}>
+    <figure className="viewer">
       <div className="viewer-tools" role="toolbar" aria-label="Viewer controls">
-        <button type="button" aria-pressed={zoom === "fit"} onClick={() => setZoom("fit")}>Fit</button>
-        <button type="button" aria-pressed={zoom === "actual"} onClick={() => setZoom("actual")}>1:1</button>
-        <span aria-hidden="true" style={{ width: 8 }} />
-        {BACKGROUNDS.map((option) => (
-          <button key={option.id} type="button" aria-pressed={background === option.id} onClick={() => setBackground(option.id)}>{option.label}</button>
-        ))}
+        <span className="seg" role="group" aria-label="Zoom">
+          <button type="button" aria-pressed={zoom === "fit"} onClick={() => setZoom("fit")}>Fit</button>
+          <button type="button" aria-pressed={zoom === "actual"} onClick={() => setZoom("actual")}>1:1</button>
+        </span>
+        <span className="seg" role="group" aria-label="Background">
+          {BACKGROUNDS.map((option) => (
+            <button key={option.id} type="button" aria-pressed={background === option.id} onClick={() => setBackground(option.id)}>{option.label}</button>
+          ))}
+        </span>
       </div>
       <div className={`viewer-stage ${background}`} tabIndex={0} aria-label={`${alt} preview area`}>
         {failed ? (
@@ -31,7 +35,7 @@ export function Viewer({ src, alt, caption }: { src: string; alt: string; captio
           <img src={src} alt={alt} className={zoom === "fit" ? "fit" : undefined} onError={() => setFailed(true)} />
         )}
       </div>
-      {caption ? <figcaption className="secondary" style={{ marginTop: 8 }}>{caption}</figcaption> : null}
+      {caption ? <figcaption className="secondary viewer-caption">{caption}</figcaption> : null}
     </figure>
   );
 }

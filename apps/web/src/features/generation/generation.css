@@ -1,0 +1,52 @@
+/* Generation: the room's empty-step stage, the plan dialog, budgets and compare. */
+
+/* ---- stage ---- */
+.gen-stage { display: grid; height: 100%; min-height: 0; padding: 24px; overflow: auto; }
+.gen-cell { display: grid; align-content: center; justify-items: start; gap: 20px; width: 100%; max-width: 720px; margin: auto; min-height: min(100%, 520px); padding: clamp(24px, 5vw, 56px); border-radius: var(--radius-lg); border: 1.5px dashed var(--border-strong); color: var(--text); }
+.gen-cell h2 { font-size: 17px; }
+.gen-cell h3 { margin-bottom: 8px; font-size: 12.5px; font-weight: 640; color: var(--text-muted); }
+.gen-cell p { margin: 0; }
+.gen-block { display: grid; gap: 6px; }
+.gen-deps { display: flex; flex-wrap: wrap; gap: 14px; margin: 0; padding: 0; list-style: none; }
+.gen-dep { display: grid; gap: 4px; width: 112px; color: inherit; text-decoration: none; font-size: 13px; }
+.gen-dep:hover .gen-dep-name { text-decoration: underline; text-underline-offset: 3px; }
+.gen-dep-name { font-weight: 580; }
+.gen-dep-art { width: 112px; height: 112px; }
+.gen-blockers { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.gen-blockers > li { display: flex; gap: 10px; align-items: flex-start; }
+.gen-blockers .icon { color: var(--warn); margin-top: 2px; }
+
+/* ---- dialog ---- */
+.field > .label { font-size: 13px; font-weight: 600; }
+.gen-parents { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.gen-parents button { display: grid; justify-items: center; gap: 4px; padding: 6px; width: 96px; min-height: 0; font-size: 12px; }
+.gen-parents button[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--accent); }
+.gen-parents .art { display: block; width: 80px; height: 80px; }
+.gen-parents .art > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.plan-prompt { max-height: 30vh; margin: 8px 0; padding: 12px; overflow: auto; border-radius: var(--radius); background: var(--surface-2); font-size: 13px; white-space: pre-wrap; }
+.plan-refs { display: flex; flex-wrap: wrap; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.plan-refs li { width: 120px; }
+.plan-refs .art { position: relative; width: 120px; height: 120px; }
+.plan-refs .art > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.plan-notes, .plan-blockers { margin: 0; padding-left: 18px; }
+.plan-blockers { display: grid; gap: 8px; }
+.plan-budget h3 { margin-bottom: 6px; }
+
+/* ---- budgets ---- */
+.budget-bar { justify-content: space-between; }
+.budget-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; }
+.budget-main { flex: 1; min-width: 0; }
+.budget-revoke { gap: 6px; }
+.budget-revoke input { min-width: 200px; }
+
+/* ---- compare ---- */
+.compare { display: grid; gap: 12px; }
+.compare-bar { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
+.compare-bar h2 { margin-right: auto; font-size: 15px; align-self: center; }
+.compare-zoom { min-width: 44px; text-align: center; color: var(--text-muted); font-size: 12.5px; align-self: center; }
+.compare-grid { display: grid; gap: 12px; }
+.compare-figure { margin: 0; }
+.compare-caption { margin-top: 4px; color: var(--text-muted); font-size: 12.5px; }
+.compare-pane { position: relative; width: 100%; max-height: 70vh; aspect-ratio: 1 / 1; overflow: hidden; border-radius: var(--radius); box-shadow: inset 0 0 0 1px var(--border); cursor: grab; touch-action: none; }
+.compare-pane img { position: absolute; top: 50%; left: 50%; max-width: none; user-select: none; }
+@media (max-width: 760px) { .compare-grid { grid-template-columns: 1fr !important; } }

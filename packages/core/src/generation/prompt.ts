@@ -34,7 +34,7 @@ export function sheetLayout(family: string, regions: readonly { id: string; x: n
   const count = COUNT_WORDS[ordered.length] ?? String(ordered.length);
   const positions = row ? POSITIONS[ordered.length] : undefined;
   const listing = positions ? names.map((n, i) => `${positions[i]} ${n}`).join(", ") : names.join(", ");
-  return `${count[0]?.toUpperCase()}${count.slice(1)} views of the same ${family} ${arrangement} on one canvas, ${listing}. Every view is equal in size and shows the same ${family} with identical proportions, colours and costume, the entire figure fully visible with generous margin. Flat plain light-grey background, no text.`;
+  return `${count[0]?.toUpperCase()}${count.slice(1)} views of the same ${family} ${arrangement} on one canvas, ${listing}. Each view shows the same ${family} with identical proportions, colours and costume, framed as its view describes, with generous margin around it. Flat plain light-grey background, no text.`;
 }
 
 /** Styles the project names first, then the asset's own, without repeats. */
@@ -76,29 +76,32 @@ export function composePrompt(input: PromptInput): PromptPart[] {
   if (input.deliverable && motion) {
     parts.push({ label: `Motion: ${input.deliverable.spec.id}`, source: `${asset.path}:deliverables[${input.deliverable.index}].animation.motion`, text: motion });
   }
-  parts.push({ label: "Subject", source: `${asset.path}:description`, text: spec.description.trim() });
-  for (const [key, value] of Object.entries(spec.identity)) {
-    parts.push({ label: `Identity: ${key}`, source: `${asset.path}:identity.${key}`, text: value.trim() });
-  }
-  // A reference sheet lays out several views itself, and flat families (tiles, UI) have no viewpoint; a default perspective would contradict both.
-  const viewpoint = input.deliverable?.spec.kind !== "reference-sheet" && !FLAT_FAMILIES.includes(spec.family);
-  for (const key of viewpoint ? (["perspective", "palette"] as const) : (["palette"] as const)) {
-    const leaf = effective.effective[key];
-    if (typeof leaf?.value === "string" && leaf.value.trim()) {
-      parts.push({ label: key === "perspective" ? "Perspective" : "Palette", source: `${leaf.source.file}:${leaf.source.field}`, text: leaf.value.trim() });
+  // A sheet edits the locked design; concept prose can otherwise redesign it.
+  if (input.deliverable?.spec.kind !== "reference-sheet") {
+    parts.push({ label: "Subject", source: `${asset.path}:description`, text: spec.description.trim() });
+    for (const [key, value] of Object.entries(spec.identity)) {
+      parts.push({ label: `Identity: ${key}`, source: `${asset.path}:identity.${key}`, text: value.trim() });
     }
-  }
-  const project = set.project;
-  if (project?.spec?.artDirection.trim()) {
-    parts.push({ label: "Art direction", source: `${project.path}:artDirection`, text: project.spec.artDirection.trim() });
-  }
-  for (const style of stylesFor(set, spec)) {
-    const s = style.spec;
-    if (!s) continue;
-    if (s.palette.length > 0) {
-      const entries = s.palette.map((p) => p.trim());
-      // "; " keeps comma-bearing entries from reading as several phrases; plain entries keep the original ", ".
-      parts.push({ label: `Style ${s.id}`, source: `${style.path}:palette`, text: entries.join(entries.some((p) => p.includes(",")) ? "; " : ", ") });
+    // Flat families (tiles, UI) have no viewpoint; a default perspective would contradict them.
+    const viewpoint = !FLAT_FAMILIES.includes(spec.family);
+    for (const key of viewpoint ? (["perspective", "palette"] as const) : (["palette"] as const)) {
+      const leaf = effective.effective[key];
+      if (typeof leaf?.value === "string" && leaf.value.trim()) {
+        parts.push({ label: key === "perspective" ? "Perspective" : "Palette", source: `${leaf.source.file}:${leaf.source.field}`, text: leaf.value.trim() });
+      }
+    }
+    const project = set.project;
+    if (project?.spec?.artDirection.trim()) {
+      parts.push({ label: "Art direction", source: `${project.path}:artDirection`, text: project.spec.artDirection.trim() });
+    }
+    for (const style of stylesFor(set, spec)) {
+      const s = style.spec;
+      if (!s) continue;
+      if (s.palette.length > 0) {
+        const entries = s.palette.map((p) => p.trim());
+        // "; " keeps comma-bearing entries from reading the original ", " as separate phrases.
+        parts.push({ label: `Style ${s.id}`, source: `${style.path}:palette`, text: entries.join(entries.some((p) => p.includes(",")) ? "; " : ", ") });
+      }
     }
   }
   if (input.mode === "fresh" && iteration) parts.push(iteration);

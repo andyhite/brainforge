@@ -1,111 +1,118 @@
-# Web UI redesign — Animation Checking Room
+# Web UI redesign: Sprite Sheet
 
-**Status:** Implemented and verified against an isolated fixture. The finish-review verdict resolved all seven identified material fixes.
+**Status:** Shipped in `apps/web`. The finish review ran three rounds and its final disposition is **ship**. This replaces the earlier "Animation Checking Room" redesign, which the user judged to have confusing IA, amateur visuals, cluttered screens and an unclear next action.
 
-**Target:** All of `apps/web`. **Mode:** Operate. **Selected direction:** Animation Checking Room.
+**Mode:** Operate. **Audience:** a solo indie 2D game developer on a macOS desktop. They want good assets in their game, not to operate Brainforge's machinery.
 
-## 1. Job, audience, and outcome
+The design system (tokens, components, rules) is recorded in `apps/web/DESIGN.md` and `apps/web/.impeccable/design.json`. The direction contract is in `apps/web/.impeccable/surfaces/src-app-tsx.md`.
 
-A solo indie 2D game developer uses Brainforge on a macOS desktop alongside their game editor. Humans and agents share one production pipeline; the browser is where the human inspects real outputs and makes gated decisions.
+## 1. What was causing the confusion
 
-The redesign gives equal weight to three outcomes:
+The diagnosis came from walking a populated copy of a real project: 7 assets, Cortex with 26 deliverables and two branches, open notes, failed jobs, and an out-of-date version and export.
 
-1. Know what remains, why it is blocked, and the next useful action.
-2. Judge the actual artwork, transparency, and motion without scrolling past configuration.
-3. Move from concept through export without repeatedly rebuilding asset, branch, and output context.
+| Kind | Problem | Change |
+|---|---|---|
+| Organization | An asset was a list of backend steps next to a 26-row sidebar tree. You answered "what's left?" by reading badges. | Each asset is a **sheet**. Every deliverable is a cell showing its art, what's waiting for you, or what it's blocked on. |
+| Organization | The same decision lived in three places: step cards, the candidate page and the review queue. Select, approve and branch sat side by side. | All judging happens in **one room per deliverable**. "Use without approving" and "Start a branch here" moved to the candidate's ⋯ menu. |
+| Hierarchy | Everything was a bordered pill, so nothing led. The "Next" banner named an internal state. | Home leads with a ranked **Up next** list, one action each. Filled ink is reserved for the single next action. |
+| Wording | Labels exposed machinery: requirements hashes, "matted", "no promoted version", agent ids, sha256 in headers. | Plain consequences ("Its requirements changed after version 1 went into the game"). Identifiers moved to Details. |
 
-**Organizing idea:** Keep the selected artwork central while navigation, production tools, and decisions change around it. Project-wide readiness remains one deliberate view away, not buried inside the editor.
+## 2. Structure
 
-Product truth stays intact: specifications describe assets; ComfyUI generates; Brainforge plans, tracks, processes, reviews, versions, and exports. Generation, selection, approval, concept lock, promotion, activation, and export are not interchangeable states.
+Three tabs (**Home · Review · Releases**). The top bar holds the activity status (it opens Activity) and settings, and **⌘K** jumps to any asset or deliverable by name. Every screen answers one question and has one "next" slot.
 
-## 2. Whole-app structure
+| Screen | Route | Question it answers | Next action | Deeper material (on demand) |
+|---|---|---|---|---|
+| Home | `/` | What needs me, and how close is the game? | The first **Up next** item, ranked by what it unblocks (review › lock › recover › finish › redo › generate › promote › activate; optional assets rank lower) | "Show N more"; asset filters (All · Needs you · In progress · In the game); spec or policy problems appear only when they exist |
+| Asset sheet | `/assets/:id` | What does this asset still need? | The **Next card**. Promotion and activation open their confirmation in place | **Definition** tab (spec editing, references); **Versions** tab; the branch menu (switch, compare, continue, rebase) |
+| Room | `/assets/:id/steps/:step` | Is this candidate right? | The decision box: Approve, or the action that resolves the blocker; **Lock this concept…** for concepts | Details · Processing · History tabs; the ⋯ candidate menu; pivot and baseline, frames, atlas; compare |
+| Generation | the room of an empty cell | Can I make this now? | **Plan generation…** opens the exact plan. Nothing starts until **Start generation** | Budget…, plan details (workflow, hashes, inputs) |
+| Review | `/review` | What's waiting for me anywhere? | The same room in queue mode ("1 of 4 waiting", J/K); deciding advances to the next | The same as the room |
+| Releases | `/releases` | What's in the game, and what can go in? | **Export…** carries ink only when exporting would change the game. A row button appears only for a real gate (**Activate version N…**, **Promote…**) | Past exports, "Choose what to export", the plan, Inspect the current export |
+| Activity | `/activity` | What ran, what's running, what failed? | The job's recovery action | Jobs · Decisions · Preferences views; job detail via `?job=` |
+| New asset | `/assets/new` | What kind of art is this? | Family → name → review and save (the draft persists) | Family detail expands on the selected row |
+| Project entry, Settings | `/projects/open`, `/settings/*` | Which game? How is it configured? | Open, preview a new project, save | Project details, art direction, connection, agent setup |
 
-Replace the eight equally weighted navigation destinations with four task destinations and a project/settings utility. These are navigation groupings, not new backend entities.
+**Continuity.** Back from a room lands on the same sheet cell with the marquee on it (`?step=`). Queue next and previous keep the branch and output context. Candidate and output stay in the URL. Live updates never move the control under the pointer.
 
-| Destination | Purpose and retained coverage |
+### What left the default view, and where it went
+
+| Before | Now |
 |---|---|
-| **Workbench** | Combines Overview and Assets. Project readiness, required/optional assets, blockers, and next actions lead into the selected asset workspace. Retains asset creation, all families, specifications, imported references, concepts, branches, deliverables, generation, processing, and environment collections. |
-| **Review** | Cross-project-asset decision queue feeding the same artwork workspace. Retains candidate/output comparison, favorites, whole-image/pin/rectangle/frame-range annotations, revisions, decisions, escalations, and reassessment. Return to the originating queue with its selection intact. |
-| **Releases** | Combines Library, production versions, and Export. Distinguishes reviewed deliverables, immutable production versions, the active version, and exported files. Retains promotion blockers, activation, pinned/subset export selection, destination/preset details, export plans, conflicts, and history. “Release” is a navigation label, not a replacement operation. |
-| **Activity** | Jobs and History as two views: running work and attention first, full records available. Retains failure/unresolved handling, reconciliation and supported retry/cancel actions, event provenance, and the existing preference proposal/confirmation flow. |
-| **Project & settings** | Project switch/open/create, connection configuration, project/art-direction/style authoring, policy and budget controls, and agent setup. Preserve their existing scope and human-only authorization. Contextual budget controls also remain reachable from generation. |
+| Sidebar listing every asset and step | The asset sheet, plus ⌘K |
+| Home table with four status pills per asset | One state line per asset card; problems only in Up next |
+| Step cards with "Use this one", "Review", "Continue from here" | Click the cell to open the room. The alternatives are in the ⋯ menu |
+| Branch selector plus a separate branches panel | One branch menu in the asset header |
+| Hashes, output ids, seeds, prompts and agent ids in headers | The room's Details tab; version hashes in Versions |
+| Always-open reason box and policy disclosure | "Reject…" asks for reasons. Policy appears only when it changes who may decide |
+| Separate Library, Releases and Export pages | One Releases page. Promote, activate and export remain separate confirmations |
+| Jobs and History as top-level pages | Activity, opened from the top-bar status |
+| Viewing backgrounds and zoom on every step page | Only on the room stage, where you judge the art |
 
-### The shared asset workspace
+## 3. Visual direction
 
-- **Context header:** Project → asset → branch → deliverable, plus exact candidate/output selection when relevant. Show the viewed branch separately from the current branch and active production version. Preserve deep links and browser Back behavior.
-- **Left navigator:** Searchable assets and their real deliverable/dependency structure. Expand only the selected asset by default. Do not replace the actual dependency graph with a fictional uniform sequence.
-- **Center stage:** The largest region, reserved for the selected output, comparison, or task material. Before any output exists, show the definition/reference/generation task rather than an empty black viewer.
-- **Right inspector:** The current decision, its blockers, and relevant notes/tools. Use progressive sections for processing and exact inputs; identifiers and full provenance stay accessible without consuming the primary viewing area.
-- **Bottom strip:** Candidates during exploration; playback and frame navigation during motion review. Keep these distinct so candidate thumbnails do not compete with the timeline. Never autoplay a grid of clips.
+**Sprite Sheet:** your project is a sheet you fill in. The chrome is graphite and paper in both themes, so the only saturated colour on screen is the artwork. Art sits on a transparency checker. Empty cells are dashed, blocked cells hold a lock, and the cell you came from gets a pixel-editor marquee. A tiny cell-per-deliverable glyph (the mini-sheet) shows progress as a pattern. Type is the system stack, compact and calm; mono is used only for frame numbers and counts. The stage background (checker, light, dark) is independent of the theme.
 
-**First viewport:** A compact context header, a narrow asset navigator, a dominant artwork stage, and a contextual decision inspector. At 1440×757 the artwork, essential playback controls, selected output identity, and next decision must be visible together. No large page title, output list, or pipeline summary pushes the stage below the fold.
+Rules the build holds to:
 
-**Signature interaction — retain the asset, change the task:** Moving between exploration, processing, review, and versions keeps the same asset/branch context. Comparing or selecting outputs updates the stage and its exact-output notes together. A decision updates the queue but does not unexpectedly advance, reorder the selected item, or move a control beneath the pointer.
+- **Ink marks the one next action.** When a required note blocks approval, Approve drops to secondary and the resolving action ("Go to the revision", "Open Candidate N") carries the ink.
+- **State reads by form before colour:** filled, ringed, dashed, locked, struck.
+- **Nothing disappears, it cancels:** rejected candidates stay in the strip, struck through.
+- **Nothing is labelled twice:** one status per fact per screen.
+- **Motion is state-only, at most 160ms.** The marquee holds still under reduced motion.
 
-## 3. Visual and interaction direction
+## 4. Safety and product truth (unchanged behaviour)
 
-**Scene assumption:** Long desktop sessions beside a game editor, under mixed ambient lighting. Use a neutral graphite viewing workspace with a fully designed light theme; the artwork background is independent of the application theme.
+- Generation shows the exact plan before submitting and starts only under a budget the human grants. Budget grants are human-only.
+- Approval covers one exact output. Notes are tied to outputs and frames, and frame labels are one-based everywhere (strip, transport, note anchors).
+- Concept lock, promotion, activation and export are separate operations with separate confirmations and different names. None is combined or implied by another.
+- Branch context, draft persistence, stale-plan and conflict checks, and request idempotency use the existing operation contracts. No backend change was made for the redesign.
 
-- **Visual system:** Neutral charcoal, slate control surfaces, clear light text, and one restrained blue selection/action accent. No neon, gradients, decorative textures, marketing typography, or nested cards around every fact. The artwork supplies the color.
-- **Typography and controls:** System UI sans, compact but readable hierarchy, tabular figures for frame/time values, monospace only for technical identifiers. Consistent, familiar buttons, segmented controls, menus, and labeled fields; never hide a safety-critical action behind an unlabeled icon.
-- **Viewing tools:** Preserve light/dark/checkerboard backgrounds, image zoom/pan, processed-versus-source selection, frame stepping, loop inspection, actual atlas playback, and applicable family previews. Use native output dimensions and explicit fit/zoom state; never alter the image merely to match the theme.
-- **State and feedback:** Pair status color with text/icon. Put blocker explanations beside the disabled action. Keep reconnecting, uncertain submission, stale plan, and stale approval distinct; an old view must not appear live. Success names the completed operation, not a generic “Done.”
-- **Adaptation and motion:** At narrower desktop widths, collapse the asset navigator first and let the inspector become a labeled, focus-managed drawer. At 200% zoom, reflow without concealing decisions or creating keyboard traps. No mobile-product expansion. Motion only explains state changes; respect reduced motion and preserve selection/focus during live updates.
+## 5. Verification
 
-The honest tradeoff is familiarity: this resembles a professional creative tool. Its distinctiveness must come from the integrated, gated production workflow—not ornamental chrome or invented controls.
+**Setup.** The verification ran against a read-only copy of a real game project in a temp directory. It used the real Brainforge server with an isolated config and the fake ComfyUI protocol server from `packages/comfy/src/testing/fake.ts`; a local proxy swapped in artwork from earlier runs. No GPU was used, and no real project was touched.
 
-## 4. States, safety, and boundaries
+**Observed in the browser (Chrome for Testing):**
 
-### Required states and content ranges
+- **Task completion:**
+  - Approving from the Review queue recorded the decision, moved the queue from 4 to 3 waiting and opened the next candidate.
+  - Activating Locker Key version 2 from the asset Next card went through its confirmation ("Version 2 is now active.").
+  - Granting a budget from the generation stage worked.
+  - A Stable Genius concept batch was planned and started (4 jobs), and 4 new concepts arrived in the strip.
+  - A subset export of the three active assets completed ("Exported").
+- **Blocked states and recovery:**
+  - The full export was refused with per-asset reasons and recovery links (two required assets have no active version).
+  - Planning Cortex `jump` was refused at plan time (no start or end guide), with a link to the YAML that fixes it.
+  - Home's "See what failed" opens the job in Activity, and "Compare concepts" opens the concept room in compare mode.
+  - A rejected candidate with an open required note offers "Open Candidate 1" as the next action.
+- **Continuity and keyboard:**
+  - Back from a room lands on the same cell with the marquee.
+  - ⌘K found a deliverable, and Enter opened its room. J/K moved between candidates.
+  - The focus ring is visible.
+- **Themes and viewports:**
+  - Dark and light were captured at 1440×900 and 1440×757, and dark at real 1024×768 and 800×700 viewports with no horizontal overflow.
+  - At 1024 the room keeps a narrower inspector beside the stage, and the sheet keeps two columns. At 800 the room stacks, with the decision one scroll below the stage.
+  - Under `prefers-reduced-motion` the marquee animation computes to `none`.
+- **A bug found and fixed:** pages held in the back/forward cache kept their event stream open. With HTTP/1.1's six-connection limit, a few address-bar navigations stalled every request. The app now closes the stream on `pagehide` and reopens it on `pageshow`.
 
-| State group | Required behavior |
-|---|---|
-| **First use and empty** | No project, missing/invalid specification, no assets, no candidates, and no locked branch each explain one useful next action. Connection readiness and generation eligibility remain separate. |
-| **Small and dense projects** | Support a single asset with five deliverables and multiple branches, as documented in the character run; also design for long names, many deliverables, and a dense asset list. These are stress cases, not claims about typical customers. Existing 200-record job/revision limits must be explicit rather than implying a complete history. |
-| **Changing work** | Generation/processing pending, failed or unresolved jobs, reconnect/resync, changed requirements, stale decisions, open/responded revisions, and superseded outputs remain distinguishable. Live updates do not discard drafts or silently change the output under review. |
-| **Exact-output review** | Notes and decisions refer to the actual output ID/hash and appropriate source/processed frame mapping. Source, matted, and processed labels follow the selected output. Favorite is a shortlist marker, never approval. |
-| **Production and export** | Show what is promoted, what is active, and what is exported independently. Explain incomplete bundles, requirement mismatch, destination conflicts, stale plans, and preserved prior exports beside the relevant action. |
+**Not verified (inferred from unchanged code or out of reach):** real ComfyUI or GPU generation; animation generation end to end (the only ready animation was blocked by its spec); the Godot export preset; browser zoom at 200%; screen-reader output; the A/R decision shortcuts; draft persistence in the new-asset wizard and note editor (the logic was kept, not re-exercised).
 
-### Non-negotiable safeguards
+**Engineering checks:**
 
-1. Show workflow compute location and budget before generation; never invent a monetary estimate that the backend does not provide.
-2. Preserve human-only permissions and explicit confirmations. Never combine lock, approve, promote, activate, and export into an ambiguous “Finish” action.
-3. Preserve uncertain-submission reconciliation, request identity, stale-plan checks, and existing conflict/data-loss protection. Visual changes must not create a blind retry path.
-4. Keep branch/input provenance, annotation scope, and approval validity truthful. Derived badges and queue counts must agree with authoritative state.
-5. Preserve keyboard operation, visible focus, accessible names, sufficient contrast, and non-color status cues. Stage tools must have a keyboard-usable equivalent where the existing interaction permits one.
+- `bun run typecheck` passed (9 workspaces).
+- The production web build passed. It still warns about the 1 MB application chunk, which predates this redesign.
+- `bunx turbo run test` passed all 9 tasks: core 299, comfy 18, media 42, cli 28, export 35, server 22, storage 9.
 
-**Outside scope:** New generation capabilities, a general workflow editor, an in-app assistant, audio/3D, multi-user/cloud hosting, engine synchronization, a new backend pipeline, or removing existing capabilities to simplify the UI.
+**Finish review:**
 
-## 5. Builder handoff and acceptance
+- Round 1 rejected four constrained-viewport captures (crops, not real viewports) and listed 8 material fixes.
+- Round 2 rejected the light captures (they rendered dark) and listed 3 more fixes.
+- Round 3 confirmed every fix and returned **ship**.
+- Writing DESIGN.md turned up places where the build broke its own rules. Each was fixed and checked in the browser by computed style and a fresh capture. The transport Play button is no longer ink. The current Releases row and the selected version use the ink wash, not a side stripe. The room's Dark backdrop matches the shared `#141416`. The pivot cross uses `guide`, and its captions name marks by shape, not colour. A failed-jobs tag on an asset card is red unless every failure can be collected again, the same as its Up next row. The generation cell's heading went from 26px to 17px. The unused `--u` token was removed.
 
-This is a full UI replacement, not a recoloring pass. Preserve React, React Router, TanStack Query, existing operations/SSE, and the actual image/animation/annotation implementations where they already solve the task. Reorganize the shell and feature composition rather than writing a second viewer or duplicating business state.
+Captures are in `apps/web/.impeccable/review/sprite-sheet/`, which is gitignored and local only. The fixture artwork in them is verification material, not a claim about generation quality.
 
-Primary touchpoints are `App.tsx`, `components/Layout.tsx`, `styles.css`, and `components/ui.tsx`; then asset/candidate composition and the existing project, generation, review, processing, production, export, activity, and settings features. Every current route and action needs a mapped home. In the eventual implementation, update internal callers together and retain addressable asset/branch/output context.
+## 6. Known gaps
 
-### Acceptance scenarios
-
-1. **Orient:** From project entry, find incomplete required assets, see the reason for a blocker, and open its relevant task without visiting unrelated pages.
-2. **Produce:** Create or open an asset, inspect its definition/references, plan budgeted generation, compare concepts, lock explicitly, and navigate real dependent deliverables without losing context.
-3. **Judge:** On 1440×757, inspect artwork and reach its decision without scrolling the stage into view. Exercise backgrounds, comparison, playback/frame stepping, source/processed identity, annotation selection, and return to the review queue.
-4. **Deliver:** Review promotion blockers, promote, separately activate, inspect the export plan, and export through the existing safe workflow. UI state continues to distinguish all three operations, including errors and changed plans.
-5. **Recover and adapt:** Inspect unresolved work without blind resubmission; preserve drafts and selection through live updates; exercise keyboard-only use, 200% zoom, light/dark themes, and 1280-, 1440-, and wider desktop layouts. Include settings, family-specific previews/collections, and empty/error states—not only the main viewer.
-
-### Evidence and unresolved implementation dependencies
-
-The direction is grounded in `apps/web/PRODUCT.md`, current routing/shell/tokens, asset and candidate composition, review/export flows, and `docs/FIRST-CHARACTER-RUN.md`. The current shell was inspected in Chrome; no representative project was opened, no GPU jobs were started, and no approval/export operations were performed. Populated-workspace conclusions therefore come from source and the recorded run, not a new end-to-end live test.
-
-The recorded run reports superseded outputs counted as pending review, an asset-wide revision blocker appearing on the concept step, and an incorrect output label. A new layout alone cannot establish correct status semantics. Implementation must verify and address the relevant source-of-truth behavior rather than hide legitimate pending work in CSS or client filters.
-
-**Approval:** The user approved this whole-UI brief and requested implementation. The application must preserve the boundaries and acceptance scenarios above.
-
-## Implementation evidence
-
-- The four-destination shell, shared asset/task navigator, exact-output review workspace, concept thumbnail strip, Releases, Activity, project entry, and settings are implemented. Existing deep-link routes and distinct safety-gated operations remain in use.
-- Browser verification used the real backend with an isolated temporary project/config and synthetic fake-ComfyUI output. Through the UI: preview-bound project creation, family-template asset creation, budgeted generation, explicit concept locking, processed-output approval, separate promotion and activation, and a 31-file export completed. No real GPU or user-project data was used.
-- Playback, frame stepping, source/processed comparison, atlas mode, independent viewing backgrounds, frame-note selection, required rejection reasons, and review-queue return context were exercised. Approval changed only the selected processed output; source outputs remained undecided. New-note text, draft pin geometry, and existing-note edits survived closing Notes; a draft also survived a live favorite update.
-- The 256px fixture clip renders at 265px in the 1440×757 workspace and 286px at 1280×800 with pixelated sampling and visible decision controls. The narrow inspector uses a native modal drawer: 12 consecutive Tab stops stayed inside it, and Escape restored opener focus. Reflow was exercised at 390×844 and at a 720×378 CSS viewport equivalent to 200% zoom on 1440×757; an actual browser zoom setting was not used.
-- Web and core typechecks passed; the production web build passed. The focused review regression file passed 9 tests with 45 assertions, including selected-output versus stale sibling approval behavior. Existing concept-step revision scoping was retained. Build notices remain for the large application chunk and third-party Zod pure-annotation comments.
-
-Review screenshots and `verification.json` are under `apps/web/.impeccable/review/`; `fixes/` contains the finish-review corrections. Synthetic fixture artwork in these captures is verification material, not a design asset or a claim about generated art quality.
-
-The shipped design system is recorded in `apps/web/DESIGN.md` and its token sidecar, `apps/web/.impeccable/design.json`. The isolated fixture service is stopped and temporary scripts are removed.
+- A step can read "Ready to generate" while its plan is refused for a plan-time requirement, such as an animation guide. Readiness is server truth. Folding plan-time checks into step readiness would be a backend change.
+- The application ships as a single 1 MB chunk. Code-splitting by route would remove the build warning.

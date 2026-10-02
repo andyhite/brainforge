@@ -1,0 +1,46 @@
+/* Animation: the clip stage, its transport and the tick timeline. The room (review/room.css) owns the stage frame. */
+.clip-stages { display: flex; align-items: center; justify-content: center; gap: 16px; margin: auto; }
+.clip-fig { display: grid; justify-items: center; gap: 4px; margin: 0; }
+.clip-fig figcaption { max-width: 100%; text-align: center; }
+.cell-size { justify-self: start; font: 550 11px var(--mono); color: var(--text-faint); }
+.clip-box { position: relative; line-height: 0; }
+.room-stage .clip-box { background: none; }
+.clip-box canvas { display: block; }
+.cell-guide { position: absolute; inset: -1px; border: 1px dashed var(--border-strong); pointer-events: none; }
+.clip-overlay { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.clip-baseline { stroke: var(--guide); stroke-width: 1; stroke-dasharray: 4 3; }
+.clip-pivot { stroke: var(--guide); stroke-width: 2; }
+.clip-annot { position: absolute; inset: 0; line-height: normal; }
+.clip-annot.drawing { cursor: crosshair; touch-action: none; }
+.clip-annot .annot-marker { position: absolute; }
+.clip-error { padding: 16px; }
+
+.stage-extras { position: absolute; left: 10px; bottom: 10px; z-index: 2; display: flex; align-items: center; gap: 8px; }
+.stage-extras > button, .stage-extras .seg, .stage-compare { background: color-mix(in srgb, var(--surface) 86%, transparent); backdrop-filter: blur(10px); box-shadow: inset 0 0 0 1px var(--border), 0 4px 14px -6px rgb(0 0 0 / 0.4); }
+.stage-extras > button[aria-pressed="true"] { background: var(--seg-on); }
+.stage-compare { position: absolute; left: 50%; bottom: 10px; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; max-width: calc(100% - 20px); padding: 4px; border-radius: 10px; transform: translateX(-50%); }
+.stage-compare select { width: auto; min-height: 26px; max-width: 260px; padding-top: 2px; padding-bottom: 2px; }
+
+.transport { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 10px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); }
+.transport .play { width: 34px; min-height: 34px; padding: 0; border-radius: 50%; }
+.transport .play .icon { width: 15px; height: 15px; }
+.transport-end { display: flex; align-items: center; gap: 6px; }
+.transport-end .icon-button[aria-pressed="false"] { opacity: 0.55; }
+.transport-end .icon-button[aria-pressed="true"] { color: var(--text); }
+.transport .menu { top: auto; bottom: calc(100% + 6px); }
+.readout { font: 550 12px var(--mono); color: var(--text-muted); white-space: nowrap; }
+.readout b { color: var(--text); font-weight: 650; }
+.frame-stepper { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.timeline { position: relative; flex: 1; min-width: 0; height: 34px; cursor: pointer; touch-action: none; border-radius: 4px; }
+.timeline .ticks { position: absolute; inset: 9px 0; display: grid; gap: 2px; }
+.timeline .ticks i { border-radius: 2px; background: var(--surface-3); }
+.timeline .ticks i.on { background: color-mix(in srgb, var(--text) 55%, transparent); }
+.timeline .range { position: absolute; top: 3px; height: 3px; border-radius: 2px; background: var(--note); }
+.timeline .head { position: absolute; top: 4px; bottom: 4px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--text); box-shadow: 0 0 0 3px color-mix(in srgb, var(--text) 18%, transparent); pointer-events: none; }
+
+@media (max-width: 760px) {
+  .transport { grid-template-columns: auto minmax(0, 1fr); }
+  .transport .readout[aria-hidden] { display: none; }
+  .transport .frame-stepper { grid-column: 1 / -1; grid-row: 2; }
+  .transport-end { justify-self: end; }
+}

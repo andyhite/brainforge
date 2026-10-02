@@ -76,28 +76,30 @@ export function ProjectSettingsPage() {
   return (
     <div className="settings-stack">
       <section className="settings-section" aria-labelledby="dir-title">
-        <h2 id="dir-title">Game directory</h2>
+        <h2 id="dir-title">{summary.name}</h2>
         <p className="mono settings-root" data-testid="game-directory">{summary.root}</p>
         <div className="row">
           {summary.state === "open" ? <Status tone="ok">Open</Status> : summary.state === "closing" ? <Status tone="warn">Closing</Status> : <Status tone="idle">Closed</Status>}
           {summary.writable ? <Status tone="ok">Writable</Status> : <Status tone="warn">Read-only</Status>}
-          {summary.specValid ? <Status tone="ok">project.yaml valid</Status> : <Status tone="bad">project.yaml invalid</Status>}
+          {summary.specValid ? <Status tone="ok">project.yaml is valid</Status> : <Status tone="bad">project.yaml needs fixing</Status>}
         </div>
-        <dl className="kv">
-          <dt>Name</dt><dd>{summary.name}</dd>
-          <dt>Project ID</dt><dd className="mono">{summary.projectId}</dd>
-          <dt>Schema</dt><dd>{summary.specValid ? <span>brainforge.project.v2 — valid</span> : <span>needs fixing — see problems</span>}</dd>
-          <dt>Revision</dt><dd>{summary.revision}</dd>
-        </dl>
         {summary.problems.length > 0 ? <ProblemList problems={summary.problems} blocked={BLOCKED_TEXT} onOpenFile={specRoute} /> : null}
+        <details>
+          <summary>Project details</summary>
+          <dl className="kv">
+            <dt>Project ID</dt><dd className="mono">{summary.projectId}</dd>
+            <dt>Schema</dt><dd>{summary.specValid ? "brainforge.project.v2, valid" : "needs fixing, see problems"}</dd>
+            <dt>Revision</dt><dd>{summary.revision}</dd>
+          </dl>
+        </details>
       </section>
 
       <section className="settings-section" aria-labelledby="snap-title">
-        <h2 id="snap-title">Snapshot</h2>
-        <p className="secondary">A consistent, portable copy of <code>brainforge/</code> including its hidden state and the configured exports. Copying an open project by hand is not a supported backup.</p>
+        <h2 id="snap-title">Back up this project</h2>
+        <p className="secondary">A consistent, portable copy of <code>brainforge/</code> including its hidden state and the configured exports. Copying an open project by hand isn’t a supported backup.</p>
         <form onSubmit={(event) => void takeSnapshot(event)}>
           <div className="field">
-            <label htmlFor="snap-dest">Destination directory (absolute path, must not exist yet)</label>
+            <label htmlFor="snap-dest">Destination folder (absolute path, must not exist yet)</label>
             <input id="snap-dest" type="text" spellCheck={false} placeholder="/Users/you/Backups/my-game-snapshot" value={destination} onChange={(event) => setDestination(event.target.value)} />
           </div>
           <button type="submit" className="primary" disabled={snapshot.isPending || destination.trim() === ""}>{snapshot.isPending ? "Copying…" : "Create snapshot"}</button>
@@ -118,8 +120,8 @@ export function ProjectSettingsPage() {
 
       <section className="settings-section" aria-labelledby="close-title">
         <h2 id="close-title">Close project</h2>
-        <p className="secondary">Closing finishes publication, checkpoints the database and releases the project lease. Tracked background work is never cancelled.</p>
-        {closing ? <Banner tone="warn" title="Closing — background work continues, not yet safe to move">{closeResult?.message ?? "The directory is still in use until tracked work finishes."}</Banner> : null}
+        <p className="secondary">Closing finishes saving, checkpoints the database and releases the project. Background work is never cancelled.</p>
+        {closing ? <Banner tone="warn" title="Closing: background work continues, so it isn’t safe to move yet">{closeResult?.message ?? "The folder is still in use until tracked work finishes."}</Banner> : null}
         {closeResult?.state === "closed" ? <Banner tone="ok" title="Closed">{closeResult.message}</Banner> : null}
         {closeError ? <ErrorBanner error={closeError} /> : null}
         {network ? <NetworkProblem error={{ message: network }} /> : null}

@@ -1,22 +1,20 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import type { Annotation, Geometry, OperationData } from "@brainforge/contracts";
 import { useOperation } from "../../api/hooks.ts";
-import { ErrorBanner, NetworkProblem } from "../../components/ui.tsx";
+import { Icon } from "../../components/Icon.tsx";
+import { ErrorBanner, MenuButton, NetworkProblem } from "../../components/ui.tsx";
 import { useProject } from "../../lib/use-project.ts";
-import { FrameCanvas, hasAtlas, type Background, type Source } from "./FrameCanvas.tsx";
+import { FrameCanvas, hasAtlas, type Source } from "./FrameCanvas.tsx";
 import { FrameStepper } from "./FrameStepper.tsx";
+import { typingTarget, type Backdrop, type Tool, type Zoom } from "./stage.ts";
 import { frameAt, frameStarts, formatFps, formatMs, totalMs } from "./timing.ts";
+import "./animation.css";
 
 type Detail = OperationData<"output.inspect">["output"];
-type Tool = "none" | "pin" | "rect";
 
-const BACKGROUNDS: Array<{ id: Background; label: string }> = [
-  { id: "checker", label: "Checkerboard" },
-  { id: "light", label: "Light" },
-  { id: "dark", label: "Dark" },
-];
 const SPEEDS = [1, 0.5, 0.25];
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+const pad = (n: number, of: number) => String(n).padStart(String(of).length, "0");
 
 export interface FrameInfoEvent {
   /** Zero-based source frame of the frame now showing in the primary clip. */
@@ -36,25 +34,34 @@ export interface ClipPlayerProps {
   onDraftChange?: (geometry: Geometry | undefined) => void;
   onDraftCommit?: () => void;
   onFrame?: (info: FrameInfoEvent) => void;
+  background: Backdrop;
+  zoom: Zoom;
+  tool: Tool;
+  /** Laid over the top edge of the stage (the room's output, background, zoom and note controls). */
+  toolbar?: ReactNode;
+  /** Laid over the bottom edge of the stage (comparison choices). */
+  overlay?: ReactNode;
 }
 
+/** The stage and, for a clip, its transport: two siblings for the room's stage column to lay out. */
 export function ClipPlayer(props: ClipPlayerProps) {
   const project = useProject();
   const [first, second] = props.outputIds;
   const a = useOperation("output.inspect", { outputId: first });
   const b = useOperation("output.inspect", { outputId: second ?? first }, { enabled: second !== undefined });
   const projectId = project.data?.project.projectId;
+  const message = (body: ReactNode) => <div className="room-stage" data-bg={props.background}>{props.toolbar}<div className="room-scroll">{body}</div></div>;
   for (const query of [a, ...(second ? [b] : [])]) {
-    if (query.error) return <NetworkProblem error={query.error} />;
-    if (!query.data) return <p className="secondary" role="status">Loading frames…</p>;
-    if (!query.data.ok) return <ErrorBanner error={query.data.error} />;
+    if (query.error) return message(<NetworkProblem error={query.error} />);
+    if (!query.data) return message(<p className="secondary" role="status">Loading frames…</p>);
+    if (!query.data.ok) return message(<ErrorBanner error={query.data.error} />);
   }
-  if (!projectId || !a.data?.ok || (second && !b.data?.ok)) return <p className="secondary" role="status">Loading frames…</p>;
+  if (!projectId || !a.data?.ok || (second && !b.data?.ok)) return message(<p className="secondary" role="status">Loading frames…</p>);
   const details = [a.data.data.output, ...(second && b.data?.ok ? [b.data.data.output] : [])];
   return <Player {...props} details={details} projectId={projectId} />;
 }
 
-function Player({ details, projectId, annotations = [], selectedId, onSelect, draft, onDraftChange, onDraftCommit, onFrame }: ClipPlayerProps & { details: Detail[]; projectId: string }) {
+function Player({ details, projectId, annotations = [], selectedId, onSelect, draft, onDraftChange, onDraftCommit, onFrame, background, zoom, tool, toolbar, overlay }: ClipPlayerProps & { details: Detail[]; projectId: string }) {
   const primary = details[0]!;
   const compare = details.length > 1;
   // A processed still is a one-frame sequence; nothing about it plays, loops or has a frame rate.
@@ -70,10 +77,7 @@ function Player({ details, projectId, annotations = [], selectedId, onSelect, dr
   const [loop, setLoop] = useState(primary.loop ?? true);
   const [finished, setFinished] = useState(false);
   const [mode, setMode] = useState<Source>("frames");
-  const [background, setBackground] = useState<Background>("checker");
-  const [zoom, setZoom] = useState<"fit" | "1:1">("fit");
   const [pivot, setPivot] = useState(false);
-  const [tool, setTool] = useState<Tool>("none");
   const wrapRef = useRef<HTMLDivElement>(null);
   const [wrapWidth, setWrapWidth] = useState(640);
   const [wrapHeight, setWrapHeight] = useState(0);
@@ -132,6 +136,11 @@ function Player({ details, projectId, annotations = [], selectedId, onSelect, dr
     onFrame?.({ sourceFrame: frame.sourceFrame, lastSourceFrame: lastSource });
   }, [frame.sourceFrame, lastSource, onFrame]);
 
+  // A note being drawn belongs to the frame on screen: hold still.
+  useEffect(() => {
+    if (draft) setPlaying(false);
+  }, [draft]);
+
   // Selecting a note jumps to its first played frame so the note is actually visible.
   const seekedFor = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -146,33 +155,56 @@ function Player({ details, projectId, annotations = [], selectedId, onSelect, dr
     }
   }, [selectedId, annotations, primary.frames, startsList, seek]);
 
-  const step = (delta: number) => {
+  const step = useCallback((delta: number) => {
     setPlaying(false);
     const n = primary.frames.length;
     const current = frameAt(startsList[0]!, tRef.current);
     const next = loop ? (current + delta + n) % n : Math.min(n - 1, Math.max(0, current + delta));
     seek(startsList[0]![next]!);
-  };
+  }, [primary.frames.length, startsList, loop, seek]);
 
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const target = event.target as HTMLElement;
-    if (target.closest("input, textarea, select")) return;
-    if (event.key === "ArrowLeft") step(-1);
-    else if (event.key === "ArrowRight") step(1);
-    else if (event.key === "Home") { setPlaying(false); seek(0); }
-    else if (event.key === "End") { setPlaying(false); seek(startsList[0]![primary.frames.length - 1]!); }
-    else if (event.key === " " && target === event.currentTarget) setPlaying((p) => !p);
-    else if (event.key === "Escape" && draft) onDraftChange?.(undefined);
-    else return;
-    event.preventDefault();
+  const togglePlay = () => {
+    if (finished) seek(0);
+    setFinished(false);
+    setPlaying((p) => !p);
   };
+  const toggleRef = useRef(togglePlay);
+  toggleRef.current = togglePlay;
+
+  // Space plays, arrows step: anywhere in the room except a text field, a menu, a dialog or a control with its own meaning for the key.
+  useEffect(() => {
+    if (single) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || typingTarget(event)) return;
+      const target = event.target as HTMLElement;
+      if (event.key === " ") {
+        if (target.closest("button, a, summary, [role='slider'], [role='application']")) return;
+        toggleRef.current();
+      } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        if (target.closest("[role='application'], [role='slider']")) return;
+        step(event.key === "ArrowLeft" ? -1 : 1);
+      } else if (event.key === "Home") { setPlaying(false); seek(0); }
+      else if (event.key === "End") { setPlaying(false); seek(startsList[0]![primary.frames.length - 1]!); }
+      else return;
+      event.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [single, step, seek, startsList, primary.frames.length]);
+
+  useEffect(() => {
+    if (!draft) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !typingTarget(event)) onDraftChange?.(undefined); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [draft, onDraftChange]);
 
   const maxW = Math.max(...details.map((d) => d.width));
   const maxH = Math.max(...details.map((d) => d.height));
-  // Fit uses the measured content box; only the caption shown while comparing takes height from it.
-  const fitHeight = wrapHeight > 0 ? wrapHeight - (compare ? 24 : 0) : 480;
+  // Fit uses the measured content box; the labels above and below each canvas take their height from it.
+  const fitHeight = wrapHeight > 0 ? wrapHeight - 22 - (compare ? 24 : 0) : 480;
   const fitScale = Math.max(0.05, Math.min((wrapWidth - (details.length - 1) * 16) / details.length / maxW, fitHeight / maxH));
-  const scale = zoom === "fit" ? fitScale : 1;
+  const scale = zoom === "fit" || zoom === "custom" ? fitScale : zoom;
 
   const notesHere = annotations.filter((n) => !n.frameRange || (frame.sourceFrame >= n.frameRange.start && frame.sourceFrame <= n.frameRange.end));
   const covered = primary.frames.map((f) => annotations.some((n) => n.frameRange && f.sourceFrame >= n.frameRange.start && f.sourceFrame <= n.frameRange.end));
@@ -181,14 +213,15 @@ function Player({ details, projectId, annotations = [], selectedId, onSelect, dr
     const rect = event.currentTarget.getBoundingClientRect();
     return { x: clamp01((event.clientX - rect.left) / rect.width), y: clamp01((event.clientY - rect.top) / rect.height) };
   };
-  const draw = onDraftChange !== undefined;
   const onDown = (event: PointerEvent<HTMLDivElement>) => {
     if (tool === "none" || !onDraftChange) return;
     setPlaying(false);
     event.currentTarget.setPointerCapture(event.pointerId);
     const p = toNormalized(event);
-    if (tool === "pin") onDraftChange({ kind: "pin", x: p.x, y: p.y });
-    else {
+    if (tool === "pin") {
+      onDraftChange({ kind: "pin", x: p.x, y: p.y });
+      onDraftCommit?.();
+    } else {
       drag.current = { ox: p.x, oy: p.y };
       onDraftChange({ kind: "rect", x: p.x, y: p.y, width: 0, height: 0 });
     }
@@ -202,119 +235,117 @@ function Player({ details, projectId, annotations = [], selectedId, onSelect, dr
   const onUp = () => {
     const d = drag.current;
     drag.current = undefined;
-    if (d && draft?.kind === "rect" && (draft.width * primary.width < 3 || draft.height * primary.height < 3)) onDraftChange?.(undefined);
+    if (!d) return;
+    if (draft?.kind === "rect" && (draft.width * primary.width < 3 || draft.height * primary.height < 3)) onDraftChange?.(undefined);
+    else onDraftCommit?.();
   };
 
+  const fps = primary.stage === "processed" ? primary.playbackFps : primary.sourceFps;
+  const status = `Frame ${index + 1} of ${primary.frames.length} · source frame ${frame.sourceFrame + 1} · ${formatMs(startsList[0]![index]!)} of ${formatMs(totals[0]!)}`;
+
   return (
-    <div className="clip-player" onKeyDown={onKeyDown} aria-label={compare ? "Clip comparison player" : "Clip player"} role="group">
-      <div className="clip-bar">
-        <div className="viewer-tools" role="toolbar" aria-label="View">
-          <span role="group" aria-label="Zoom" className="seg">
-            <button type="button" aria-pressed={zoom === "fit"} onClick={() => setZoom("fit")}>Fit</button>
-            <button type="button" aria-pressed={zoom === "1:1"} onClick={() => setZoom("1:1")}>1:1</button>
-          </span>
-          <span role="group" aria-label="Background" className="seg">
-            {BACKGROUNDS.map((o) => <button key={o.id} type="button" aria-pressed={background === o.id} onClick={() => setBackground(o.id)}>{o.label}</button>)}
-          </span>
-          {primary.pivot && !single ? <span role="group" aria-label="Overlay" className="seg"><button type="button" aria-pressed={pivot} onClick={() => setPivot((p) => !p)}>Pivot & baseline</button></span> : null}
-          {atlasAvailable ? (
-            <span role="group" aria-label="Frame source" className="seg">
-              <button type="button" aria-pressed={mode === "frames"} onClick={() => setMode("frames")}>Frames</button>
-              <button type="button" aria-pressed={mode === "atlas"} onClick={() => setMode("atlas")} title="Draw from the packed atlas pages, as exported">Atlas</button>
-            </span>
-          ) : null}
+    <>
+      <div className="room-stage" data-bg={background} role="group" aria-label={compare ? "Clip comparison" : "Clip"}>
+        {toolbar}
+        <div ref={wrapRef} className="room-scroll">
+          <div className="clip-stages">
+            {details.map((d, i) => {
+              const idx = indices[i]!;
+              const f = d.frames[idx]!;
+              const source: Source = mode === "atlas" && hasAtlas(d) ? "atlas" : "frames";
+              const rate = d.stage === "processed" ? d.playbackFps : d.sourceFps;
+              return (
+                <figure key={d.outputId} className="clip-fig">
+                  <span className="cell-size">{d.width} × {d.height}</span>
+                  <FrameCanvas detail={d} projectId={projectId} index={idx} source={source} scale={scale} background={background} showPivot={pivot} label={`${d.stage === "processed" ? "Game-ready" : "Original"} frame ${idx + 1} of ${d.frames.length}`}>
+                    <span className="cell-guide" aria-hidden="true" />
+                    {i === 0 && !compare ? (
+                      <div className={`clip-annot${tool === "none" ? "" : " drawing"}`} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp}>
+                        <svg className="clip-overlay" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
+                          {notesHere.map((n) => (n.geometry.kind === "rect" ? (
+                            <rect key={n.annotationId} x={n.geometry.x} y={n.geometry.y} width={n.geometry.width} height={n.geometry.height} className={`annot-rect${n.annotationId === selectedId ? " selected" : ""}${n.requiresRevision ? " required" : ""}`} vectorEffect="non-scaling-stroke" />
+                          ) : null))}
+                          {draft?.kind === "rect" ? <rect x={draft.x} y={draft.y} width={draft.width} height={draft.height} className="annot-rect draft" vectorEffect="non-scaling-stroke" /> : null}
+                        </svg>
+                        {notesHere.map((n) => {
+                          if (n.geometry.kind === "whole") return null;
+                          const number = annotations.indexOf(n) + 1;
+                          return (
+                            <button
+                              key={n.annotationId}
+                              type="button"
+                              className={`annot-marker${n.annotationId === selectedId ? " selected" : ""}${n.requiresRevision ? " required" : ""}`}
+                              style={{ left: `${n.geometry.x * 100}%`, top: `${n.geometry.y * 100}%`, transform: n.geometry.kind === "pin" ? "translate(-50%, -50%)" : "translate(0, -100%)" }}
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={() => onSelect?.(n.annotationId)}
+                              aria-label={`Note ${number}: ${n.text}`}
+                            >
+                              {number}
+                            </button>
+                          );
+                        })}
+                        {draft?.kind === "pin" ? <span className="annot-marker draft" style={{ left: `${draft.x * 100}%`, top: `${draft.y * 100}%`, transform: "translate(-50%, -50%)" }} aria-hidden="true">+</span> : null}
+                      </div>
+                    ) : null}
+                  </FrameCanvas>
+                  {compare ? (
+                    <figcaption className="secondary">
+                      <strong>{d.stage === "processed" ? "Game-ready" : "Original"}</strong>
+                      {single ? ` · ${d.width}×${d.height} px` : <>{rate ? ` · ${formatFps(rate)}` : ""} · {d.frames.length} frames · {formatMs(totals[i]!)}</>}
+                      {!single ? <> · frame {idx + 1} (source {f.sourceFrame + 1})</> : null}
+                      {source === "atlas" ? " · from atlas" : ""}
+                    </figcaption>
+                  ) : null}
+                </figure>
+              );
+            })}
+          </div>
         </div>
-        {draw && !compare ? (
-          <div className="viewer-tools" role="toolbar" aria-label="Frame annotation tools">
-            <span role="group" aria-label="Annotation tool" className="seg">
-              <button type="button" aria-pressed={tool === "none"} onClick={() => setTool("none")}>No tool</button>
-              <button type="button" aria-pressed={tool === "pin"} onClick={() => setTool("pin")}>Pin</button>
-              <button type="button" aria-pressed={tool === "rect"} onClick={() => setTool("rect")}>Rectangle</button>
-            </span>
-            <span role="group" aria-label="Add note" className="seg">
-              <button type="button" onClick={() => { setPlaying(false); onDraftChange({ kind: "whole" }); }}>{single ? "Note on whole image" : "Note on whole frame"}</button>
-              <button type="button" onClick={() => { setPlaying(false); onDraftChange({ kind: "pin", x: 0.5, y: 0.5 }); onDraftCommit?.(); }}>Pin at centre</button>
-            </span>
+        {(primary.pivot && !single) || atlasAvailable ? (
+          <div className="stage-extras">
+            {primary.pivot && !single ? <button type="button" className="sm" aria-pressed={pivot} onClick={() => setPivot((p) => !p)}>Pivot and baseline</button> : null}
+            {atlasAvailable ? (
+              <span className="seg" role="group" aria-label="Frame source">
+                <button type="button" aria-pressed={mode === "frames"} onClick={() => setMode("frames")}>Frames</button>
+                <button type="button" aria-pressed={mode === "atlas"} onClick={() => setMode("atlas")} title="Draw from the packed atlas pages, as exported">Atlas</button>
+              </span>
+            ) : null}
           </div>
         ) : null}
-      </div>
-
-      <div ref={wrapRef} className="clip-stage-wrap">
-        <div className="clip-stages" tabIndex={0} aria-label={`${compare ? "Clips" : "Clip"}. Left and right arrow keys step frames, space plays or pauses.`}>
-          {details.map((d, i) => {
-            const idx = indices[i]!;
-            const f = d.frames[idx]!;
-            const source: Source = mode === "atlas" && hasAtlas(d) ? "atlas" : "frames";
-            const fps = d.stage === "processed" ? d.playbackFps : d.sourceFps;
-            return (
-              <figure key={d.outputId} className="clip-fig">
-                <FrameCanvas detail={d} projectId={projectId} index={idx} source={source} scale={scale} background={background} showPivot={pivot} label={`${d.stage === "processed" ? "Processed" : "Raw"} frame ${idx + 1} of ${d.frames.length}`}>
-                  {i === 0 && !compare ? (
-                    <div className={`clip-annot${tool === "none" ? "" : " drawing"}`} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp}>
-                      <svg className="clip-overlay" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
-                        {notesHere.map((n) => (n.geometry.kind === "rect" ? (
-                          <rect key={n.annotationId} x={n.geometry.x} y={n.geometry.y} width={n.geometry.width} height={n.geometry.height} className={`annot-rect${n.annotationId === selectedId ? " selected" : ""}${n.requiresRevision ? " required" : ""}`} vectorEffect="non-scaling-stroke" />
-                        ) : null))}
-                        {draft?.kind === "rect" ? <rect x={draft.x} y={draft.y} width={draft.width} height={draft.height} className="annot-rect draft" vectorEffect="non-scaling-stroke" /> : null}
-                      </svg>
-                      {notesHere.map((n) => {
-                        if (n.geometry.kind === "whole") return null;
-                        return (
-                          <button
-                            key={n.annotationId}
-                            type="button"
-                            className={`annot-marker${n.annotationId === selectedId ? " selected" : ""}${n.requiresRevision ? " required" : ""}`}
-                            style={{ left: `${n.geometry.x * 100}%`, top: `${n.geometry.y * 100}%`, transform: n.geometry.kind === "pin" ? "translate(-50%, -50%)" : "translate(0, -100%)" }}
-                            onPointerDown={(e) => e.stopPropagation()}
-                            onClick={() => onSelect?.(n.annotationId)}
-                            aria-label={`Note ${annotations.indexOf(n) + 1}: ${n.text}`}
-                          >
-                            {annotations.indexOf(n) + 1}
-                          </button>
-                        );
-                      })}
-                      {draft?.kind === "pin" ? <span className="annot-marker draft" style={{ left: `${draft.x * 100}%`, top: `${draft.y * 100}%`, transform: "translate(-50%, -50%)" }} aria-hidden="true">+</span> : null}
-                    </div>
-                  ) : null}
-                </FrameCanvas>
-                {compare ? (
-                  <figcaption className="secondary">
-                    <strong>{d.stage === "processed" ? "Processed" : "Raw"}</strong>
-                    {single ? ` · ${d.width}×${d.height} px` : <>{fps ? ` · ${formatFps(fps)}` : ""} · {d.frames.length} frames · {formatMs(totals[i]!)}</>}
-                    {!single ? <> · frame {idx + 1} (source {f.sourceFrame + 1})</> : null}
-                    {source === "atlas" ? " · from atlas" : ""}
-                  </figcaption>
-                ) : null}
-              </figure>
-            );
-          })}
-        </div>
+        {overlay}
       </div>
 
       {single ? null : (
-        <div className="clip-controls">
-          <div className="viewer-tools" role="toolbar" aria-label="Playback">
-            <button type="button" className="primary" aria-pressed={playing} onClick={() => { if (finished) seek(0); setFinished(false); setPlaying((p) => !p); }}>{playing ? "Pause" : "Play"}</button>
-            <button type="button" onClick={() => { seek(0); setFinished(false); setPlaying(true); }}>Replay</button>
-            <button type="button" aria-pressed={loop} onClick={() => { setLoop((l) => !l); setFinished(false); }} title="Off plays the clip once and stops on its last frame">Loop</button>
-            <span className="status info" role="status" aria-live="polite">
-              {loop ? "Loops" : finished ? "Played once — finished" : "Plays once"}
-              {primary.loop !== undefined && primary.loop !== loop ? <span className="secondary"> (authored: {primary.loop ? "loops" : "plays once"})</span> : null}
-            </span>
-            <span role="group" aria-label="Speed" className="row" style={{ gap: 4 }}>
-              {SPEEDS.map((s) => <button key={s} type="button" aria-pressed={speed === s} onClick={() => setSpeed(s)}>{s}×</button>)}
-            </span>
-          </div>
+        <div className="transport">
+          <button type="button" className="play" aria-label={playing ? "Pause" : "Play"} onClick={togglePlay}><Icon name={playing ? "pause" : "play"} /></button>
+          <span className="readout" aria-hidden="true">Frame <b>{pad(index + 1, primary.frames.length)}</b> / {primary.frames.length}</span>
           <FrameStepper
             count={primary.frames.length}
             index={index}
             onIndex={(i) => { setPlaying(false); seek(startsList[0]![i]!); }}
             onStep={step}
             covered={covered}
-            status={`Frame ${index + 1} of ${primary.frames.length} · source frame ${frame.sourceFrame + 1} (zero-based ${frame.sourceFrame}) · ${formatMs(startsList[0]![index]!)} of ${formatMs(totals[0]!)} · shows for ${formatMs(frame.durationMs)}`}
+            valueText={status}
           />
+          <span className="transport-end">
+            <button type="button" className="icon-button sm" aria-pressed={loop} aria-label={loop ? "Loop on" : "Loop off: plays once and stops on the last frame"} title={loop ? "Loops. Click to play once." : "Plays once. Click to loop."} onClick={() => { setLoop((l) => !l); setFinished(false); }}><Icon name="loop" /></button>
+            <MenuButton
+              label="Playback options"
+              trigger={`${speed}×`}
+              triggerClassName="sm ghost"
+              align="end"
+              items={[
+                { label: "Replay from the start", icon: "refresh", onSelect: () => { seek(0); setFinished(false); setPlaying(true); } },
+                "separator",
+                { heading: "Speed" },
+                ...SPEEDS.map((s) => ({ label: `${s}×`, checked: speed === s, onSelect: () => setSpeed(s) })),
+              ]}
+            />
+            <span className="readout">{fps ? `${formatFps(fps)} · ` : ""}{formatMs(totals[0]!)}</span>
+          </span>
         </div>
       )}
-    </div>
+      <p className="sr-only" role="status" aria-live="off">{single ? "Single image" : `${status}. ${loop ? "Loops" : finished ? "Played once, finished" : "Plays once"}.`}</p>
+    </>
   );
 }

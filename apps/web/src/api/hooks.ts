@@ -60,6 +60,8 @@ export function useMutationOperation<K extends OperationName>(name: K) {
   });
 }
 
-export function fileUrl(projectId: string, fileId: string): string {
-  return `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}`;
+/** File route for a registered output; `max` asks the server for a downscaled preview (never upscaled). */
+export function fileUrl(projectId: string, fileId: string, max?: number): string {
+  const base = `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}`;
+  return max ? `${base}?max=${max}` : base;
 }

@@ -11,7 +11,7 @@ function Toggle({ pressed, onClick, children }: { pressed: boolean; onClick: () 
 
 function Backdrop({ value, onChange }: { value: "checker" | "light" | "dark"; onChange: (next: "checker" | "light" | "dark") => void }) {
   return (
-    <div role="group" aria-label="Preview background" className="viewer-tools" style={{ marginBottom: 0 }}>
+    <div role="group" aria-label="Preview background" className="seg">
       {(["checker", "light", "dark"] as const).map((b) => <Toggle key={b} pressed={value === b} onClick={() => onChange(b)}>{b === "checker" ? "Checkerboard" : b === "light" ? "Light" : "Dark"}</Toggle>)}
     </div>
   );
@@ -19,8 +19,8 @@ function Backdrop({ value, onChange }: { value: "checker" | "light" | "dark"; on
 
 export function PreviewBox({ title, id, intro, children }: { title: string; id: string; intro?: ReactNode; children: ReactNode }) {
   return (
-    <section className="panel fam-preview" aria-labelledby={id} style={{ marginTop: 16 }}>
-      <h2 id={id} style={{ marginTop: 0 }}>{title}</h2>
+    <section className="fam-preview" aria-labelledby={id}>
+      <h2 id={id}>{title}</h2>
       {intro ? <p className="secondary">{intro}</p> : null}
       {children}
     </section>
@@ -47,12 +47,12 @@ export function TilePreview({ image, tileSize, seamlessAxes, connections, symmet
       <div className="viewer-tools">
         <Toggle pressed={seams} onClick={() => setSeams((s) => !s)}>Seam lines</Toggle>
         <Backdrop value={backdrop} onChange={setBackdrop} />
-        <label className="row" style={{ gap: 8 }}>Cell size
+        <label className="row">Cell size
           <input type="range" min={48} max={320} step={8} value={cell} onChange={(e) => setCell(Number(e.target.value))} aria-valuetext={`${cell} pixels`} />
           <span className="secondary">{cell}px</span>
         </label>
       </div>
-      <div className={`fam-stage ${backdrop}`} style={{ overflow: "auto" }}>
+      <div className={`fam-stage preview-scroll ${backdrop}`}>
         <div className="tile-grid" role="img" aria-label={`${image.alt}, repeated 3 by 3`} style={{ gridTemplateColumns: `repeat(3, ${cell}px)`, gridAutoRows: `${height}px` }}>
           {Array.from({ length: 9 }, (_, i) => (
             <img key={i} src={image.src} alt="" width={cell} height={height} className={seams ? "seam" : undefined} draggable={false} />
@@ -130,7 +130,7 @@ export function BackgroundPreview({ image, seamlessAxes, parallax, relativeScale
         <Toggle pressed={wrap === "y"} onClick={() => setWrap("y")}>Vertical wrap</Toggle>
         <span className="secondary">{seamlessAxes === undefined ? "No seamless axes declared." : seamlessAxes.length === 0 ? "Declared as not seamless." : `Declared seamless on ${seamlessAxes.join(" and ")}.`}</span>
       </div>
-      <div className="fam-stage checker" style={{ overflow: "auto" }}>
+      <div className="fam-stage preview-scroll checker">
         <div className="wrap-strip" role="img" aria-label={`${image.alt}, repeated ${wrap === "x" ? "horizontally" : "vertically"} twice`} style={{ display: "flex", flexDirection: wrap === "x" ? "row" : "column", width: "max-content" }}>
           {[0, 1].map((i) => <img key={i} src={image.src} alt="" width={wrap === "x" ? dw : Math.min(dw, 240)} height={wrap === "x" ? dh : Math.round((Math.min(dw, 240) * image.height) / image.width)} className="seam-end" data-seam={i === 1 ? wrap : undefined} draggable={false} />)}
         </div>
@@ -205,14 +205,14 @@ export function NineSlicePreview({ image, slice, declared }: { image: PreviewIma
   return (
     <PreviewBox title="Nine-slice scaling preview" id="prev-nine" intro={`Corners stay at ${slice.left}/${slice.top}/${slice.right}/${slice.bottom} px (left/top/right/bottom); edges and centre stretch. Resize it to see how the declared margins behave.`}>
       {problems.map((p) => <p key={p} className="field-error"><span aria-hidden="true">✖ </span>{p}</p>)}
-      <div className="row viewer-tools" style={{ alignItems: "flex-end" }}>
+      <div className="preview-tools viewer-tools">
         <div className="field compact"><label htmlFor="ns-w">Width (px)</label><input id="ns-w" type="number" min={minW} max={1600} value={w} onChange={(e) => { if (Number.isFinite(Number(e.target.value))) setW(clampW(Number(e.target.value))); }} /></div>
         <div className="field compact"><label htmlFor="ns-h">Height (px)</label><input id="ns-h" type="number" min={minH} max={1200} value={h} onChange={(e) => { if (Number.isFinite(Number(e.target.value))) setH(clampH(Number(e.target.value))); }} /></div>
         <button type="button" onClick={() => { setW(image.width); setH(image.height); }}>Original size</button>
         <Toggle pressed={guides} onClick={() => setGuides((g) => !g)}>Margin guides</Toggle>
         <Backdrop value={backdrop} onChange={setBackdrop} />
       </div>
-      <div className={`fam-stage ${backdrop}`} style={{ overflow: "auto", minHeight: 160 }}>
+      <div className={`fam-stage preview-scroll nine-stage ${backdrop}`}>
         {invalid ? <p className="secondary">Fix the margins to see the scaled panel.</p> : (
           <div className="nine-wrap" style={{ width: shownW, height: shownH }}>
             <div
@@ -277,8 +277,8 @@ export function StateCompare({ entries }: { entries: StateEntry[] }) {
         <ul className="state-grid plain-list" aria-label="States side by side">
           {entries.map((e) => (
             <li key={e.key}>
-              <figure className={`fam-stage ${backdrop} state-fig`} style={{ margin: 0 }}>
-                {e.src ? <img src={e.src} alt={`${e.label} state`} width={Math.min(e.width, 200)} style={{ height: "auto" }} /> : <span className="secondary">No output selected yet</span>}
+              <figure className={`fam-stage ${backdrop} state-fig`}>
+                {e.src ? <img src={e.src} alt={`${e.label} state`} width={Math.min(e.width, 200)} /> : <span className="secondary">No output selected yet</span>}
                 <figcaption className="secondary">{e.label}{e.current ? " (this output)" : ""}{e.link ? <> · <Link to={e.link}>open</Link></> : null}</figcaption>
               </figure>
             </li>

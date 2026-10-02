@@ -1,0 +1,102 @@
+/* Asset layout (head, branch menu, next card) and the sheet of deliverable cells. Tokens come from styles.css. */
+/* Wide: identity and tabs on the left, the Next card spanning both rows on the right. Narrow: identity, card, tabs. */
+.asset-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto 1fr; column-gap: 32px; padding-bottom: 18px; border-bottom: 1px solid var(--border); margin-bottom: 26px; }
+.asset-head .nextcard { grid-column: 2; grid-row: 1 / span 2; }
+.asset-head .subtabs { grid-column: 1; align-self: end; margin-top: 16px; }
+.asset-head h1 { overflow-wrap: anywhere; }
+.asset-head .meta { margin-top: 8px; }
+.asset-head .faint { color: var(--text-faint); }
+.asset-head .branch-btn { display: inline-flex; align-items: center; gap: 6px; height: 24px; min-height: 24px; padding: 0 8px 0 7px; border-radius: 6px; font-size: 12.5px; font-weight: 540; color: var(--text); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); }
+.asset-head .branch-btn:hover { background: var(--surface-3); }
+.asset-head .viewing { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 10px; font-size: 12.5px; color: var(--text-muted); }
+.asset-head .viewing .icon { color: var(--warn); }
+
+.nextcard { display: grid; gap: 10px; align-self: start; align-content: start; width: 400px; max-width: 100%; padding: 14px 16px; border-radius: var(--radius-lg); background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); }
+.nextcard .line { display: flex; align-items: center; gap: 14px; }
+.nextcard .line p { min-width: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.nextcard .line .button, .nextcard .line button { margin-left: auto; flex: none; }
+.nextcard .reason { margin: -4px 0 0; font-size: 12.5px; color: var(--text-muted); }
+.asset-head .progress { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 14px; font-size: 12.5px; color: var(--text-muted); }
+.asset-head .progress strong { color: var(--text); font-weight: 600; }
+
+/* The sheet: concept and references at the side, deliverables grouped by kind. */
+.sheet { display: grid; grid-template-columns: 296px minmax(0, 1fr); gap: 36px; align-items: start; }
+.sheet-side { position: sticky; top: calc(var(--topbar-h) + 18px); display: grid; gap: 22px; }
+.sheet-main { min-width: 0; display: grid; gap: 30px; }
+.sheet .slot .art.wide .stack img { padding: 4%; }
+.sheet .group-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+.sheet .group-head .n { font: 550 11.5px var(--mono); color: var(--text-faint); }
+.sheet .cells { display: grid; grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); gap: 18px 14px; }
+.sheet .cells.strips { grid-template-columns: repeat(auto-fill, minmax(262px, 1fr)); }
+
+.sheet .slot { position: relative; display: grid; gap: 8px; align-content: start; min-width: 0; color: inherit; text-decoration: none; }
+.sheet .slot:hover .name { text-decoration: underline; text-underline-offset: 3px; }
+.sheet .slot .art { aspect-ratio: 1; border-radius: 5px; }
+.sheet .slot .art.wide { aspect-ratio: 2 / 1; }
+.sheet .slot .art.wide > img { padding: 4%; }
+.sheet .slot .art .icon { width: 22px; height: 22px; }
+.sheet .slot .art.empty.quiet .icon { opacity: .7; }
+.sheet .slot .art.empty.bad { border-color: color-mix(in srgb, var(--danger) 55%, transparent); background: var(--danger-soft); color: var(--danger); }
+.sheet .slot .art.empty.block { border-color: color-mix(in srgb, var(--warn) 45%, transparent); color: var(--warn); }
+.sheet .slot img.px { image-rendering: pixelated; }
+.sheet .slot .name { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 6px; font-size: 13px; font-weight: 580; line-height: 1.3; overflow-wrap: anywhere; }
+.sheet .slot .name .opt { font-size: 11.5px; font-weight: 500; color: var(--text-faint); }
+.sheet .slot .state { display: flex; align-items: flex-start; gap: 6px; margin-top: -4px; font-size: 12px; line-height: 1.35; color: var(--text-muted); }
+.sheet .slot .state .icon { flex: none; width: 13px; height: 13px; margin-top: 1px; }
+.sheet .slot .state.ok .icon { color: var(--ok); }
+.sheet .slot .state.warn { color: var(--warn); }
+.sheet .slot .state.bad { color: var(--danger); }
+.sheet .slot .state.you { color: var(--text); font-weight: 600; }
+.sheet .slot .state .clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.sheet .slot .badge { position: absolute; top: 7px; right: 7px; z-index: 1; }
+.sheet .slot .stack { position: absolute; inset: 0; }
+.sheet .slot .stack img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; padding: 7%; }
+.sheet .slot .stack.two img:nth-child(1) { transform: translate(-7%, 0) scale(.86); opacity: .55; }
+.sheet .slot .stack.two img:nth-child(2) { transform: translate(7%, 0) scale(.86); }
+.sheet .slot .note-pin { position: absolute; bottom: 7px; right: 7px; z-index: 1; display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--warn); color: var(--bg); }
+.sheet .slot .note-pin .icon { width: 13px; height: 13px; }
+
+/* Animations: four frames of the clip. */
+.sheet .strip { position: relative; display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; padding: 2px; border-radius: 5px; box-shadow: inset 0 0 0 1px var(--border); }
+.sheet .strip .f { position: relative; aspect-ratio: 1; border-radius: 3px; overflow: hidden; }
+.sheet .strip .f img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; padding: 6%; }
+.sheet .strip .f i { position: absolute; left: 5px; bottom: 3px; font: 550 10px var(--mono); font-style: normal; color: var(--text-faint); }
+.sheet .strip.empty { box-shadow: none; padding: 0; gap: 4px; }
+.sheet .strip.empty .f { border: 1px dashed var(--border-strong); }
+.sheet .strip.empty .f:first-child { display: grid; place-items: center; color: var(--text-faint); }
+.sheet .strip.empty.quiet .f { border-color: var(--border); }
+.sheet .strip.empty.bad .f { border-color: color-mix(in srgb, var(--danger) 55%, transparent); }
+.sheet .strip.empty.bad .f:first-child { background: var(--danger-soft); color: var(--danger); }
+.sheet .strip.empty.block .f:first-child { color: var(--warn); }
+.sheet .strip.empty .icon { width: 18px; height: 18px; }
+
+.sheet .concept-card .art { aspect-ratio: 1; border-radius: 8px; }
+.sheet .concept-card .art > img { padding: 6%; }
+.sheet .concept-card .name { font-size: 14px; }
+.sheet .concept-card .name .stamp { margin-left: auto; }
+.sheet .art.marquee, .sheet .strip.marquee { position: relative; }
+
+.sheet .reassess { padding: 10px 14px; border-radius: var(--radius-lg); background: var(--warn-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 28%, transparent); font-size: 13px; }
+.sheet .reassess summary { cursor: pointer; font-weight: 600; }
+.sheet .reassess ul { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.sheet .reassess li > strong { display: block; margin-bottom: 2px; }
+.sheet .collection > summary { cursor: pointer; font-weight: 600; min-height: var(--control-h); display: flex; align-items: center; }
+.sheet .collection[open] > summary { margin-bottom: 10px; }
+
+@media (max-width: 1100px) {
+  .asset-head { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
+  .asset-head .nextcard { grid-column: auto; grid-row: auto; width: 100%; margin-top: 16px; }
+  .asset-head .subtabs { grid-column: auto; }
+  .sheet { grid-template-columns: minmax(200px, 240px) minmax(0, 1fr); gap: 26px; }
+}
+/* Concept and references become one row of small cells, so the deliverables still start in the first viewport. */
+@media (max-width: 900px) {
+  .sheet { grid-template-columns: minmax(0, 1fr); }
+  .sheet-side { position: static; grid-template-columns: repeat(auto-fill, minmax(120px, 150px)); gap: 14px; }
+  .sheet-side .concept-card:not(.empty) .state { display: none; }
+}
+@media (max-width: 800px) {
+  .sheet .cells { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+  .sheet .cells.strips { grid-template-columns: minmax(0, 1fr); }
+  .nextcard .line { flex-wrap: wrap; }
+}

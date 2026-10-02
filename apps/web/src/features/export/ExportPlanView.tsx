@@ -1,6 +1,7 @@
 import type { ExportPlan, PlanBlocker } from "@brainforge/contracts";
 import { Link } from "react-router-dom";
 import { ActionLinks, Banner, Status } from "../../components/ui.tsx";
+import { paths } from "../../lib/paths.ts";
 
 function inspectTarget(blocker: PlanBlocker): string | undefined {
   for (const action of blocker.recoveryActions) {
@@ -12,7 +13,7 @@ function inspectTarget(blocker: PlanBlocker): string | undefined {
 
 function Blocker({ blocker, onConfirmEmpty, onInspect }: { blocker: PlanBlocker; onConfirmEmpty: () => void; onInspect: (exportId: string) => void }) {
   const isEmpty = blocker.code === "EMPTY_SELECTION";
-  // The server's "plan again" recovery actions re-run a plan this page does not hold, so they become this page's own controls.
+  // The server's "plan again" recovery actions re-run a plan this dialog does not hold, so they become its own controls.
   const remote = blocker.recoveryActions.filter((action) => action.operation !== "export.plan" && action.operation !== "export.inspect");
   const guidance = remote.filter((action) => !action.url && !(action.operation && action.input !== undefined));
   const inspectId = inspectTarget(blocker);
@@ -23,7 +24,7 @@ function Blocker({ blocker, onConfirmEmpty, onInspect }: { blocker: PlanBlocker;
       actions={
         <>
           {isEmpty ? <button type="button" onClick={onConfirmEmpty}>Confirm empty export</button> : null}
-          {assetId ? <Link className="button" to={`/assets/${encodeURIComponent(assetId)}?step=versions`}>Open {assetId} versions</Link> : null}
+          {assetId ? <Link className="button" to={paths.assetVersions(assetId)}>Open {assetId} versions</Link> : null}
           {inspectId ? <button type="button" onClick={() => onInspect(inspectId)}>Inspect the current export</button> : null}
           <ActionLinks actions={remote} />
         </>
@@ -32,17 +33,18 @@ function Blocker({ blocker, onConfirmEmpty, onInspect }: { blocker: PlanBlocker;
       {blocker.message}
       {guidance.map((action) => <div key={action.label} className="secondary">{action.label}</div>)}
       {blocker.code === "EXPORT_CONFLICT" ? (
-        <div className="secondary">Nothing was changed. Files you own are never overwritten: move or restore the named files, or choose another <code>export.destination</code>, then plan again.</div>
+        <div className="secondary">Nothing was changed. Files you own are never overwritten: move or restore the named files, or choose another export destination in the project settings, then plan again.</div>
       ) : null}
     </Banner>
   );
 }
 
+/** The exact plan: which version of which asset, how many files, what leaves, and anything that blocks it. */
 export function ExportPlanView({ plan, onConfirmEmpty, onInspect }: { plan: ExportPlan; onConfirmEmpty: () => void; onInspect: (exportId: string) => void }) {
   return (
-    <div>
-      <p className="rel-note" style={{ color: "var(--text)" }}>
-        Preset <strong>{plan.preset}</strong> · {plan.fileCount} {plan.fileCount === 1 ? "file" : "files"} will be owned by this export · stable path <code>{plan.publicRoot}</code>
+    <div className="rel-plan">
+      <p className="rel-note">
+        {plan.fileCount} {plan.fileCount === 1 ? "file" : "files"} will be written for this export, using the <strong>{plan.preset}</strong> layout.
       </p>
       <div className="table-wrap">
         <table className="rel-pick">
@@ -59,12 +61,12 @@ export function ExportPlanView({ plan, onConfirmEmpty, onInspect }: { plan: Expo
           <tbody>
             {plan.selection.length === 0 ? <tr><td colSpan={5}>Nothing is selected.</td></tr> : plan.selection.map((row) => (
               <tr key={row.assetId}>
-                <th scope="row"><Link to={`/assets/${encodeURIComponent(row.assetId)}?step=versions&version=${encodeURIComponent(row.versionId)}`}>{row.assetId}</Link></th>
+                <th scope="row"><Link to={paths.assetVersions(row.assetId, { version: row.versionId })}>{row.assetId}</Link></th>
                 <td>v{row.versionNumber}</td>
                 <td>
                   {row.source === "explicit" ? <Status tone="info">Pinned by you</Status> : row.source === "member" ? <Status tone="idle">Collection member</Status> : <Status tone="ok">Active version</Status>}
                 </td>
-                <td>{row.matchesCurrent ? <Status tone="ok">Matches current</Status> : <Status tone="warn">Obsolete: requirements changed</Status>}</td>
+                <td>{row.matchesCurrent ? <Status tone="ok">Up to date</Status> : <Status tone="warn">Out of date: requirements changed</Status>}</td>
                 <td>{row.notes.length === 0 ? "—" : <ul className="plain-list">{row.notes.map((note) => <li key={note}>{note}</li>)}</ul>}</td>
               </tr>
             ))}
@@ -73,31 +75,31 @@ export function ExportPlanView({ plan, onConfirmEmpty, onInspect }: { plan: Expo
       </div>
 
       {plan.leaving.length > 0 ? (
-        <div style={{ marginTop: 16 }}>
-          <h3>Assets that will leave current</h3>
-          <p className="secondary">These are in the current export but not in this one. Their promoted versions are not deleted.</p>
-          <ul aria-label="Assets that will leave current">
+        <div className="rel-sub">
+          <h3>Assets that will leave the game</h3>
+          <p className="secondary">They are in the current export but not in this one. Their promoted versions are not deleted.</p>
+          <ul aria-label="Assets that will leave the game">
             {plan.leaving.map((item) => <li key={item.assetId}><span className="mono">{item.assetId}</span> (version <span className="mono">{item.versionId.slice(0, 8)}</span>)</li>)}
           </ul>
         </div>
       ) : null}
       {plan.leavingResourceKinds.length > 0 ? (
-        <div style={{ marginTop: 16 }}>
-          <h3>Resource types that will leave current</h3>
+        <div className="rel-sub">
+          <h3>Resource types that will leave the game</h3>
           <p className="secondary">Switching preset removes these from the next snapshot.</p>
-          <ul aria-label="Resource types that will leave current">
+          <ul aria-label="Resource types that will leave the game">
             {plan.leavingResourceKinds.map((kind) => <li key={kind}>{kind}</li>)}
           </ul>
         </div>
       ) : null}
 
       {plan.warnings.length > 0 ? (
-        <ul className="plain-list" aria-label="Export warnings" style={{ marginTop: 16 }}>
+        <ul className="plain-list rel-sub" aria-label="Export warnings">
           {plan.warnings.map((warning) => <li key={warning}><Banner tone="info" title="Warning">{warning}</Banner></li>)}
         </ul>
       ) : null}
       {plan.blockers.length > 0 ? (
-        <ul className="rel-blockers" aria-label="Export blockers">
+        <ul className="rel-blockers plain-list" aria-label="Export blockers">
           {plan.blockers.map((blocker) => <li key={`${blocker.code}-${blocker.message}`}><Blocker blocker={blocker} onConfirmEmpty={onConfirmEmpty} onInspect={onInspect} /></li>)}
         </ul>
       ) : null}

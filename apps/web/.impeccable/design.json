@@ -1,854 +1,135 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-01T19:58:46.540Z",
+  "generatedAt": "2026-10-01T00:00:00.000Z",
   "title": "Design System: Brainforge",
   "provenance": {
     "mode": "scan",
     "generator": "impeccable documenter (reference/document.md), extracted from shipped source",
-    "world": "Animation Checking Room",
-    "directionSeed": "e2b48247",
+    "world": "Sprite Sheet",
+    "directionSeed": "f4b57796",
+    "supersedes": "Animation Checking Room (seed e2b48247); no decisions carried forward",
     "surfaceBrief": ".impeccable/surfaces/src-app-tsx.md",
-    "designMd": {
-      "path": "DESIGN.md",
-      "sha256": "b946a85c3dc55712e33f5a924777a27afee492ed1038ba238fc2639da4deb908"
-    },
+    "designMd": { "path": "DESIGN.md", "sha256": "25b15205f08228e05d435a6f0656962963d48e2395491f83ac95071c934f5c50" },
     "sources": [
-      {
-        "path": "src/styles.css",
-        "sha256": "e1d1b9f69350ede362558c6c3f7be7b46669fb45595a54ec5ded79ceda09f49d"
-      },
-      {
-        "path": "src/features/assets/workbench.css",
-        "sha256": "a1c6838c2ec69ade11dc68992165d9dfb6c77d695fb3fa6063176880dcac23cd"
-      },
-      {
-        "path": "src/features/review/review.css",
-        "sha256": "ff9a7072ffe6e3da4028c8deb76434349eecacd2fdfc4866998986e4bb34861f"
-      },
-      {
-        "path": "src/features/production/releases.css",
-        "sha256": "0bd9cd1e09ad80216c170ad59f469dfc09e13115585f8a9f5cd72f1cf0287bcb"
-      },
-      {
-        "path": "src/features/jobs/activity.css",
-        "sha256": "3e6fe7c3d3f963782dbcf92fc18c29393d5decb493e6de5105bc49d3484e55bb"
-      },
-      {
-        "path": "src/features/settings/settings.css",
-        "sha256": "5f0e7fd974dffcb75837c1c1896e91352b7084ad6680247c64c8dd2df86cecaf"
-      },
-      {
-        "path": "src/features/projects/project-entry.css",
-        "sha256": "4281d83033ce9bc48302a3f52cbc32de767639496108b96780ef01339887d0b0"
-      },
-      {
-        "path": "src/components/Layout.tsx",
-        "sha256": "9b38d0108dfad4c91917e9b8ec941bb3819d056573351dd6f4a6e9b12ec37bc5"
-      },
-      {
-        "path": "src/components/ui.tsx",
-        "sha256": "e7314d19986badab37c56e598db60b5058986042871a16ab6fae9c25373e0d2a"
-      },
-      {
-        "path": "src/components/Icon.tsx",
-        "sha256": "f8d87a6c1652e6d9ed27d75de65ad49e6f0eb4decc0980728e8f063b5b9570c1"
-      },
-      {
-        "path": "src/features/review/CandidatePage.tsx",
-        "sha256": "fead0c03233556129b75d7e70bef48f2627c3962a8ddd413c51b9160098f335b"
-      },
-      {
-        "path": "src/features/assets/AssetNavigator.tsx",
-        "sha256": "a7e58324505de2feb009017e3c69ae6b7af1f6bce1bf012aafc3eb1c0bfebd77"
-      },
-      {
-        "path": ".impeccable/surfaces/src-app-tsx.md",
-        "sha256": "a15aa976f574a71b1af5c762d97973d1e71a57d97c062a4a8771a6441da16877"
-      },
-      {
-        "path": "PRODUCT.md",
-        "sha256": "cb7206387e13e3d471c0375bd07a5107f7782d925df27b6434e820b9dd86d8d4"
-      }
+      { "path": "src/styles.css", "sha256": "e6b7641c844fddae6f82a8e6c2b0055a04cf129d1aeeee77be9870072641eb00" },
+      { "path": "src/features/assets/sheet.css", "sha256": "0a059dd5dda7e98ea1d9c73747bdf42f70927f3f39c4aba3e06e073a90033b5d" },
+      { "path": "src/features/home/home.css", "sha256": "7a84a2f96cbd0cab98a041016fe51d480752599ce32e178366a6fff5e17c8a19" },
+      { "path": "src/features/review/room.css", "sha256": "38f9bc178c14238107322012aeed809f1f5e310997f4cb82956b37cfbcd44302" },
+      { "path": "src/features/animation/animation.css", "sha256": "3785fc77ed053121b0b04de802b30b9203b77bd7d417408b3dac964a4a4ae89d" },
+      { "path": "src/features/releases/releases.css", "sha256": "b1409ef7f28f007b5bbb6ebddd86740f614706612273b251f8a7ff5f7672f19c" },
+      { "path": "src/features/production/releases.css", "sha256": "e83c23e14f2e53257a270456b55cc3bc635904ac112ae5cf448ca821fbef70ad" },
+      { "path": "src/features/jobs/activity.css", "sha256": "4b34dd2f411e9e11ac112f9ff25c7a67726997ef15e0c2372af7b738b82c5ebe" },
+      { "path": "src/components/ui.tsx", "sha256": "9932e7c23355d643e116b00d1c289020a6198253036d811dc3739f7be6fa8a5f" },
+      { "path": "src/components/Icon.tsx", "sha256": "45874de23aa8b2e139c851968092f020634359b4716e340c0f892b90128dd417" },
+      { "path": "src/components/OutputArt.tsx", "sha256": "80b9ed637ed7cae825f5338234f0f3d211871923563065c5937c8ce779b8403f" },
+      { "path": "src/components/Layout.tsx", "sha256": "cf7646a1ef30cee5a33900792c536a04f2eec0b2da108a189fcfbc31d4337ca3" },
+      { "path": ".impeccable/surfaces/src-app-tsx.md", "sha256": "c883eed8b7ffa0d1921ce9be5451f2048668c3459cdcad9cbef6cfc1f6470e12" },
+      { "path": "PRODUCT.md", "sha256": "cb7206387e13e3d471c0375bd07a5107f7782d925df27b6434e820b9dd86d8d4" }
     ],
     "renderedEvidence": [
-      ".impeccable/review/fixes/review-1440.png",
-      ".impeccable/review/fixes/export-light.png",
-      ".impeccable/review/fixes/inspector-drawer.png",
-      ".impeccable/review/final/workbench-dark.png",
-      ".impeccable/review/final/animation-light.png"
+      ".impeccable/review/sprite-sheet/home-dark.png",
+      ".impeccable/review/sprite-sheet/asset-sheet-light.png",
+      ".impeccable/review/sprite-sheet/room-animation-dark.png",
+      ".impeccable/review/sprite-sheet/room-concept-compare-dark.png",
+      ".impeccable/review/sprite-sheet/releases-dark.png"
     ],
-    "normalization": "Colors keep the shipped CSS light-dark(light, dark) pairs as canonical; schemes.light/dark split them into hex and OKLCH for tools. Viewing tokens are single theme-independent values. Spacing is the 4px --u unit; control heights come from --control-h (34px, 44px on pointer: coarse).",
+    "normalization": "Colors keep the shipped CSS light-dark(light, dark) pairs as canonical; schemes.light/dark split them. accent and focus resolve to var(--text) and border-control to var(--border-strong) in CSS; the frontmatter writes their resolved values because primitives may not reference each other. backdrop-light/backdrop-dark are shipped literals (no custom property). Spacing keys are the reused gaps.",
     "excluded": "Fixture artwork in screenshots is synthetic test imagery, not a design asset."
   },
   "extensions": {
     "colorMeta": {
-      "accent": {
-        "role": "primary",
-        "displayName": "Checking-Room Blue",
-        "canonical": "light-dark(#245e9a, #9ac4ed)",
-        "cssVar": "--accent",
-        "schemes": {
-          "light": {
-            "hex": "#245e9a",
-            "oklch": "oklch(47.5% 0.114 252.1)"
-          },
-          "dark": {
-            "hex": "#9ac4ed",
-            "oklch": "oklch(80.5% 0.074 248.1)"
-          }
-        },
-        "tonalRamp": [
-          "#000138",
-          "#002158",
-          "#004079",
-          "#265f9c",
-          "#4a83c2",
-          "#6ba5e7",
-          "#90ccff",
-          "#dcf1ff"
-        ],
-        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
-      },
-      "accent-text": {
-        "role": "primary",
-        "displayName": "Accent Ink",
-        "canonical": "light-dark(#ffffff, #12273a)",
-        "cssVar": "--accent-text",
-        "schemes": {
-          "light": {
-            "hex": "#ffffff",
-            "oklch": "oklch(100.0% 0.000 89.9)"
-          },
-          "dark": {
-            "hex": "#12273a",
-            "oklch": "oklch(26.5% 0.045 247.6)"
-          }
-        },
-        "tonalRamp": [
-          "#0b0b0b",
-          "#242424",
-          "#404040",
-          "#5d5d5d",
-          "#808080",
-          "#a1a1a1",
-          "#c7c7c7",
-          "#eeeeee"
-        ],
-        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
-      },
-      "accent-soft": {
-        "role": "primary",
-        "displayName": "Selection Wash",
-        "canonical": "light-dark(#e0edf9, #283e51)",
-        "cssVar": "--accent-soft",
-        "schemes": {
-          "light": {
-            "hex": "#e0edf9",
-            "oklch": "oklch(94.0% 0.021 245.9)"
-          },
-          "dark": {
-            "hex": "#283e51",
-            "oklch": "oklch(35.4% 0.043 245.5)"
-          }
-        },
-        "tonalRamp": [
-          "#040c14",
-          "#1c252e",
-          "#37414b",
-          "#545f69",
-          "#76828d",
-          "#97a3ae",
-          "#bcc9d5",
-          "#eaeff3"
-        ],
-        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
-      },
-      "focus": {
-        "role": "primary",
-        "displayName": "Focus Blue",
-        "canonical": "light-dark(#175b9e, #b8ddff)",
-        "cssVar": "--focus",
-        "schemes": {
-          "light": {
-            "hex": "#175b9e",
-            "oklch": "oklch(46.7% 0.127 252.4)"
-          },
-          "dark": {
-            "hex": "#b8ddff",
-            "oklch": "oklch(88.2% 0.061 246.3)"
-          }
-        },
-        "tonalRamp": [
-          "#00003e",
-          "#001f5e",
-          "#003f7f",
-          "#1c5fa2",
-          "#4283c9",
-          "#64a5ee",
-          "#89ccff",
-          "#daf1ff"
-        ],
-        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
-      },
-      "bg": {
-        "role": "neutral",
-        "displayName": "Workroom Ground",
-        "canonical": "light-dark(#f3f5f7, #191e23)",
-        "cssVar": "--bg",
-        "schemes": {
-          "light": {
-            "hex": "#f3f5f7",
-            "oklch": "oklch(96.9% 0.003 247.9)"
-          },
-          "dark": {
-            "hex": "#191e23",
-            "oklch": "oklch(23.2% 0.012 248.4)"
-          }
-        },
-        "tonalRamp": [
-          "#0a0b0d",
-          "#232426",
-          "#3e4041",
-          "#5c5e5f",
-          "#7f8082",
-          "#a0a2a3",
-          "#c5c7c9",
-          "#eeeeef"
-        ],
-        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
-      },
-      "surface": {
-        "role": "neutral",
-        "displayName": "Pane Surface",
-        "canonical": "light-dark(#ffffff, #22282e)",
-        "cssVar": "--surface",
-        "schemes": {
-          "light": {
-            "hex": "#ffffff",
-            "oklch": "oklch(100.0% 0.000 89.9)"
-          },
-          "dark": {
-            "hex": "#22282e",
-            "oklch": "oklch(27.3% 0.014 248.3)"
-          }
-        },
-        "tonalRamp": [
-          "#0b0b0b",
-          "#242424",
-          "#404040",
-          "#5d5d5d",
-          "#808080",
-          "#a1a1a1",
-          "#c7c7c7",
-          "#eeeeee"
-        ],
-        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
-      },
-      "surface-2": {
-        "role": "neutral",
-        "displayName": "Raised Slate",
-        "canonical": "light-dark(#eaf0f4, #2b333b)",
-        "cssVar": "--surface-2",
-        "schemes": {
-          "light": {
-            "hex": "#eaf0f4",
-            "oklch": "oklch(95.2% 0.008 236.6)"
-          },
-          "dark": {
-            "hex": "#2b333b",
-            "oklch": "oklch(31.7% 0.018 248.4)"
-          }
-        },
-        "tonalRamp": [
-          "#080c0e",
-          "#202528",
-          "#3c4044",
-          "#595e62",
-          "#7c8185",
-          "#9da2a6",
-          "#c2c8cc",
-          "#edeff0"
-        ],
-        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
-      },
-      "surface-3": {
-        "role": "neutral",
-        "displayName": "Pressed Slate",
-        "canonical": "light-dark(#dfe7ed, #35404a)",
-        "cssVar": "--surface-3",
-        "schemes": {
-          "light": {
-            "hex": "#dfe7ed",
-            "oklch": "oklch(92.4% 0.012 239.9)"
-          },
-          "dark": {
-            "hex": "#35404a",
-            "oklch": "oklch(36.6% 0.023 245.9)"
-          }
-        },
-        "tonalRamp": [
-          "#070c10",
-          "#1f2529",
-          "#3a4145",
-          "#585f64",
-          "#7a8187",
-          "#9ba3a8",
-          "#c1c8ce",
-          "#eceff1"
-        ],
-        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
-      },
-      "stage": {
-        "role": "neutral",
-        "displayName": "Stage Slate",
-        "canonical": "light-dark(#e0e5e9, #12171b)",
-        "cssVar": "--stage",
-        "schemes": {
-          "light": {
-            "hex": "#e0e5e9",
-            "oklch": "oklch(91.9% 0.008 241.7)"
-          },
-          "dark": {
-            "hex": "#12171b",
-            "oklch": "oklch(20.1% 0.011 242.3)"
-          }
-        },
-        "tonalRamp": [
-          "#080c0e",
-          "#212527",
-          "#3c4043",
-          "#5a5e62",
-          "#7c8184",
-          "#9da2a6",
-          "#c3c8cc",
-          "#edeff0"
-        ],
-        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
-      },
-      "text": {
-        "role": "neutral",
-        "displayName": "Ink",
-        "canonical": "light-dark(#202b34, #edf1f4)",
-        "cssVar": "--text",
-        "schemes": {
-          "light": {
-            "hex": "#202b34",
-            "oklch": "oklch(28.3% 0.023 243.3)"
-          },
-          "dark": {
-            "hex": "#edf1f4",
-            "oklch": "oklch(95.6% 0.006 239.8)"
-          }
-        },
-        "tonalRamp": [
-          "#040c14",
-          "#1b252e",
-          "#36414b",
-          "#535f6a",
-          "#75828d",
-          "#96a3af",
-          "#bbc9d5",
-          "#eaeff3"
-        ],
-        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
-      },
-      "text-muted": {
-        "role": "neutral",
-        "displayName": "Muted Ink",
-        "canonical": "light-dark(#52616d, #a9b6c1)",
-        "cssVar": "--text-muted",
-        "schemes": {
-          "light": {
-            "hex": "#52616d",
-            "oklch": "oklch(48.4% 0.027 242.3)"
-          },
-          "dark": {
-            "hex": "#a9b6c1",
-            "oklch": "oklch(77.0% 0.021 243.5)"
-          }
-        },
-        "tonalRamp": [
-          "#030c15",
-          "#182630",
-          "#34424d",
-          "#51606c",
-          "#73838f",
-          "#94a4b1",
-          "#b9cad8",
-          "#e9eff4"
-        ],
-        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
-      },
-      "border": {
-        "role": "neutral",
-        "displayName": "Hairline",
-        "canonical": "light-dark(#cbd4dc, #3c4751)",
-        "cssVar": "--border",
-        "schemes": {
-          "light": {
-            "hex": "#cbd4dc",
-            "oklch": "oklch(86.5% 0.015 244.7)"
-          },
-          "dark": {
-            "hex": "#3c4751",
-            "oklch": "oklch(39.2% 0.022 245.8)"
-          }
-        },
-        "tonalRamp": [
-          "#060c11",
-          "#1e252b",
-          "#394147",
-          "#575f66",
-          "#798189",
-          "#9aa3aa",
-          "#c0c9d0",
-          "#eceff2"
-        ],
-        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
-      },
-      "border-control": {
-        "role": "neutral",
-        "displayName": "Control Edge",
-        "canonical": "light-dark(#7a8b99, #7c8d9b)",
-        "cssVar": "--border-control",
-        "schemes": {
-          "light": {
-            "hex": "#7a8b99",
-            "oklch": "oklch(62.8% 0.029 243.0)"
-          },
-          "dark": {
-            "hex": "#7c8d9b",
-            "oklch": "oklch(63.5% 0.029 243.0)"
-          }
-        },
-        "tonalRamp": [
-          "#020c16",
-          "#172631",
-          "#33424e",
-          "#50606d",
-          "#728390",
-          "#93a4b3",
-          "#b8cad9",
-          "#e9eff5"
-        ],
-        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
-      },
-      "ok": {
-        "role": "semantic",
-        "displayName": "Approved Green",
-        "canonical": "light-dark(#23633d, #8ed0a5)",
-        "cssVar": "--ok",
-        "schemes": {
-          "light": {
-            "hex": "#23633d",
-            "oklch": "oklch(44.8% 0.090 154.2)"
-          },
-          "dark": {
-            "hex": "#8ed0a5",
-            "oklch": "oklch(80.2% 0.091 155.2)"
-          }
-        },
-        "tonalRamp": [
-          "#001400",
-          "#002f0d",
-          "#044d29",
-          "#2d6c46",
-          "#529067",
-          "#73b288",
-          "#98d9ad",
-          "#dff5e5"
-        ],
-        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
-      },
-      "ok-soft": {
-        "role": "semantic",
-        "displayName": "Approved Green Wash",
-        "canonical": "light-dark(#e6f2e9, #283c32)",
-        "cssVar": "--ok-soft",
-        "schemes": {
-          "light": {
-            "hex": "#e6f2e9",
-            "oklch": "oklch(95.0% 0.017 153.6)"
-          },
-          "dark": {
-            "hex": "#283c32",
-            "oklch": "oklch(33.6% 0.031 162.4)"
-          }
-        },
-        "tonalRamp": [
-          "#060d08",
-          "#1e2720",
-          "#39433b",
-          "#566159",
-          "#79837b",
-          "#9aa59c",
-          "#bfcbc2",
-          "#ebf0ec"
-        ],
-        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
-      },
-      "warn": {
-        "role": "semantic",
-        "displayName": "Attention Amber",
-        "canonical": "light-dark(#87510b, #efc17c)",
-        "cssVar": "--warn",
-        "schemes": {
-          "light": {
-            "hex": "#87510b",
-            "oklch": "oklch(48.6% 0.105 65.1)"
-          },
-          "dark": {
-            "hex": "#efc17c",
-            "oklch": "oklch(83.7% 0.101 76.8)"
-          }
-        },
-        "tonalRamp": [
-          "#250000",
-          "#441200",
-          "#643000",
-          "#854f07",
-          "#ab7236",
-          "#ce9458",
-          "#f7b97d",
-          "#ffead6"
-        ],
-        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
-      },
-      "warn-soft": {
-        "role": "semantic",
-        "displayName": "Attention Amber Wash",
-        "canonical": "light-dark(#fcf1df, #40372a)",
-        "cssVar": "--warn-soft",
-        "schemes": {
-          "light": {
-            "hex": "#fcf1df",
-            "oklch": "oklch(96.2% 0.027 80.3)"
-          },
-          "dark": {
-            "hex": "#40372a",
-            "oklch": "oklch(34.2% 0.025 76.8)"
-          }
-        },
-        "tonalRamp": [
-          "#110a01",
-          "#2b2315",
-          "#473e30",
-          "#665c4d",
-          "#897f6f",
-          "#aaa08f",
-          "#d0c6b4",
-          "#f2eee8"
-        ],
-        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
-      },
-      "danger": {
-        "role": "semantic",
-        "displayName": "Rejected Red",
-        "canonical": "light-dark(#ab292b, #ffaba6)",
-        "cssVar": "--danger",
-        "schemes": {
-          "light": {
-            "hex": "#ab292b",
-            "oklch": "oklch(49.1% 0.166 25.1)"
-          },
-          "dark": {
-            "hex": "#ffaba6",
-            "oklch": "oklch(82.1% 0.100 23.2)"
-          }
-        },
-        "tonalRamp": [
-          "#360000",
-          "#5b0000",
-          "#800009",
-          "#a5292b",
-          "#ce514d",
-          "#f5746d",
-          "#ff9a91",
-          "#ffe1dc"
-        ],
-        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
-      },
-      "danger-soft": {
-        "role": "semantic",
-        "displayName": "Rejected Red Wash",
-        "canonical": "light-dark(#fceceb, #442c2d)",
-        "cssVar": "--danger-soft",
-        "schemes": {
-          "light": {
-            "hex": "#fceceb",
-            "oklch": "oklch(95.5% 0.017 21.8)"
-          },
-          "dark": {
-            "hex": "#442c2d",
-            "oklch": "oklch(32.2% 0.036 16.5)"
-          }
-        },
-        "tonalRamp": [
-          "#120808",
-          "#2c2120",
-          "#493c3c",
-          "#675a59",
-          "#8a7c7b",
-          "#ac9d9d",
-          "#d3c3c2",
-          "#f3eded"
-        ],
-        "tonalRampSource": "synthesized in OKLCH from the light-scheme value"
-      },
-      "checker-a": {
-        "role": "viewing",
-        "displayName": "Checker Dark Square",
-        "canonical": "#cbd0d4",
-        "cssVar": "--checker-a",
-        "oklch": "oklch(85.5% 0.008 241.7)",
-        "themeIndependent": true,
-        "tonalRamp": [
-          "#080c0e",
-          "#212528",
-          "#3c4044",
-          "#5a5e62",
-          "#7c8184",
-          "#9da2a6",
-          "#c3c8cc",
-          "#edeff0"
-        ],
-        "tonalRampSource": "synthesized in OKLCH"
-      },
-      "checker-b": {
-        "role": "viewing",
-        "displayName": "Checker Light Square",
-        "canonical": "#e8ebed",
-        "cssVar": "--checker-b",
-        "oklch": "oklch(93.8% 0.004 236.5)",
-        "themeIndependent": true,
-        "tonalRamp": [
-          "#0a0b0d",
-          "#222426",
-          "#3e4042",
-          "#5b5e60",
-          "#7e8182",
-          "#9fa2a4",
-          "#c5c8ca",
-          "#edeeef"
-        ],
-        "tonalRampSource": "synthesized in OKLCH"
-      },
-      "view-light": {
-        "role": "viewing",
-        "displayName": "Light Backdrop",
-        "canonical": "#f2f2f2",
-        "cssVar": "--view-light",
-        "oklch": "oklch(96.1% 0.000 89.9)",
-        "themeIndependent": true,
-        "tonalRamp": [
-          "#0b0b0b",
-          "#242424",
-          "#404040",
-          "#5d5d5d",
-          "#808080",
-          "#a1a1a1",
-          "#c7c7c7",
-          "#eeeeee"
-        ],
-        "tonalRampSource": "synthesized in OKLCH"
-      },
-      "view-dark": {
-        "role": "viewing",
-        "displayName": "Dark Backdrop",
-        "canonical": "#161616",
-        "cssVar": "--view-dark",
-        "oklch": "oklch(20.0% 0.000 89.9)",
-        "themeIndependent": true,
-        "tonalRamp": [
-          "#0b0b0b",
-          "#242424",
-          "#404040",
-          "#5d5d5d",
-          "#808080",
-          "#a1a1a1",
-          "#c7c7c7",
-          "#eeeeee"
-        ],
-        "tonalRampSource": "synthesized in OKLCH"
-      },
-      "guide-mark": {
-        "role": "viewing",
-        "displayName": "Guide Magenta",
-        "canonical": "#ff4081",
-        "cssVar": "--guide-mark",
-        "oklch": "oklch(67.2% 0.228 5.7)",
-        "themeIndependent": true,
-        "tonalRamp": [
-          "#340003",
-          "#580018",
-          "#7d0033",
-          "#a22750",
-          "#cb4f72",
-          "#f17193",
-          "#ff98b8",
-          "#ffe0e9"
-        ],
-        "tonalRampSource": "synthesized in OKLCH"
-      }
+      "bg": { "role": "neutral", "displayName": "Paper / Graphite Ground", "cssVar": "--bg", "canonical": "light-dark(#f4f4f5, #111113)", "schemes": { "light": "#f4f4f5", "dark": "#111113" }, "tonalRamp": ["#0e0e10", "#18181b", "#2b2b30", "#585861", "#85858e", "#a3a3ac", "#e2e2e6", "#f4f4f5"] },
+      "surface": { "role": "neutral", "displayName": "Sheet", "cssVar": "--surface", "canonical": "light-dark(#ffffff, #18181b)", "schemes": { "light": "#ffffff", "dark": "#18181b" }, "tonalRamp": ["#0e0e10", "#18181b", "#2b2b30", "#585861", "#85858e", "#a3a3ac", "#e2e2e6", "#f4f4f5"] },
+      "surface-2": { "role": "neutral", "displayName": "Raised Tint", "cssVar": "--surface-2", "canonical": "light-dark(#ececef, #222226)", "schemes": { "light": "#ececef", "dark": "#222226" }, "tonalRamp": ["#0e0e10", "#18181b", "#2b2b30", "#585861", "#85858e", "#a3a3ac", "#e2e2e6", "#f4f4f5"] },
+      "surface-3": { "role": "neutral", "displayName": "Pressed Tint", "cssVar": "--surface-3", "canonical": "light-dark(#e2e2e6, #2b2b30)", "schemes": { "light": "#e2e2e6", "dark": "#2b2b30" }, "tonalRamp": ["#0e0e10", "#18181b", "#2b2b30", "#585861", "#85858e", "#a3a3ac", "#e2e2e6", "#f4f4f5"] },
+      "field": { "role": "neutral", "displayName": "Field Well", "cssVar": "--field", "canonical": "light-dark(#ffffff, #0e0e10)", "schemes": { "light": "#ffffff", "dark": "#0e0e10" }, "tonalRamp": ["#0e0e10", "#18181b", "#2b2b30", "#585861", "#85858e", "#a3a3ac", "#e2e2e6", "#f4f4f5"] },
+      "seg-on": { "role": "neutral", "displayName": "Pressed Segment", "cssVar": "--seg-on", "canonical": "light-dark(#ffffff, #3a3a41)", "schemes": { "light": "#ffffff", "dark": "#3a3a41" }, "tonalRamp": ["#0e0e10", "#18181b", "#2b2b30", "#585861", "#85858e", "#a3a3ac", "#e2e2e6", "#f4f4f5"] },
+      "border": { "role": "neutral", "displayName": "Hairline", "cssVar": "--border", "canonical": "light-dark(rgb(0 0 0 / 0.09), rgb(255 255 255 / 0.075))", "schemes": { "light": "rgb(0 0 0 / 0.09)", "dark": "rgb(255 255 255 / 0.075)" } },
+      "border-strong": { "role": "neutral", "displayName": "Strong Hairline", "cssVar": "--border-strong", "canonical": "light-dark(rgb(0 0 0 / 0.2), rgb(255 255 255 / 0.18))", "schemes": { "light": "rgb(0 0 0 / 0.2)", "dark": "rgb(255 255 255 / 0.18)" } },
+      "border-control": { "role": "neutral", "displayName": "Control Hairline (alias)", "cssVar": "--border-control", "aliasOf": "border-strong", "canonical": "var(--border-strong)", "schemes": { "light": "rgb(0 0 0 / 0.2)", "dark": "rgb(255 255 255 / 0.18)" } },
+      "text": { "role": "neutral", "displayName": "Ink Text", "cssVar": "--text", "canonical": "light-dark(#161618, #f1f1f2)", "schemes": { "light": "#161618", "dark": "#f1f1f2" }, "tonalRamp": ["#0e0e10", "#18181b", "#2b2b30", "#585861", "#85858e", "#a3a3ac", "#e2e2e6", "#f4f4f5"] },
+      "text-muted": { "role": "neutral", "displayName": "Muted Text", "cssVar": "--text-muted", "canonical": "light-dark(#585861, #a3a3ac)", "schemes": { "light": "#585861", "dark": "#a3a3ac" }, "tonalRamp": ["#0e0e10", "#18181b", "#2b2b30", "#585861", "#85858e", "#a3a3ac", "#e2e2e6", "#f4f4f5"] },
+      "text-faint": { "role": "neutral", "displayName": "Faint Text", "cssVar": "--text-faint", "canonical": "light-dark(#6f6f78, #85858e)", "schemes": { "light": "#6f6f78", "dark": "#85858e" }, "tonalRamp": ["#0e0e10", "#18181b", "#2b2b30", "#585861", "#85858e", "#a3a3ac", "#e2e2e6", "#f4f4f5"] },
+      "accent": { "role": "primary", "displayName": "Ink", "cssVar": "--accent", "aliasOf": "text", "canonical": "var(--text)", "schemes": { "light": "#161618", "dark": "#f1f1f2" }, "tonalRamp": ["#0e0e10", "#18181b", "#2b2b30", "#585861", "#85858e", "#a3a3ac", "#e2e2e6", "#f4f4f5"] },
+      "accent-text": { "role": "primary", "displayName": "On Ink", "cssVar": "--accent-text", "canonical": "light-dark(#ffffff, #111113)", "schemes": { "light": "#ffffff", "dark": "#111113" } },
+      "accent-soft": { "role": "primary", "displayName": "Ink Wash", "cssVar": "--accent-soft", "canonical": "light-dark(rgb(22 22 24 / 0.07), rgb(241 241 242 / 0.09))", "schemes": { "light": "rgb(22 22 24 / 0.07)", "dark": "rgb(241 241 242 / 0.09)" } },
+      "focus": { "role": "primary", "displayName": "Focus Ink", "cssVar": "--focus", "aliasOf": "text", "canonical": "var(--text)", "schemes": { "light": "#161618", "dark": "#f1f1f2" } },
+      "ok": { "role": "secondary", "displayName": "Approved Green", "cssVar": "--ok", "canonical": "light-dark(#18763f, #63d297)", "schemes": { "light": "#18763f", "dark": "#63d297" }, "tonalRamp": ["oklch(15% 0.04 155)", "oklch(27% 0.07 155)", "oklch(39% 0.1 155)", "oklch(51% 0.13 155)", "oklch(63% 0.14 155)", "oklch(75% 0.14 155)", "oklch(85% 0.09 155)", "oklch(95% 0.03 155)"] },
+      "ok-soft": { "role": "secondary", "displayName": "Approved Wash", "cssVar": "--ok-soft", "canonical": "light-dark(#e3f3e9, rgb(99 210 151 / 0.12))", "schemes": { "light": "#e3f3e9", "dark": "rgb(99 210 151 / 0.12)" } },
+      "warn": { "role": "secondary", "displayName": "Amber", "cssVar": "--warn", "canonical": "light-dark(#94560a, #f1b55e)", "schemes": { "light": "#94560a", "dark": "#f1b55e" }, "tonalRamp": ["oklch(15% 0.03 70)", "oklch(27% 0.06 70)", "oklch(39% 0.09 70)", "oklch(51% 0.12 70)", "oklch(63% 0.13 70)", "oklch(75% 0.13 70)", "oklch(85% 0.1 70)", "oklch(95% 0.04 70)"] },
+      "warn-soft": { "role": "secondary", "displayName": "Amber Wash", "cssVar": "--warn-soft", "canonical": "light-dark(#fbf0dc, rgb(241 181 94 / 0.11))", "schemes": { "light": "#fbf0dc", "dark": "rgb(241 181 94 / 0.11)" } },
+      "danger": { "role": "secondary", "displayName": "Failure Red", "cssVar": "--danger", "canonical": "light-dark(#b8342b, #ff8077)", "schemes": { "light": "#b8342b", "dark": "#ff8077" }, "tonalRamp": ["oklch(15% 0.05 27)", "oklch(27% 0.09 27)", "oklch(39% 0.13 27)", "oklch(51% 0.17 27)", "oklch(63% 0.18 27)", "oklch(75% 0.14 27)", "oklch(85% 0.08 27)", "oklch(95% 0.03 27)"] },
+      "danger-soft": { "role": "secondary", "displayName": "Failure Wash", "cssVar": "--danger-soft", "canonical": "light-dark(#fbe9e7, rgb(255 128 119 / 0.11))", "schemes": { "light": "#fbe9e7", "dark": "rgb(255 128 119 / 0.11)" } },
+      "note": { "role": "tertiary", "displayName": "Note Amber", "cssVar": "--note", "canonical": "#f1b55e", "themeIndependent": true, "tonalRamp": ["oklch(15% 0.03 75)", "oklch(27% 0.06 75)", "oklch(39% 0.09 75)", "oklch(51% 0.11 75)", "oklch(63% 0.13 75)", "oklch(75% 0.13 75)", "oklch(85% 0.1 75)", "oklch(95% 0.04 75)"] },
+      "note-text": { "role": "tertiary", "displayName": "On Note", "cssVar": "--note-text", "canonical": "#1b1203", "themeIndependent": true },
+      "guide": { "role": "tertiary", "displayName": "Guide Pink", "cssVar": "--guide", "canonical": "#ff4081", "themeIndependent": true, "tonalRamp": ["oklch(15% 0.06 3)", "oklch(27% 0.1 3)", "oklch(39% 0.15 3)", "oklch(51% 0.2 3)", "oklch(63% 0.23 3)", "oklch(75% 0.15 3)", "oklch(85% 0.08 3)", "oklch(95% 0.03 3)"] },
+      "checker-a": { "role": "neutral", "displayName": "Cell Checker Dark Square", "cssVar": "--checker-a", "canonical": "light-dark(#e7e7ea, #1e1e22)", "schemes": { "light": "#e7e7ea", "dark": "#1e1e22" }, "pattern": "conic-gradient 14px" },
+      "checker-b": { "role": "neutral", "displayName": "Cell Checker Light Square", "cssVar": "--checker-b", "canonical": "light-dark(#f5f5f7, #18181b)", "schemes": { "light": "#f5f5f7", "dark": "#18181b" }, "pattern": "conic-gradient 14px" },
+      "stage-a": { "role": "neutral", "displayName": "Stage Checker Dark Square", "cssVar": "--stage-a", "canonical": "light-dark(#d6d6da, #26262b)", "schemes": { "light": "#d6d6da", "dark": "#26262b" }, "pattern": "conic-gradient 20px" },
+      "stage-b": { "role": "neutral", "displayName": "Stage Checker Light Square", "cssVar": "--stage-b", "canonical": "light-dark(#ececee, #1c1c20)", "schemes": { "light": "#ececee", "dark": "#1c1c20" }, "pattern": "conic-gradient 20px" },
+      "backdrop-light": { "role": "neutral", "displayName": "Light Judging Backdrop", "cssVar": null, "canonical": "#ececee", "themeIndependent": true, "usedIn": ["src/styles.css .stage-bg.light/.viewer-stage.light", "src/features/review/room.css [data-bg=light]", "src/features/families/families.css .fam-stage.light"] },
+      "backdrop-dark": { "role": "neutral", "displayName": "Dark Judging Backdrop", "cssVar": null, "canonical": "#141416", "themeIndependent": true, "usedIn": ["src/styles.css .stage-bg.dark/.viewer-stage.dark", "src/features/review/room.css [data-bg=dark]", "src/features/families/families.css .fam-stage.dark"] }
     },
     "typographyMeta": {
-      "headline": {
-        "displayName": "Headline",
-        "purpose": "Page headers on non-workspace routes; never inside the review room."
-      },
-      "title": {
-        "displayName": "Title",
-        "purpose": "Review-room candidate identity, dialog titles, history sections."
-      },
-      "heading": {
-        "displayName": "Heading",
-        "purpose": "Pane and inspector section headings."
-      },
-      "body": {
-        "displayName": "Body",
-        "purpose": "Running text and notes, capped at 64–80ch."
-      },
-      "body-compact": {
-        "displayName": "Body Compact",
-        "purpose": "Inputs, tables, inspector rail, facts, navigator."
-      },
-      "control": {
-        "displayName": "Control",
-        "purpose": "Buttons and navigation tabs; pressed/current states step to 650."
-      },
-      "label": {
-        "displayName": "Label",
-        "purpose": "Form labels; status chips use 12px at 550."
-      },
-      "mono": {
-        "displayName": "Mono",
-        "purpose": "Hashes, ids, paths, prompts, frame readouts; 13px/1.6 in textareas."
-      }
+      "headline": { "displayName": "Headline", "purpose": "Page and asset titles (h1); the largest type in the product." },
+      "title": { "displayName": "Title", "purpose": "Dialog titles and empty-state headings." },
+      "section": { "displayName": "Section", "purpose": "Section heads, room-head deliverable name (650), lead Up next row (600)." },
+      "heading": { "displayName": "Heading", "purpose": "Sub-heads; text-faint inside the inspector." },
+      "body": { "displayName": "Body", "purpose": "Running text and notes; ledes cap at 70ch, empty-state bodies at 62ch." },
+      "body-compact": { "displayName": "Body Compact", "purpose": "Rows, tables, menus, banners, inputs." },
+      "control": { "displayName": "Control", "purpose": "Buttons and tabs; ink button 600; sm controls 12.5px." },
+      "label": { "displayName": "Label", "purpose": "Form labels and legends; .secondary meta is 12.5px/400 muted." },
+      "caption": { "displayName": "Caption", "purpose": "Hints, timestamps, row sub-lines." },
+      "badge": { "displayName": "Badge", "purpose": "Stamps, tags and inline chips." },
+      "mono": { "displayName": "Mono", "purpose": "Frame readouts, cell sizes, group counts, paths, IDs, hashes; YAML editor at 12.5px/1.6." },
+      "mono-count": { "displayName": "Mono Count", "purpose": "Numbers in count badges, chip counts and strip frame indices." }
     },
     "shadows": [
-      {
-        "name": "popover",
-        "value": "0 12px 32px rgb(0 0 0 / 0.22)",
-        "purpose": "Project details panel under the topbar."
-      },
-      {
-        "name": "inline-popover",
-        "value": "0 4px 16px rgb(0 0 0 / 0.25)",
-        "purpose": "Processing-warnings list opened from the output bar."
-      },
-      {
-        "name": "drawer",
-        "value": "-8px 0 24px rgb(0 0 0 / 0.3)",
-        "purpose": "≤1100px inspector drawer; backdrop rgb(0 0 0 / 0.45)."
-      },
-      {
-        "name": "dialog-scrim",
-        "value": "rgb(0 0 0 / 0.5)",
-        "purpose": "Radix modal overlay; the dialog itself is bordered, not shadowed."
-      },
-      {
-        "name": "selection-ring",
-        "value": "0 0 0 2px var(--accent)",
-        "purpose": "Current candidate, note, lineage row, concept tile. Lists use inset 0 0 0 1px var(--accent). A ring, not elevation."
-      }
+      { "name": "hairline-ring", "value": "inset 0 0 0 1px var(--border)", "purpose": "Every resting surface edge; --border-strong for fields, stamps, keycaps." },
+      { "name": "pop", "cssVar": "--shadow-pop", "value": "0 18px 48px -12px rgb(0 0 0 / 0.45), 0 2px 6px rgb(0 0 0 / 0.18)", "purpose": "Menus, dialogs, command palette; always with the hairline ring." },
+      { "name": "segment-lift", "value": "0 1px 2px rgb(0 0 0 / 0.22)", "purpose": "Pressed segment only." },
+      { "name": "over-art-float", "value": "inset 0 0 0 1px var(--border), 0 4px 14px -6px rgb(0 0 0 / 0.4)", "extra": "background: color-mix(in srgb, var(--surface) 86%, transparent); backdrop-filter: blur(10px)", "purpose": "Stage toolbar, stage extras, compare bar over artwork." },
+      { "name": "marker-lift", "value": "0 0 0 2px var(--accent-text), 0 4px 10px rgb(0 0 0 / 0.35)", "purpose": "Note markers pinned on art." },
+      { "name": "current-ring", "value": "0 0 0 2px var(--text)", "purpose": "Current candidate take and selected candidate card. A ring, not elevation." },
+      { "name": "scrim", "value": "rgb(0 0 0 / 0.5)", "extra": "backdrop-filter: blur(2px)", "purpose": "Dialog overlay." }
     ],
     "focus": [
-      {
-        "name": "focus-ring",
-        "value": "outline: 2px solid var(--focus); outline-offset: 3px",
-        "purpose": "Global :focus-visible; dense panes and summaries use offset 2px."
-      }
+      { "name": "focus-ring", "value": "outline: 2px solid var(--focus); outline-offset: 2px", "purpose": "Global :focus-visible." },
+      { "name": "field-focus", "value": "box-shadow: inset 0 0 0 1.5px var(--text); outline: 0", "purpose": "Inputs, selects, textareas." }
     ],
     "motion": [
-      {
-        "name": "state-change",
-        "value": "150ms ease-out (background-color, border-color)",
-        "purpose": "Buttons only; state-only transitions."
-      },
-      {
-        "name": "reduced-motion",
-        "value": "animation: none; transition: none; scroll-behavior: auto",
-        "purpose": "prefers-reduced-motion: reduce removes all motion."
-      }
+      { "name": "ease", "cssVar": "--ease", "value": "cubic-bezier(0.2, 0.7, 0.2, 1)", "purpose": "All state transitions and pops." },
+      { "name": "state-change", "value": "120ms (background-color, color, box-shadow)", "purpose": "Buttons, fields, disclosure chevron." },
+      { "name": "menu-pop", "value": "pop-in 120ms", "purpose": "Menus rise 4px from 98% scale." },
+      { "name": "overlay-fade", "value": "fade-in 140ms", "purpose": "Dialog scrim." },
+      { "name": "dialog-pop", "value": "pop-in 160ms", "purpose": "Dialogs and palette; the ceiling for any transition." },
+      { "name": "marquee", "value": "0.8s linear infinite", "purpose": "Marching ants on the current cell; live-state loop." },
+      { "name": "running-pulse", "value": "1.6s ease-in-out infinite (dot), 1.4s var(--ease) infinite (take)", "purpose": "Running job dot and running take; live-state loops." },
+      { "name": "reduced-motion", "value": "animation: none; transition: none; scroll-behavior: auto", "purpose": "prefers-reduced-motion: reduce stops everything; the marquee holds still." }
     ],
     "breakpoints": [
-      {
-        "name": "navigator-collapse",
-        "value": "max-width: 1279px",
-        "purpose": "Asset navigator collapses behind a toggle; task rail and workbench home stack."
-      },
-      {
-        "name": "inspector-drawer",
-        "value": "max-width: 1100px",
-        "purpose": "Review inspector becomes a native showModal drawer; split layouts stack; topbar tightens."
-      },
-      {
-        "name": "release-key",
-        "value": "max-width: 900px",
-        "purpose": "Release state key to two columns."
-      },
-      {
-        "name": "version-stack",
-        "value": "max-width: 700px",
-        "purpose": "Version records stack."
-      },
-      {
-        "name": "reflow",
-        "value": "max-width: 759px",
-        "purpose": "Topbar wraps, nav icons hide, main pads 20px 16px; release ledger reflows at 760px."
-      },
-      {
-        "name": "tight-nav",
-        "value": "max-width: 420px",
-        "purpose": "Navigation tabs tighten."
-      },
-      {
-        "name": "coarse-pointer",
-        "value": "pointer: coarse",
-        "purpose": "--control-h becomes 44px."
-      }
+      { "name": "room-laptop", "value": "max-width: 1240px", "purpose": "Room inspector narrows to 316px." },
+      { "name": "wide", "value": "max-width: 1100px", "purpose": "Jump collapses to icon; page padding 22px; asset head stacks (Next card full width); sheet side 200–240px; release/processing/definition splits single-column. Activity side detail only at min-width 1100px." },
+      { "name": "laptop", "value": "max-width: 1024px", "purpose": "Up next art column 96px, thumbs 28px." },
+      { "name": "stack", "value": "max-width: 900px", "purpose": "Sheet single column with concept/references as a row of 120–150px cells; room inspector stacks under a clamp(420px, 72dvh, 700px) stage with sticky tabs; release key two columns." },
+      { "name": "narrow-sheet", "value": "max-width: 800px", "purpose": "Sheet cells min 120px; strips one per row; Next card line wraps." },
+      { "name": "compact", "value": "max-width: 760px", "purpose": "Top bar tightens; page 18px 16px; Up next action under text; room head wraps; transport stepper on own row; decision buttons stack; job and release rows reflow; diff and compare single column." },
+      { "name": "version-stack", "value": "max-width: 700px", "purpose": "Version rows stack." },
+      { "name": "coarse-pointer", "value": "pointer: coarse", "purpose": "--control-h becomes 40px." }
     ],
     "dimensions": [
-      {
-        "name": "control-h",
-        "value": "34px",
-        "purpose": "All buttons, inputs, chips, summaries; 44px on coarse pointers."
-      },
-      {
-        "name": "header-h",
-        "value": "94px",
-        "purpose": "52px topbar plus 42px navigation bar."
-      },
-      {
-        "name": "asset-navigator",
-        "value": "264px",
-        "purpose": "Sticky navigator column in the asset workspace."
-      },
-      {
-        "name": "task-rail",
-        "value": "300px",
-        "purpose": "Task rail beside the stage."
-      },
-      {
-        "name": "inspector",
-        "value": "clamp(340px, 28vw, 440px)",
-        "purpose": "Review inspector column above 1100px."
-      },
-      {
-        "name": "review-pane-h",
-        "value": "max(520px, calc(100dvh - var(--header-h) - 24px))",
-        "purpose": "Shared height of stage and inspector."
-      },
-      {
-        "name": "release-aside",
-        "value": "minmax(320px, 400px)",
-        "purpose": "Sticky releases inspector."
-      },
-      {
-        "name": "main-max",
-        "value": "1600px",
-        "purpose": "Ordinary route content width; workspace routes are full-bleed."
-      }
+      { "name": "control-h", "cssVar": "--control-h", "value": "30px", "purpose": "Buttons and icon buttons; 40px on coarse pointers. Inputs are 32px, sm controls 26px, lg 36px." },
+      { "name": "topbar-h", "cssVar": "--topbar-h", "value": "48px", "purpose": "Top bar; sheet side sticks at topbar-h + 18px." },
+      { "name": "page-max", "value": "1520px", "purpose": "Ordinary pages; narrow pages 920px; settings body 880px." },
+      { "name": "inspector", "value": "372px", "purpose": "Room inspector; 316px at ≤1240px." },
+      { "name": "sheet-side", "value": "296px", "purpose": "Sticky concept and references column." },
+      { "name": "sheet-cell-min", "value": "136px", "purpose": "Sheet cell minimum; strips 262px; 120px at ≤800px." },
+      { "name": "asset-card-min", "value": "232px", "purpose": "Home asset grid minimum." },
+      { "name": "nextcard", "value": "400px", "purpose": "Asset-head Next card width." },
+      { "name": "take", "value": "64px", "purpose": "Candidate strip take." },
+      { "name": "mini-cell", "value": "9px", "purpose": "Mini-sheet cell; 12px large." },
+      { "name": "glyph-tile", "value": "34px", "purpose": "Glyph tile; 44px in job rows." },
+      { "name": "checker-cell", "value": "14px", "purpose": "Cell checker period; stage checker 20px." }
     ],
     "icons": {
       "source": "src/components/Icon.tsx",
@@ -856,156 +137,141 @@
       "strokeWidth": 1.6,
       "linecap": "round",
       "linejoin": "round",
-      "size": "18px; 14px inside status chips"
-    }
+      "size": "16px default; 14px sm; 18px lg; 13–14px in stamps and status",
+      "mark": "sheet: 2×2 cells drawn outlined, filled, filled, dashed"
+    },
+    "stateVocabulary": [
+      { "state": "filled", "meaning": "done / approved", "form": "solid text-colour mini cell; art shown with green check + text" },
+      { "state": "ringed", "meaning": "waiting for you", "form": "1.5px ink ring on mini cell or state mark; 2px ink ring on current take" },
+      { "state": "dashed", "meaning": "empty / to make", "form": "1px dashed border-strong cell or strip frame; 1.5px dashed generation cell; quiet uses border" },
+      { "state": "locked", "meaning": "blocked by a dependency", "form": "lock glyph in a dashed cell, amber when blocked by a decision; final facts get an outlined stamp" },
+      { "state": "struck", "meaning": "rejected / cancelled", "form": "take stays, grayscale at 38% opacity with a 1.5px diagonal strike" },
+      { "state": "marquee", "meaning": "the cell you are on", "form": "marching ants, 8px dashes at 1.5px in text colour over the cell edge" }
+    ]
   },
   "components": [
+    {
+      "name": "Ink Button (next action)",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one filled control per screen; marks the next action.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">Start reviewing <svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M5 12h13m-5-5 5 5-5 5\"/></svg></button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 0 12px; border: 0; border-radius: 7px; font: 560 13px/1.2 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; cursor: pointer; transition: background-color 120ms cubic-bezier(0.2,0.7,0.2,1), color 120ms cubic-bezier(0.2,0.7,0.2,1), box-shadow 120ms cubic-bezier(0.2,0.7,0.2,1); } .ds-btn-primary { background: var(--accent); color: var(--accent-text); font-weight: 600; box-shadow: none; } .ds-btn-primary:hover { background: color-mix(in srgb, var(--accent) 86%, var(--bg)); } .ds-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }"
+    },
     {
       "name": "Button",
       "kind": "button",
       "refersTo": "button",
-      "description": "Default bordered action; quiet until pressed.",
-      "html": "<button class=\"ds-btn\">Reject</button>",
-      "css": ".ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: var(--control-h); padding: 0 12px; border-radius: var(--radius); border: 1px solid var(--border-control); background: var(--surface); color: var(--text); font: 550 13px/1.5 var(--font); cursor: pointer; transition: background-color 150ms ease-out, border-color 150ms ease-out; } .ds-btn:hover { background: var(--surface-2); border-color: var(--text-muted); } .ds-btn:active { background: var(--surface-3); } .ds-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; } @media (prefers-reduced-motion: reduce) { .ds-btn { transition: none; } }"
+      "description": "Default neutral tint for every action that is not next.",
+      "html": "<button class=\"ds-btn-default\">Compare concepts</button>",
+      "css": ".ds-btn-default { display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 0 12px; border: 0; border-radius: 7px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); color: var(--text); font: 560 13px/1.2 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; cursor: pointer; transition: background-color 120ms cubic-bezier(0.2,0.7,0.2,1); } .ds-btn-default:hover { background: var(--surface-3); } .ds-btn-default:active { background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--border-strong); } .ds-btn-default:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }"
     },
     {
-      "name": "Primary Button",
+      "name": "Ghost Button",
       "kind": "button",
-      "refersTo": "button-primary",
-      "description": "One per decision area: Approve, Start export, Open the review queue.",
-      "html": "<button class=\"ds-btn-primary\">Approve</button>",
-      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: var(--control-h); padding: 0 12px; border-radius: var(--radius); border: 1px solid var(--border-control); background: var(--surface); color: var(--text); font: 550 13px/1.5 var(--font); cursor: pointer; transition: background-color 150ms ease-out, border-color 150ms ease-out; background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 650; } .ds-btn-primary:hover { background: color-mix(in srgb, var(--accent) 88%, var(--text)); } .ds-btn-primary:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }"
-    },
-    {
-      "name": "Segmented Viewer Group",
-      "kind": "custom",
-      "refersTo": "segment",
-      "description": "Joined viewer options with a pressed segment; backdrop choice is independent of theme.",
-      "html": "<div class=\"ds-seg\" role=\"group\" aria-label=\"Background\"><button aria-pressed=\"true\">Checkerboard</button><button aria-pressed=\"false\">Light</button><button aria-pressed=\"false\">Dark</button></div>",
-      "css": ".ds-seg { display: inline-flex; } .ds-seg > button { min-height: 28px; padding: 0 8px; margin: 0 0 0 -1px; border: 1px solid var(--border-control); border-radius: 0; background: var(--surface); color: var(--text); font: 550 13px/1.5 var(--font); cursor: pointer; } .ds-seg > button:first-child { margin-left: 0; border-radius: var(--radius) 0 0 var(--radius); } .ds-seg > button:last-child { border-radius: 0 var(--radius) var(--radius) 0; } .ds-seg > button:hover { background: var(--surface-2); } .ds-seg > button[aria-pressed=\"true\"] { position: relative; background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 650; } .ds-seg > button:focus-visible { position: relative; z-index: 1; outline: 2px solid var(--focus); outline-offset: 3px; }"
+      "refersTo": "button-ghost",
+      "description": "Cancel, Back, Ask for a revision, inspector tabs.",
+      "html": "<button class=\"ds-btn-ghost\">Ask for a revision</button>",
+      "css": ".ds-btn-ghost { display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 0 12px; border: 0; border-radius: 7px; background: transparent; color: var(--text-muted); font: 560 13px/1.2 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; cursor: pointer; transition: background-color 120ms cubic-bezier(0.2,0.7,0.2,1), color 120ms cubic-bezier(0.2,0.7,0.2,1); } .ds-btn-ghost:hover { background: var(--surface-2); color: var(--text); } .ds-btn-ghost:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }"
     },
     {
       "name": "Text Field",
       "kind": "input",
       "refersTo": "input",
-      "description": "Labelled 34px field with accent caret and global focus outline.",
-      "html": "<label class=\"ds-field\"><span>Reason</span><input class=\"ds-input\" placeholder=\"One per line\"></label>",
-      "css": ".ds-field { display: grid; gap: 4px; font: 600 12px/1.5 var(--font); color: var(--text); } .ds-input { min-height: var(--control-h); padding: 6px 10px; border-radius: var(--radius); border: 1px solid var(--border-control); background: var(--surface); color: var(--text); font: 400 13px/1.5 var(--font); caret-color: var(--accent); } .ds-input::placeholder { color: var(--text-muted); opacity: 1; } .ds-input:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }"
+      "description": "Field well with a strong hairline; focus thickens the ring to ink.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"Asset name\">",
+      "css": ".ds-input { width: 100%; min-height: 32px; padding: 6px 10px; border: 0; border-radius: 7px; background: var(--field); box-shadow: inset 0 0 0 1px var(--border-strong); color: var(--text); font: 400 13px/1.5 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; transition: box-shadow 120ms cubic-bezier(0.2,0.7,0.2,1); } .ds-input::placeholder { color: var(--text-faint); } .ds-input:hover:not(:focus) { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 32%, transparent); } .ds-input:focus-visible { outline: 0; box-shadow: inset 0 0 0 1.5px var(--text); }"
     },
     {
-      "name": "Status Chips",
-      "kind": "chip",
-      "refersTo": "status-ok",
-      "description": "Icon plus words, never colour alone.",
-      "html": "<span class=\"ds-status ds-ok\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"m8 12 3 3 5-6\"/></svg><span>Approved</span></span> <span class=\"ds-status ds-warn\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M10.3 4a2 2 0 0 1 3.4 0L22 18a2 2 0 0 1-1.7 3H3.7A2 2 0 0 1 2 18L10.3 4Z\"/><path d=\"M12 9v4m0 4h.01\"/></svg><span>Not the current branch</span></span>",
-      "css": ".ds-status { display: inline-flex; align-items: center; gap: 5px; padding: 2px 6px; border-radius: 4px; font: 550 12px/1.5 var(--font); } .ds-status .ds-icon { width: 14px; height: 14px; } .ds-ok { color: var(--ok); background: var(--ok-soft); } .ds-warn { color: var(--warn); background: var(--warn-soft); }"
-    },
-    {
-      "name": "Primary Navigation",
+      "name": "Top Bar Tabs",
       "kind": "nav",
-      "refersTo": "nav-tab",
-      "description": "Four destinations; current tab gets accent text, wash, and a 2px bottom edge.",
-      "html": "<nav class=\"ds-nav\" aria-label=\"Primary\"><a href=\"#\">Workbench</a><a href=\"#\" aria-current=\"page\">Review</a><a href=\"#\">Releases</a><a href=\"#\">Activity</a></nav>",
-      "css": ".ds-nav { display: flex; gap: 4px; min-height: 42px; padding: 0 20px; background: var(--surface); border-bottom: 1px solid var(--border); } .ds-nav a { display: inline-flex; align-items: center; padding: 0 16px; color: var(--text-muted); text-decoration: none; font: 550 13px/1.5 var(--font); border-bottom: 2px solid transparent; } .ds-nav a:hover { color: var(--text); background: var(--surface-2); } .ds-nav a[aria-current=\"page\"] { color: var(--accent); border-bottom-color: var(--accent); background: var(--accent-soft); } .ds-nav a:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }"
+      "refersTo": "tab-current",
+      "description": "Home · Review · Releases; current tab carries a 2px ink underline on the bar's hairline; Review shows an ink count.",
+      "html": "<nav class=\"ds-tabs\"><a href=\"#\" aria-current=\"page\">Home</a><a href=\"#\">Review <span class=\"ds-count\">4</span></a><a href=\"#\">Releases</a></nav>",
+      "css": ".ds-tabs { display: flex; height: 48px; background: var(--surface); border-bottom: 1px solid var(--border); } .ds-tabs a { position: relative; display: inline-flex; align-items: center; gap: 7px; padding: 0 11px; color: var(--text-muted); font: 560 13px -apple-system, BlinkMacSystemFont, system-ui, sans-serif; text-decoration: none; } .ds-tabs a:hover, .ds-tabs a[aria-current=page] { color: var(--text); } .ds-tabs a[aria-current=page]::after { content: \"\"; position: absolute; inset: auto 11px -1px; height: 2px; border-radius: 2px; background: var(--accent); } .ds-tabs a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; } .ds-count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: var(--accent-text); font: 650 11px/1 ui-monospace, 'SF Mono', Menlo, monospace; }"
     },
     {
-      "name": "Asset Navigator Task",
-      "kind": "nav",
-      "refersTo": "navigator-item-active",
-      "description": "Task rows in the 264px navigator; active row ringed with a 1px inset accent.",
-      "html": "<ul class=\"ds-tasks\"><li><a href=\"#\">idle-rest</a></li><li data-active><a href=\"#\">walk</a></li></ul>",
-      "css": ".ds-tasks { list-style: none; margin: 0; padding: 12px; width: 264px; background: var(--surface); font: 400 13px/1.5 var(--font); } .ds-tasks a { display: flex; align-items: center; min-height: 30px; padding: 0 8px; border-radius: 4px; color: var(--text); text-decoration: none; font-weight: 600; } .ds-tasks a:hover { background: var(--accent-soft); } .ds-tasks [data-active] > a { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); } .ds-tasks a:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }"
-    },
-    {
-      "name": "Stage Pane",
+      "name": "Segmented Control",
       "kind": "custom",
-      "refersTo": "stage-pane",
-      "description": "Sunken stage well holding a checkerboard viewer; artwork colours untouched.",
-      "html": "<div class=\"ds-stage\"><div class=\"ds-checker\" role=\"img\" aria-label=\"Transparent viewing area\"></div></div>",
-      "css": ".ds-stage { padding: 6px; background: var(--stage); border: 1px solid var(--border); border-radius: var(--radius); } .ds-checker { height: 160px; border: 1px solid var(--border); border-radius: var(--radius); background-color: var(--checker-b); background-image: linear-gradient(45deg, var(--checker-a) 25%, transparent 25%, transparent 75%, var(--checker-a) 75%), linear-gradient(45deg, var(--checker-a) 25%, transparent 25%, transparent 75%, var(--checker-a) 75%); background-size: 24px 24px; background-position: 0 0, 12px 12px; }"
+      "refersTo": "seg-pressed",
+      "description": "One pressed choice among a few; the pressed segment lifts.",
+      "html": "<div class=\"ds-seg\" role=\"group\"><button aria-pressed=\"true\">Checker</button><button aria-pressed=\"false\">Light</button><button aria-pressed=\"false\">Dark</button></div>",
+      "css": ".ds-seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); } .ds-seg button { min-height: 26px; padding: 0 9px; border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); font: 540 12.5px -apple-system, BlinkMacSystemFont, system-ui, sans-serif; cursor: pointer; transition: background-color 120ms cubic-bezier(0.2,0.7,0.2,1), color 120ms cubic-bezier(0.2,0.7,0.2,1); } .ds-seg button:hover { color: var(--text); } .ds-seg button[aria-pressed=true] { background: var(--seg-on); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / 0.22); } .ds-seg button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }"
     },
     {
-      "name": "Next-Action Band",
+      "name": "Filter Chip and Stamp",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Filter chips are transparent pills that tint when pressed; stamps are outlined final facts, never filled.",
+      "html": "<div style=\"display:flex;gap:6px;align-items:center\"><button class=\"ds-chip\" aria-pressed=\"true\">All <span class=\"n\">7</span></button><button class=\"ds-chip\" aria-pressed=\"false\">Needs you <span class=\"n\">5</span></button><span class=\"ds-stamp\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"5.5\" y=\"10.5\" width=\"13\" height=\"9\" rx=\"1.5\"/><path d=\"M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5\"/></svg>Locked · Candidate 8</span></div>",
+      "css": ".ds-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 0 10px; border: 0; border-radius: 13px; background: transparent; color: var(--text-muted); font: 540 12.5px -apple-system, BlinkMacSystemFont, system-ui, sans-serif; cursor: pointer; } .ds-chip:hover { background: var(--surface-2); color: var(--text); } .ds-chip[aria-pressed=true] { background: var(--surface-3); color: var(--text); } .ds-chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; } .ds-chip .n { font: 550 11px ui-monospace, 'SF Mono', Menlo, monospace; color: var(--text-faint); } .ds-stamp { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 6px; box-shadow: inset 0 0 0 1px var(--border-strong); color: var(--text); font: 640 11.5px -apple-system, BlinkMacSystemFont, system-ui, sans-serif; white-space: nowrap; }"
+    },
+    {
+      "name": "Sheet Cells",
       "kind": "card",
-      "refersTo": "next-band",
-      "description": "Workbench band naming what remains, with one primary action.",
-      "html": "<div class=\"ds-next\"><p><strong>Next:</strong> 2 outputs are waiting for a decision.</p><button class=\"ds-next-btn\">Open the review queue</button></div>",
-      "css": ".ds-next { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 16px; border: 1px solid var(--accent); border-radius: var(--radius); background: var(--accent-soft); color: var(--text); font: 400 14px/1.5 var(--font); } .ds-next p { margin: 0; flex: 1; } .ds-next-btn { min-height: var(--control-h); padding: 0 12px; border: 1px solid var(--accent); border-radius: var(--radius); background: var(--accent); color: var(--accent-text); font: 650 13px/1.5 var(--font); cursor: pointer; } .ds-next-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }"
+      "refersTo": "art-cell",
+      "description": "Deliverable cells on the transparency checker: waiting with a count and the marquee, approved, and a dashed locked empty cell.",
+      "html": "<div class=\"ds-cells\"><div class=\"ds-slot\"><div class=\"ds-art ds-marquee\"><span class=\"ds-badge\">2</span></div><div class=\"ds-name\">wonder</div><div class=\"ds-state you\">2 waiting for you</div></div><div class=\"ds-slot\"><div class=\"ds-art\"></div><div class=\"ds-name\">guarded</div><div class=\"ds-state\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"var(--ok)\" stroke-width=\"1.6\" stroke-linecap=\"round\"><path d=\"m5 12.5 4.5 4.5L19 7.5\"/></svg>Approved</div></div><div class=\"ds-slot\"><div class=\"ds-art ds-empty\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"5.5\" y=\"10.5\" width=\"13\" height=\"9\" rx=\"1.5\"/><path d=\"M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5\"/></svg></div><div class=\"ds-name\">story-set <span class=\"opt\">optional</span></div><div class=\"ds-state\">Needs wonder, effort</div></div></div>",
+      "css": ".ds-cells { display: grid; grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); gap: 18px 14px; font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif; } .ds-slot { display: grid; gap: 8px; align-content: start; } .ds-art { position: relative; aspect-ratio: 1; border-radius: 5px; box-shadow: inset 0 0 0 1px var(--border); background-color: var(--checker-b); background-image: conic-gradient(var(--checker-a) 25%, transparent 0 50%, var(--checker-a) 0 75%, transparent 0); background-size: 14px 14px; } .ds-art.ds-empty { display: grid; place-items: center; background: none; box-shadow: none; border: 1px dashed var(--border-strong); color: var(--text-faint); } .ds-badge { position: absolute; top: 7px; right: 7px; display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: var(--accent-text); font: 650 11px/1 ui-monospace, 'SF Mono', Menlo, monospace; } .ds-name { font-size: 13px; font-weight: 580; line-height: 1.3; color: var(--text); } .ds-name .opt { font-size: 11.5px; font-weight: 500; color: var(--text-faint); } .ds-state { display: flex; gap: 6px; align-items: flex-start; margin-top: -4px; font-size: 12px; line-height: 1.35; color: var(--text-muted); } .ds-state.you { color: var(--text); font-weight: 600; } .ds-marquee::after { content: \"\"; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background-image: linear-gradient(90deg, var(--text) 50%, transparent 0), linear-gradient(90deg, var(--text) 50%, transparent 0), linear-gradient(0deg, var(--text) 50%, transparent 0), linear-gradient(0deg, var(--text) 50%, transparent 0); background-repeat: repeat-x, repeat-x, repeat-y, repeat-y; background-size: 8px 1.5px, 8px 1.5px, 1.5px 8px, 1.5px 8px; background-position: 0 0, 0 100%, 0 0, 100% 0; animation: ds-marquee 0.8s linear infinite; } @keyframes ds-marquee { to { background-position: 8px 0, -8px 100%, 0 -8px, 100% 8px; } } @media (prefers-reduced-motion: reduce) { .ds-marquee::after { animation: none; } }"
+    },
+    {
+      "name": "Mini-Sheet Progress",
+      "kind": "custom",
+      "refersTo": "mini-cell",
+      "description": "One tiny cell per required deliverable: filled done, ringed waiting, amber blocked, red failed, hollow to do.",
+      "html": "<span class=\"ds-mini\" role=\"img\" aria-label=\"2 of 5 done\"><b class=\"done\"></b><b class=\"done\"></b><b class=\"wait\"></b><b class=\"block\"></b><b class=\"bad\"></b><b></b></span>",
+      "css": ".ds-mini { display: inline-grid; grid-auto-flow: column; gap: 2px; vertical-align: middle; } .ds-mini > b { width: 9px; height: 9px; border-radius: 2px; box-shadow: inset 0 0 0 1px var(--border-strong); } .ds-mini > b.done { background: var(--text); box-shadow: none; } .ds-mini > b.wait { box-shadow: inset 0 0 0 1.5px var(--text); } .ds-mini > b.block { background: var(--warn-soft); box-shadow: inset 0 0 0 1.5px var(--warn); } .ds-mini > b.bad { background: var(--danger-soft); box-shadow: inset 0 0 0 1.5px var(--danger); }"
+    },
+    {
+      "name": "Warning Banner",
+      "kind": "card",
+      "refersTo": "banner-warn",
+      "description": "Icon column plus body; warn and bad tint to their soft wash with a 28% ring.",
+      "html": "<div class=\"ds-banner warn\" role=\"status\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 4 21 19.5H3z\"/><path d=\"M12 10v4.5m0 2.5v.2\"/></svg><div class=\"body\"><strong>Out of date</strong>1 asset differs from the game. Reasons are listed per asset below.</div></div>",
+      "css": ".ds-banner { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 10px; align-items: start; padding: 12px 14px; border-radius: 10px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); font: 400 13px/1.5 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; color: var(--text); } .ds-banner > svg { margin-top: 1px; } .ds-banner .body > strong { display: block; margin-bottom: 2px; font-weight: 640; } .ds-banner.warn { background: var(--warn-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 28%, transparent); } .ds-banner.warn > svg, .ds-banner.warn strong { color: var(--warn); }"
     }
   ],
   "narrative": {
-    "northStar": "The Animation Checking Room",
-    "overview": "Brainforge is a production workbench for a solo indie 2D game developer judging generated art and animation on a macOS desktop. The system holds the artwork still while the surrounding tools change: a compact two-row header, a narrow asset navigator, a dominant viewing stage, and a contextual decision inspector. Moving between definition, production, review, and release changes the task around the asset; it never moves the asset off the stage.\n\nThe world is neutral graphite and slate with clear near-white text in dark, and an intentional cool-paper counterpart in light. Both are one token set written as CSS `light-dark()` pairs; the appearance control only flips `color-scheme`. A single restrained cool blue marks action, selection, and current location. Everything else is flat: fine 1px separators, squared-off soft 6px corners, panes rather than nested cards, and shadows only on transient layers. Density is compact and desktop-first (34px controls, 13px control text), and coarse pointers grow every control to 44px.\n\nThe artwork's own colour is never interpreted. Viewing backdrops (checkerboard, light, dark) are a per-viewer choice independent of the app theme, native-resolution views render pixelated, and measurement overlays use a single magenta that belongs to neither theme. Per-route composition lives in the surface brief (`.impeccable/surfaces/src-app-tsx.md`), not here.",
+    "northStar": "The Sprite Sheet",
+    "overview": "The project is a sprite sheet you fill in. Every deliverable is a cell, and the cell's own art says whether it is done, waiting for you, empty or blocked. The chrome is graphite and paper in both themes so that the only saturated colour on screen is the artwork itself. Status is told by the form of a cell or mark (filled, ringed, dashed, locked, struck) before colour confirms it. One control per screen is filled with ink, and that control is the next thing to do.\n\nDensity is compact and desktop-first: 14px system type, 30px controls, cells tiled at full density with whitespace only between groups. Surfaces are flat panels edged by a hairline inset ring; there are no nested cards. Depth exists only for things that float (menus, dialogs, the frosted toolbar over the stage). Motion is limited to state changes, and the marching-ants marquee marks the cell you are on.\n\nThe world rejects the tracker default: asset/step sidebar trees, status-pill tables and one-step-per-page flows. Rank comes from apparatus (art thumbs, the ink button, a bigger row), not from louder type.",
     "keyCharacteristics": [
-      "Flat graphite/slate panes with 1px hairline separators; light counterpart from the same `light-dark()` tokens.",
-      "One restrained blue for action, selection, focus, and current location.",
-      "System sans in a compact ramp (12–24px); no display role; tabular numerals for frames, counts, and hashes.",
-      "Artwork-led pane grammar: navigator, stage, inspector, strip.",
-      "Theme-independent viewing backdrops and measurement guides.",
-      "Status always carries an icon and text, never colour alone."
+      "Graphite and paper neutrals; colour belongs to the artwork.",
+      "Ink fill appears on one control per screen: the next action.",
+      "State reads by form first: filled, ringed, dashed, locked, struck.",
+      "Art sits on a transparency checker and is never cropped. Small sources scale with hard pixels.",
+      "Hairline inset rings, flat panels, no nested cards.",
+      "Motion only on state changes, at most 160ms. Live loops stop under reduced motion."
     ],
     "rules": [
-      {
-        "name": "The Quiet Blue Rule",
-        "body": "`accent` means \"act here\" or \"this one is current\". It never decorates, never fills a pane, and never appears as a second accent hue.",
-        "section": "colors"
-      },
-      {
-        "name": "The Untouched Artwork Rule",
-        "body": "Viewing backdrops and guides never follow the app theme, and no filter, tint, or blend ever touches an output. Light, dark, or checker is the reviewer's choice per viewer.",
-        "section": "colors"
-      },
-      {
-        "name": "The Never-Colour-Alone Rule",
-        "body": "Every status is an icon plus words; tone colour only reinforces it.",
-        "section": "colors"
-      },
-      {
-        "name": "The No-Display Rule",
-        "body": "The system has no display role. The largest type is a 24px page headline, and in the review room identity tops out at 17px so the artwork owns the viewport.",
-        "section": "typography"
-      },
-      {
-        "name": "The Tabular Identity Rule",
-        "body": "Frame numbers, counts, version numbers, and ledger cells use `font-variant-numeric: tabular-nums` so live updates never shift columns.",
-        "section": "typography"
-      },
-      {
-        "name": "The Still Artwork Rule",
-        "body": "When space runs out, tools move (navigator collapses, inspector becomes a drawer); the stage never shrinks to make room for chrome.",
-        "section": "layout"
-      },
-      {
-        "name": "The One Scroller Rule",
-        "body": "The page never scrolls behind the workspace. `main` scrolls; panes scroll internally; sticky heads stay inside their scroller.",
-        "section": "layout"
-      },
-      {
-        "name": "The Flat-At-Rest Rule",
-        "body": "Resting surfaces carry no shadow. If it does not float and dismiss, it gets a hairline instead.",
-        "section": "elevation"
-      },
-      {
-        "name": "The Separator-Not-Card Rule",
-        "body": "Sections are flat bands divided by a top hairline. A panel nested in a panel loses its border, radius, and fill and becomes a separator.",
-        "section": "shapes"
-      }
+      { "name": "The One Ink Rule", "body": "Only the next action is filled with ink. Every other button is a neutral tint, a ghost or a link. If a screen has two ink buttons, one of them is wrong.", "section": "colors" },
+      { "name": "The Chroma Belongs to the Art Rule", "body": "Chrome carries no hue except the three status colours and the two over-art marks. A colour that does not mean approved, warning, failure, note or guide does not belong in chrome.", "section": "colors" },
+      { "name": "The Fixed Backdrop Rule", "body": "Marks drawn on artwork (note, guide) and the Light/Dark judging backdrops keep one value in both themes, because the art does not change with the theme.", "section": "colors" },
+      { "name": "The Weight Not Size Rule", "body": "Rank inside a screen comes from weight and apparatus. Nothing outside the h1 exceeds 17px.", "section": "typography" },
+      { "name": "The Mono Is for Measures Rule", "body": "Mono marks things you count or copy: frames, sizes, counts, paths and IDs. Prose and labels are never set in mono.", "section": "typography" },
+      { "name": "The Full Density Rule", "body": "Cells tile edge to edge at the grid gap, and whitespace separates groups, never cells.", "section": "layout" },
+      { "name": "The Selection Follows You Rule", "body": "Going Back from a room lands on the same cell with the marquee on it. Queue next and previous keep branch and output context. Live updates never move the control under the pointer.", "section": "layout" },
+      { "name": "The Ring Not Border Rule", "body": "Resting surfaces get an inset 1px ring. A solid border means a separator, and a dashed border means \"nothing here yet\".", "section": "elevation" },
+      { "name": "The Only Floats Lift Rule", "body": "Shadows belong to menus, dialogs and controls over art. A panel on the page never lifts.", "section": "elevation" },
+      { "name": "The Form Before Colour Rule", "body": "Each state must remain readable in greyscale. Colour confirms a state, it never carries it alone. Status is always an icon plus text.", "section": "shapes" },
+      { "name": "The Nothing Disappears Rule", "body": "Rejected work is struck, not removed, and history is kept.", "section": "shapes" }
     ],
     "dos": [
-      "Do take every colour from the `light-dark()` tokens; switching appearance changes only `color-scheme`.",
-      "Do keep the stage at full width when space runs out: collapse the navigator at ≤1279px and move the inspector into the native drawer at ≤1100px.",
-      "Do give every status an icon and words, using the five tone pairs.",
-      "Do separate sections with a 1px top hairline and keep them flat; reserve 6px-cornered bordered boxes for actual objects (candidates, notes, versions, stages).",
-      "Do keep controls at 34px (44px on coarse pointers) and build gaps from the 4px unit.",
-      "Do render outputs on the viewer-chosen backdrop (`checker-a`/`checker-b`, `view-light`, `view-dark`) and use `image-rendering: pixelated` for native-resolution views."
+      "Do fill exactly one control per screen with ink (`accent`), and make it the next action.",
+      "Do show state by form first (filled, ringed, dashed, locked, struck, marquee), then confirm with `ok`, `warn` or `danger`, and always put an icon beside the text.",
+      "Do put every output on a checker, contained and never cropped, with `image-rendering: pixelated` for sources of 128px or less.",
+      "Do edge resting surfaces with `inset 0 0 0 1px var(--border)` and separate rows with 1px hairlines inside one surface.",
+      "Do use mono for frames, sizes, counts, paths and IDs, with tabular numerals.",
+      "Do keep transitions at or under 160ms and let `prefers-reduced-motion` stop every loop.",
+      "Do keep `note`, `guide` and the Light/Dark backdrops theme-independent."
     ],
     "donts": [
-      "Don't tie viewing backdrops or guides to the app theme, or filter, tint, or blend an output.",
-      "Don't add a second accent hue or use `accent` as decoration; it marks action, selection, and current location only.",
-      "Don't put shadows on resting surfaces; only popovers, the drawer, and dialogs float.",
-      "Don't nest bordered cards; an inner panel becomes a separator.",
-      "Don't introduce radii other than 4px, 6px, and pills.",
-      "Don't let live updates move an action under the pointer; use tabular numerals and fixed-position controls."
+      "Don't fill a second control with ink. Ink markers (counts, note numbers, tags) are allowed because they are not controls; secondary actions use the neutral tint, ghost or link.",
+      "Don't add hue to chrome beyond the three status colours and the two over-art marks.",
+      "Don't nest a card inside a card. Inner groups become a tinted inset (`surface-2`) or a hairline-topped band.",
+      "Don't remove rejected or superseded work. Strike it and keep it.",
+      "Don't use asset/step sidebar trees, status-pill tables or one step per page.",
+      "Don't mark a current row with a coloured side stripe. Use the ink wash or a ring.",
+      "Don't set type above 17px outside the page headline, and don't use a display face."
     ]
   }
 }

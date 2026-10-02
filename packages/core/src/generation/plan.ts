@@ -104,7 +104,12 @@ export async function createPlan(env: PlanEnvironment, input: ParsedOperationInp
   const stage: WorkflowStage = input.stepId === "concept" ? (input.mode === "fresh" ? "still" : "variation") : isMotion ? "motion" : "variation";
   const family = spec?.family ?? "character";
   const alpha = resolveAlpha(family, deliverable?.deliverable);
-  const workflowId = workflowFor(family, stage, alpha) ?? "unavailable";
+  // Computed once: workflow selection and prompt composition share it.
+  const effective = asset && spec ? computeEffective(set, { assetId: asset.fileId, ...(deliverable?.deliverable ? { deliverableId: deliverable.deliverable.id } : {}) }) : undefined;
+  const base = workflowFor(family, stage, alpha);
+  // An authored override (workflows.<stage>, or workflows.<stage>Opaque for opaque output) picks the workflow, but never for a stage the family does not offer.
+  const override = effective?.effective[`workflows.${stage}${alpha === "opaque" ? "Opaque" : ""}`]?.value;
+  const workflowId = (base && typeof override === "string" && override.trim() ? override.trim() : base) ?? "unavailable";
   try {
     wf = await loadDescriptor(env.workflowsDir, workflowId);
   } catch (e) {
@@ -176,11 +181,10 @@ export async function createPlan(env: PlanEnvironment, input: ParsedOperationInp
   if (spec) for (const s of stylesFor(set, spec)) specHashes[s.path] = s.hash;
 
   let promptSources: GenerationPlan["promptSources"] = [];
-  if (asset && spec && wf) {
+  if (asset && spec && wf && effective) {
     if (input.mode === "variation" && !input.iterationInstructions?.trim()) {
       block("ITERATION_REQUIRED", "A variation needs iterationInstructions describing what to change.");
     }
-    const effective = computeEffective(set, { assetId: asset.fileId, ...(deliverable?.deliverable ? { deliverableId: deliverable.deliverable.id } : {}) });
     for (const c of effective.conflicts) block("STYLE_CONFLICT", `Styles disagree on ${c.field}: ${c.values.map((v) => `${v.file}=${JSON.stringify(v.value)}`).join("; ")}.`, [{ label: "Resolve in the style files", operation: "spec.read" }]);
     promptSources = composePrompt({
       set, asset, spec, effective, mode: input.mode, workflow: wf, iterationInstructions: input.iterationInstructions,

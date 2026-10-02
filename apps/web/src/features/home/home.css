@@ -1,0 +1,62 @@
+/* Home: head with progress line, Up next rows, asset cards. Tokens only. */
+.home-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 24px; margin-bottom: 28px; }
+.home-head h1 { overflow-wrap: anywhere; }
+.home-head .sum { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-height: 24px; margin-top: 10px; color: var(--text-muted); font-size: 13.5px; }
+.home-head .sum strong { color: var(--text); font-weight: 600; }
+.home-head .sum .faint { color: var(--text-faint); }
+.home-head .sum a { color: inherit; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
+.home-head .sum a:hover { color: var(--text); }
+.home-head .actions { margin-left: auto; display: flex; gap: 8px; }
+.home .banner { margin-bottom: 16px; }
+
+.home-next { margin-bottom: 36px; }
+.home-next .rows > li { display: grid; grid-template-columns: 148px minmax(0, 1fr) auto; align-items: center; gap: 20px; padding: 14px 18px 14px 14px; }
+.home-next li.lead { padding-block: 20px; }
+.home-next .what { font-size: 14px; font-weight: 600; letter-spacing: -0.005em; overflow-wrap: anywhere; }
+.home-next li.lead .what { font-size: 16px; }
+.home-next .why { margin-top: 3px; color: var(--text-muted); font-size: 13px; }
+.home-next .do { display: grid; justify-items: end; gap: 6px; max-width: 280px; }
+.home-next .do .status { white-space: nowrap; }
+.home-next .do [role="alert"] { justify-self: end; text-align: right; }
+.home-next .more { display: flex; justify-content: center; padding: 8px; }
+.home-calm { padding: 18px 20px; color: var(--text-muted); font-size: 14px; }
+.thumbs { display: flex; gap: 4px; min-height: 34px; }
+.thumbs .art { width: 34px; height: 34px; border-radius: 5px; }
+.thumbs .art > img { padding: 2px; }
+li.lead .thumbs .art { width: 54px; height: 54px; }
+li.lead .thumbs { min-height: 54px; }
+
+.asset-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-left: 18px; }
+.asset-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 22px 18px; }
+.asset-grid > li { min-width: 0; }
+.asset-card { display: grid; gap: 10px; min-width: 0; color: inherit; text-decoration: none; }
+.asset-card .art { aspect-ratio: 4 / 3; border-radius: 8px; }
+.asset-card .art > img { padding: 10px; }
+.asset-card .art.pixel > img { padding: 34px; }
+/* A tag sits on the art's top edge; the art starts below it. */
+.asset-card .art:has(> .tag) > img { padding-top: 38px; }
+.asset-card:hover .art { box-shadow: inset 0 0 0 1px var(--border-strong); }
+.asset-card .art.empty { box-shadow: none; }
+.asset-card .tag { position: absolute; top: 9px; left: 9px; display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 11px; background: var(--accent); color: var(--accent-text); font-size: 11.5px; font-weight: 600; }
+.asset-card .tag.warn { background: var(--warn-soft); color: var(--warn); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 30%, transparent); backdrop-filter: blur(6px); }
+.asset-card .tag.bad { background: var(--danger-soft); color: var(--danger); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 30%, transparent); backdrop-filter: blur(6px); }
+.asset-card .line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.asset-card .name { min-width: 0; overflow: hidden; font-size: 14px; font-weight: 620; letter-spacing: -0.005em; text-overflow: ellipsis; white-space: nowrap; }
+.asset-card .fam { color: var(--text-faint); font-size: 12.5px; white-space: nowrap; }
+.asset-card .state { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-height: 18px; color: var(--text-muted); font-size: 12.5px; }
+.asset-card .state .icon { color: var(--ok); flex: none; }
+.asset-card .state .mini { flex: none; }
+.home-none { color: var(--text-muted); }
+
+@media (max-width: 1024px) {
+  .home-next .rows > li { grid-template-columns: 96px minmax(0, 1fr) auto; gap: 14px; }
+  .home-next .thumbs .art, .home-next li.lead .thumbs .art, .home-next .thumbs .glyph { width: 28px; height: 28px; }
+  .home-next .thumbs, .home-next li.lead .thumbs { min-height: 28px; }
+  .home-next .thumbs .glyph .icon { width: 16px; height: 16px; }
+}
+/* Narrow: art stays left of the title; the action drops under the text. */
+@media (max-width: 760px) {
+  .home-next .rows > li { grid-template-columns: auto minmax(0, 1fr); }
+  .home-next .do { grid-column: 2; justify-items: start; max-width: none; }
+  .asset-filters { margin-left: 0; }
+}

@@ -1,8 +1,10 @@
 import { useEffect, useState, type RefObject } from "react";
 import type { Annotation, CandidateOutput, FrameRange, Geometry, OperationError } from "@brainforge/contracts";
 import { useMutationOperation } from "../../api/hooks.ts";
-import { ErrorBanner, formatTime } from "../../components/ui.tsx";
+import { ErrorBanner, formatTime, timeAgo } from "../../components/ui.tsx";
 import { Icon } from "../../components/Icon.tsx";
+import { whoLabel } from "./room-lib.ts";
+
 const describe = (g: Geometry): string => (g.kind === "whole" ? "Whole image" : g.kind === "pin" ? "Pin" : "Rectangle");
 /** UI frame numbers are one-based; stored ranges are zero-based source frames. */
 export const rangeLabel = (r: FrameRange): string => (r.start === r.end ? `source frame ${r.start + 1}` : `source frames ${r.start + 1}–${r.end + 1}`);
@@ -25,21 +27,24 @@ interface PanelProps {
   formRef: RefObject<HTMLTextAreaElement | null>;
   /** Present for frame-sequence outputs: notes then carry a source-frame range. */
   frame?: FrameContext;
+  /** Notes made on other outputs of this candidate and so not shown here. */
+  elsewhere: number;
 }
 
-export function AnnotationPanel({ candidateId, output, annotations, selectedId, onSelect, draft, onDraftChange, formRef, frame }: PanelProps) {
+/** The numbered notes of the output on the stage, with the form for a note being placed. */
+export function AnnotationPanel({ candidateId, output, annotations, selectedId, onSelect, draft, onDraftChange, formRef, frame, elsewhere }: PanelProps) {
   return (
-    <div className="stack">
-      {draft ? <DraftForm candidateId={candidateId} output={output} draft={draft} onDraftChange={onDraftChange} formRef={formRef} onCreated={onSelect} frame={frame} /> : (
-        <p className="secondary">Choose Pin or Rectangle and click or drag on the image, use “Note on whole image”, or focus the image and press Enter to place a pin at the centre.</p>
-      )}
-      <h3>Notes on this {output.stage === "processed" ? "processed" : output.role === "matted" ? "matted" : "untouched"} output ({annotations.length})</h3>
-      {annotations.length === 0 ? <p className="secondary">No notes on this output. Notes never carry over to a different output.</p> : (
-        <ol className="plain stack" aria-label="Notes">
+    <section className="notes" id="room-notes" aria-labelledby="notes-title">
+      <div className="notes-head"><h2 id="notes-title">Notes</h2><span className="n">{annotations.length}</span></div>
+      {draft ? <DraftForm candidateId={candidateId} output={output} draft={draft} onDraftChange={onDraftChange} formRef={formRef} onCreated={onSelect} frame={frame} /> : null}
+      {annotations.length === 0 && !draft ? <p className="secondary">No notes on this output. Use Note on the stage to pin something, mark a rectangle or comment on the whole image. Notes never carry over to a different output.</p> : null}
+      {annotations.length > 0 ? (
+        <ol className="plain" aria-label="Notes">
           {annotations.map((a, i) => <NoteItem key={a.annotationId} annotation={a} index={i + 1} selected={a.annotationId === selectedId} onSelect={onSelect} />)}
         </ol>
-      )}
-    </div>
+      ) : null}
+      {elsewhere > 0 ? <p className="secondary">{elsewhere} {elsewhere === 1 ? "note was" : "notes were"} made on another output and {elsewhere === 1 ? "is" : "are"} not shown here.</p> : null}
+    </section>
   );
 }
 
@@ -70,7 +75,7 @@ function DraftForm({ candidateId, output, draft, onDraftChange, formRef, onCreat
 
   return (
     <form
-      className="panel stack"
+      className="note-draft"
       aria-label="New note"
       onSubmit={(e) => {
         e.preventDefault();
@@ -80,36 +85,40 @@ function DraftForm({ candidateId, output, draft, onDraftChange, formRef, onCreat
         if (e.key === "Escape") onDraftChange(undefined);
       }}
     >
-      <h3>New note — {describe(draft)}</h3>
-      {draft.kind !== "whole" ? (
-        <fieldset className="row" aria-label="Position in percent of the image">
-          <legend className="secondary">Position (% of image; drag or use the arrow keys on the image)</legend>
-          {(draft.kind === "pin" ? (["x", "y"] as const) : (["x", "y", "width", "height"] as const)).map((field) => (
-            <label key={field} className="secondary">{field}{" "}
-              <input type="number" min={0} max={100} step="any" style={{ width: 84 }} value={pct(draft.kind === "pin" ? draft[field as "x" | "y"] : draft.kind === "rect" ? draft[field] : 0)} onChange={(e) => setField(field, Number(e.target.value))} />
-            </label>
-          ))}
-        </fieldset>
-      ) : null}
-      {frame ? (
-        <fieldset className="row" aria-label="Source frames this note applies to">
-          <legend className="secondary">Applies to source frames (1 to {frame.lastSourceFrame + 1}); the note stays on source frames even if the clip is resampled</legend>
-          <label className="secondary">from{" "}
-            <input type="number" min={1} max={frame.lastSourceFrame + 1} style={{ width: 72 }} value={range.start + 1} onChange={(e) => setRange({ start: Math.max(0, Number(e.target.value) - 1), end: Math.max(range.end, Number(e.target.value) - 1) })} />
-          </label>
-          <label className="secondary">to{" "}
-            <input type="number" min={1} max={frame.lastSourceFrame + 1} style={{ width: 72 }} value={range.end + 1} onChange={(e) => setRange({ start: Math.min(range.start, Number(e.target.value) - 1), end: Math.max(0, Number(e.target.value) - 1) })} />
-          </label>
-        </fieldset>
-      ) : null}
-      <div className="field">
-        <label htmlFor="note-text">Note</label>
-        <textarea id="note-text" ref={formRef} rows={3} value={text} onChange={(e) => setText(e.target.value)} maxLength={4000} />
+      <h3>New note · {describe(draft).toLowerCase()}</h3>
+      <div className="field compact">
+        <label htmlFor="note-text" className="sr-only">Note</label>
+        <textarea id="note-text" ref={formRef} rows={3} value={text} placeholder="What should change?" onChange={(e) => setText(e.target.value)} maxLength={4000} />
       </div>
-      <label className="row"><input type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} /> Requires revision</label>
+      <label><input type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} /> Blocks approval until it is revised</label>
+      {frame ? (
+        <fieldset className="range-fields" aria-label="Source frames this note applies to">
+          <legend>Applies to source frames 1 to {frame.lastSourceFrame + 1}</legend>
+          <label>from
+            <input type="number" min={1} max={frame.lastSourceFrame + 1} value={range.start + 1} onChange={(e) => setRange({ start: Math.max(0, Number(e.target.value) - 1), end: Math.max(range.end, Number(e.target.value) - 1) })} />
+          </label>
+          <label>to
+            <input type="number" min={1} max={frame.lastSourceFrame + 1} value={range.end + 1} onChange={(e) => setRange({ start: Math.min(range.start, Number(e.target.value) - 1), end: Math.max(0, Number(e.target.value) - 1) })} />
+          </label>
+        </fieldset>
+      ) : null}
+      {draft.kind !== "whole" ? (
+        <details>
+          <summary>Position</summary>
+          <fieldset className="range-fields" aria-label="Position in percent of the image">
+            <legend>Percent of the image. Drag, or use the arrow keys on the image.</legend>
+            {(draft.kind === "pin" ? (["x", "y"] as const) : (["x", "y", "width", "height"] as const)).map((field) => (
+              <label key={field}>{field}
+                <input type="number" min={0} max={100} step="any" value={pct(draft.kind === "pin" ? draft[field as "x" | "y"] : draft.kind === "rect" ? draft[field] : 0)} onChange={(e) => setField(field, Number(e.target.value))} />
+              </label>
+            ))}
+          </fieldset>
+        </details>
+      ) : null}
       <div className="row">
-        <button type="submit" className="primary" disabled={text.trim() === "" || create.isPending || (draft.kind === "rect" && (draft.width === 0 || draft.height === 0))}>Add note</button>
-        <button type="button" onClick={() => onDraftChange(undefined)}>Cancel (Esc)</button>
+        <button type="submit" disabled={text.trim() === "" || create.isPending || (draft.kind === "rect" && (draft.width === 0 || draft.height === 0))}>Add note</button>
+        <button type="button" className="ghost" onClick={() => onDraftChange(undefined)}>Cancel</button>
+        <kbd aria-label="Escape cancels">Esc</kbd>
       </div>
       {error ? <ErrorBanner error={error} /> : null}
     </form>
@@ -127,7 +136,6 @@ function NoteItem({ annotation: a, index, selected, onSelect }: { annotation: An
   const [conflict, setConflict] = useState<{ text: string; required: boolean } | undefined>();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<OperationError | undefined>();
-
 
   useEffect(() => {
     if (!editing) {
@@ -157,52 +165,55 @@ function NoteItem({ annotation: a, index, selected, onSelect }: { annotation: An
 
   return (
     <li className={`note${selected ? " selected" : ""}`} aria-current={selected ? "true" : undefined}>
-      <div className="row">
-        <button type="button" className="note-number" onClick={() => onSelect(a.annotationId)} aria-label={`Select note ${index}, ${describe(a.geometry)}`}>{index}</button>
-        <span className="secondary">{describe(a.geometry)}{a.frameRange ? ` · ${rangeLabel(a.frameRange)}` : ""} · {a.createdBy} · {formatTime(a.updatedAt)} · v{a.version}</span>
-        {a.requiresRevision ? <span className="status warn"><Icon name="warn" /><span>Requires revision</span></span> : null}
-      </div>
-      {conflict ? (
-        <div className="banner warn" role="alert">
-          <Icon name="warn" />
-          <div className="body">
-            <strong>This note changed since you opened it</strong>
-            <div>Current text: <q>{a.text}</q> (v{a.version}{a.requiresRevision ? ", requires revision" : ""})</div>
-            <div>Your edit: <q>{conflict.text}</q></div>
-            <div className="row" style={{ marginTop: 8 }}>
-              <button type="button" onClick={() => void save(a.version)} disabled={update.isPending}>Reapply my edit on top of the current version</button>
-              <button type="button" onClick={() => { setConflict(undefined); setEditing(false); }}>Discard my edit</button>
+      <button type="button" className={`num${a.requiresRevision ? " req" : ""}`} onClick={() => onSelect(selected ? undefined : a.annotationId)} aria-label={`Note ${index}, ${describe(a.geometry).toLowerCase()}${selected ? ", selected" : ""}`}>{index}</button>
+      <div>
+        {conflict ? (
+          <div className="banner warn" role="alert">
+            <Icon name="warn" />
+            <div className="body">
+              <strong>This note changed since you opened it</strong>
+              <div>Current text: <q>{a.text}</q> (v{a.version}{a.requiresRevision ? ", blocks approval" : ""})</div>
+              <div>Your edit: <q>{conflict.text}</q></div>
+              <div className="row">
+                <button type="button" className="sm" onClick={() => void save(a.version)} disabled={update.isPending}>Reapply my edit on top</button>
+                <button type="button" className="sm ghost" onClick={() => { setConflict(undefined); setEditing(false); }}>Discard my edit</button>
+              </div>
             </div>
           </div>
-        </div>
-      ) : null}
-      {editing ? (
-        <form onSubmit={(e) => { e.preventDefault(); void save(seenVersion); }} className="stack" aria-label={`Edit note ${index}`}>
-          <div className="field">
-            <label htmlFor={`edit-${a.annotationId}`}>Note text</label>
+        ) : null}
+        {editing ? (
+          <form onSubmit={(e) => { e.preventDefault(); void save(seenVersion); }} className="note-edit" aria-label={`Edit note ${index}`}>
+            <label htmlFor={`edit-${a.annotationId}`} className="sr-only">Note text</label>
             <textarea id={`edit-${a.annotationId}`} rows={3} value={text} onChange={(e) => setText(e.target.value)} maxLength={4000} />
-          </div>
-          <label className="row"><input type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} /> Requires revision</label>
-          <div className="row">
-            <button type="submit" className="primary" disabled={text.trim() === "" || update.isPending}>Save</button>
-            <button type="button" onClick={() => { setEditing(false); setConflict(undefined); }}>Cancel</button>
-          </div>
-        </form>
-      ) : (
-        <>
-          <p style={{ whiteSpace: "pre-wrap", margin: "8px 0" }}>{a.text}</p>
-          <div className="row">
-            <button type="button" onClick={() => { setSeenVersion(a.version); setEditing(true); }}>Edit</button>
-            {confirmDelete ? (
-              <>
-                <button type="button" onClick={() => void del()} disabled={remove.isPending}>Confirm delete</button>
-                <button type="button" onClick={() => setConfirmDelete(false)}>Keep</button>
-              </>
-            ) : <button type="button" onClick={() => { setSeenVersion(a.version); setConfirmDelete(true); }}>Delete</button>}
-          </div>
-        </>
-      )}
-      {error ? <ErrorBanner error={error} /> : null}
+            <label><input type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} /> Blocks approval until it is revised</label>
+            <div className="row">
+              <button type="submit" className="sm" disabled={text.trim() === "" || update.isPending}>Save</button>
+              <button type="button" className="sm ghost" onClick={() => { setEditing(false); setConflict(undefined); }}>Cancel</button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <p>{a.text}</p>
+            <div className="by">
+              {a.requiresRevision ? <span className="flag"><Icon name="alert" size="sm" />Blocks approval</span> : null}
+              {whoLabel(a.createdBy)}{a.frameRange ? ` · ${rangeLabel(a.frameRange)}` : ""} · {describe(a.geometry).toLowerCase()}{a.requiresRevision ? "" : " · doesn’t block approval"}
+              <span className="faint"> · <time dateTime={a.updatedAt} title={formatTime(a.updatedAt)}>{timeAgo(a.updatedAt)}</time>{a.version > 1 ? ` · edited (v${a.version})` : ""}</span>
+            </div>
+            {selected ? (
+              <div className="row note-actions">
+                <button type="button" className="sm ghost" onClick={() => { setSeenVersion(a.version); setEditing(true); }}>Edit</button>
+                {confirmDelete ? (
+                  <>
+                    <button type="button" className="sm danger" onClick={() => void del()} disabled={remove.isPending}>Delete this note</button>
+                    <button type="button" className="sm ghost" onClick={() => setConfirmDelete(false)}>Keep</button>
+                  </>
+                ) : <button type="button" className="sm ghost" onClick={() => { setSeenVersion(a.version); setConfirmDelete(true); }}>Delete…</button>}
+              </div>
+            ) : null}
+          </>
+        )}
+        {error ? <ErrorBanner error={error} /> : null}
+      </div>
     </li>
   );
 }

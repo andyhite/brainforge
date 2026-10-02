@@ -3,6 +3,7 @@ import { parseDocument } from "yaml";
 import type { Problem } from "@brainforge/contracts";
 import type { SpecFile } from "../lib/spec-file.ts";
 import { Banner, ErrorBanner, Modal, ProblemList, Status } from "./ui.tsx";
+import "../features/families/families.css";
 
 export const BLOCKED_TEXT = "While this file is invalid, new work that depends on it is blocked. Existing previews and history stay readable.";
 
@@ -53,13 +54,15 @@ export function ConflictDialog({ file }: { file: SpecFile }) {
 
 export function SaveBar({ file }: { file: SpecFile }) {
   return (
-    <div className="row" style={{ marginBottom: 12 }}>
+    <div className="save-bar" role="group" aria-label="Save changes">
+      <span className="save-state" aria-live="polite">
+        {file.dirty ? <Status tone="warn">Unsaved changes</Status> : file.savedHash ? <Status tone="ok">Saved</Status> : <Status tone="idle">No changes</Status>}
+        {file.missing ? <span className="secondary">This file does not exist yet; saving creates it.</span> : null}
+      </span>
+      <button type="button" className="ghost" onClick={file.discardDraft} disabled={!file.dirty || file.saving}>Discard changes</button>
       <button type="button" className="primary" onClick={() => void file.save()} disabled={!file.dirty || file.saving}>
         {file.saving ? "Saving…" : file.missing ? "Create file" : "Save"}
       </button>
-      <button type="button" onClick={file.discardDraft} disabled={!file.dirty || file.saving}>Discard changes</button>
-      {file.dirty ? <Status tone="warn">Unsaved changes</Status> : file.savedHash ? <Status tone="ok">Saved</Status> : <Status tone="idle">No changes</Status>}
-      {file.missing ? <span className="secondary">This file does not exist yet; saving creates it.</span> : null}
     </div>
   );
 }
@@ -121,7 +124,7 @@ export function SpecEditor({ file, onOpenFile }: { file: SpecFile; onOpenFile?: 
           aria-describedby={`problems-${file.path}`}
         />
       </div>
-      <div id={`problems-${file.path}`} style={{ marginTop: 12 }}>
+      <div id={`problems-${file.path}`} className="spec-problems">
         {all.length === 0 ? (
           <Status tone="ok">No problems</Status>
         ) : (

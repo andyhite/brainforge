@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import type { Candidate, CandidateOutput, OperationError, ProcessingPlan, ProcessingRecipe, ProcessingWarning, RecipeRequest } from "@brainforge/contracts";
 import { useMutationOperation, useOperation } from "../../api/hooks.ts";
 import { Banner, ErrorBanner, NetworkProblem, Status } from "../../components/ui.tsx";
 import { BackdropPicker, useBackdrop } from "../generation/media.tsx";
 import { OutputCanvasPreview, SourceFramePreview } from "./PivotPreview.tsx";
 import { FieldSource, NumberField, RecipeGroup } from "./recipe-fields.tsx";
+import "./processing.css";
 
 const FPS_PRESETS = [12, 16];
 const WARNING_LABEL: Record<ProcessingWarning["code"], string> = {
@@ -21,7 +22,7 @@ const WARNING_LABEL: Record<ProcessingWarning["code"], string> = {
 const ms = (value: number) => `${Math.round(value * 10) / 10} ms`;
 
 export function ProcessPanel({ candidate, sources, projectId }: { candidate: Candidate; sources: CandidateOutput[]; projectId: string }) {
-  const navigate = useNavigate();
+  const [, setParams] = useSearchParams();
   const [backdrop, setBackdrop] = useBackdrop();
   const [sourceId, setSourceId] = useState((sources.find((s) => s.role === "matted") ?? sources[0])?.outputId ?? "");
   const [edits, setEdits] = useState<RecipeRequest>({});
@@ -77,14 +78,14 @@ export function ProcessPanel({ candidate, sources, projectId }: { candidate: Can
     const result = await startOp.mutateAsync({ input: { planId: plan.planId, planHash: plan.planHash } });
     if (result.ok) {
       setDone(result.data.output.outputId);
-      void navigate(`?output=${encodeURIComponent(result.data.output.outputId)}`, { preventScrollReset: true });
+      setParams((p) => { p.set("output", result.data.output.outputId); p.delete("compare"); return p; }, { preventScrollReset: true, replace: true });
     }
   };
 
   return (
-    <section className="panel" aria-labelledby="process-title">
-      <div className="row" style={{ justifyContent: "space-between" }}>
-        <h2 id="process-title" style={{ margin: 0 }}>Process into an export clip</h2>
+    <section className="proc-section" aria-labelledby="process-title">
+      <div className="row proc-head">
+        <h3 id="process-title">Process into an export clip</h3>
         <BackdropPicker value={backdrop} onChange={setBackdrop} />
       </div>
       <p className="secondary">
@@ -259,7 +260,7 @@ export function ProcessPanel({ candidate, sources, projectId }: { candidate: Can
           {cannotRun ? <p className="secondary" role="status">Cannot run: {cannotRun}</p> : null}
           <div className="row end">
             <button type="button" className="primary" disabled={cannotRun !== undefined || startOp.isPending} onClick={() => void run()}>
-              {startOp.isPending ? "Processing…" : "Run processing (new unapproved result)"}
+              {startOp.isPending ? "Processing…" : "Run processing (makes a new, undecided result)"}
             </button>
           </div>
         </div>

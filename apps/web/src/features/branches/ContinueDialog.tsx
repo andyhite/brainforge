@@ -4,6 +4,7 @@ import type { BranchPlan, InputMode } from "@brainforge/contracts";
 import { useMutationOperation, useOperation } from "../../api/hooks.ts";
 import { ActionLinks, Banner, ErrorBanner, formatTime, Modal, NetworkProblem, Status } from "../../components/ui.tsx";
 import { DeliverableThumb } from "../production/DeliverableThumb.tsx";
+import { paths } from "../../lib/paths.ts";
 import { DifferencesTable, INPUT_MODE_TEXT, ReassessmentReasons } from "./shared.tsx";
 
 interface Source { assetId: string; candidateId: string; outputId: string | undefined }
@@ -22,40 +23,41 @@ export function ContinueButton({ assetId, candidateId, outputId, label = "Contin
 }
 
 function PlanSections({ plan, assetId }: { plan: BranchPlan; assetId: string }) {
-  const candidateLink = (id: string) => `/assets/${encodeURIComponent(assetId)}/candidates/${encodeURIComponent(id)}`;
+  // A carried note lives on a candidate; its room is the deliverable that candidate was reused for.
+  const noteLink = (candidateId: string) => paths.step(assetId, plan.reusedSelections.find((item) => item.candidateId === candidateId)?.deliverableId ?? plan.source.stepId, { candidate: candidateId });
   return (
-    <div className="stack" aria-label="What this branch keeps and clears">
+    <div className="branch-plan" aria-label="What this branch keeps and clears">
       <section aria-labelledby="bp-reused">
-        <h3 id="bp-reused" style={{ margin: 0 }}>Reused as they are ({plan.reusedSelections.length})</h3>
-        {plan.reusedSelections.length === 0 ? <p className="secondary" style={{ margin: 0 }}>Nothing upstream is reused.</p> : (
-          <ul className="plain-list">
+        <h3 id="bp-reused">Reused as they are ({plan.reusedSelections.length})</h3>
+        {plan.reusedSelections.length === 0 ? <p>Nothing upstream is reused.</p> : (
+          <ul>
             {plan.reusedSelections.map((item) => (
-              <li key={item.deliverableId} className="row" style={{ gap: 8 }}>
+              <li key={item.deliverableId}>
                 <DeliverableThumb candidateId={item.candidateId} outputId={item.outputId} label={`Reused selection for ${item.deliverableId}`} />
-                <span><strong>{item.deliverableId}</strong> · <span className="secondary">{item.reason}</span></span>
+                <span><strong>{item.deliverableId}</strong> · <span className="why">{item.reason}</span></span>
               </li>
             ))}
           </ul>
         )}
       </section>
       <section aria-labelledby="bp-cleared">
-        <h3 id="bp-cleared" style={{ margin: 0 }}>Cleared in the new branch ({plan.clearedSelections.length})</h3>
-        {plan.clearedSelections.length === 0 ? <p className="secondary" style={{ margin: 0 }}>No downstream selection is cleared.</p> : (
-          <ul className="plain-list">{plan.clearedSelections.map((item) => <li key={item.deliverableId}><strong>{item.deliverableId}</strong> · <span className="secondary">{item.reason}</span></li>)}</ul>
+        <h3 id="bp-cleared">Cleared in the new branch ({plan.clearedSelections.length})</h3>
+        {plan.clearedSelections.length === 0 ? <p>No downstream selection is cleared.</p> : (
+          <ul>{plan.clearedSelections.map((item) => <li key={item.deliverableId}><span><strong>{item.deliverableId}</strong> · <span className="why">{item.reason}</span></span></li>)}</ul>
         )}
       </section>
       <section aria-labelledby="bp-reassess">
-        <h3 id="bp-reassess" style={{ margin: 0 }}>Needs reassessment ({plan.reassess.length})</h3>
-        {plan.reassess.length === 0 ? <p className="secondary" style={{ margin: 0 }}>No reused selection needs a new review.</p> : (
-          <ul className="plain-list">{plan.reassess.map((item) => <li key={item.deliverableId}><strong>{item.deliverableId}</strong><ReassessmentReasons reasons={[item.reason]} /></li>)}</ul>
+        <h3 id="bp-reassess">Needs reassessment ({plan.reassess.length})</h3>
+        {plan.reassess.length === 0 ? <p>No reused selection needs a new review.</p> : (
+          <ul>{plan.reassess.map((item) => <li key={item.deliverableId} className="block"><strong>{item.deliverableId}</strong><ReassessmentReasons reasons={[item.reason]} /></li>)}</ul>
         )}
       </section>
       <section aria-labelledby="bp-feedback">
-        <h3 id="bp-feedback" style={{ margin: 0 }}>Carried feedback ({plan.carriedFeedback.length})</h3>
-        {plan.carriedFeedback.length === 0 ? <p className="secondary" style={{ margin: 0 }}>No required note is carried over.</p> : (
+        <h3 id="bp-feedback">Carried feedback ({plan.carriedFeedback.length})</h3>
+        {plan.carriedFeedback.length === 0 ? <p>No required note is carried over.</p> : (
           <>
-            <p className="secondary" style={{ margin: 0 }}>Required notes on the reused outputs still block them in the new branch.</p>
-            <ul className="plain-list">{plan.carriedFeedback.map((item, index) => <li key={`${item.candidateId}-${item.annotationId ?? index}`}><Link to={candidateLink(item.candidateId)}>Open note on {item.candidateId.slice(0, 8)}</Link></li>)}</ul>
+            <p>Required notes on the reused outputs still block them in the new branch.</p>
+            <ul>{plan.carriedFeedback.map((item, index) => <li key={`${item.candidateId}-${item.annotationId ?? index}`}><Link to={noteLink(item.candidateId)}>Open the note on {item.candidateId.slice(0, 8)}</Link></li>)}</ul>
           </>
         )}
       </section>
@@ -91,7 +93,7 @@ export function ContinueDialog({ assetId, candidateId, outputId, fixedMode, onCl
       : await create.mutateAsync({ input: { candidateId, ...(outputId ? { outputId } : {}), inputMode: mode, planHash: current.planHash, ...(committedName ? { name: committedName } : {}), ...(trimmed ? { reason: trimmed } : {}) } });
     if (result.ok) {
       onClose();
-      void navigate(`/assets/${encodeURIComponent(assetId)}?step=${encodeURIComponent(concept ? "concept" : current.source.stepId)}&branch=${encodeURIComponent(result.data.branch.branchId)}`);
+      void navigate(paths.asset(assetId, { branch: result.data.branch.branchId, step: concept ? "concept" : current.source.stepId }));
     }
   };
 
@@ -123,12 +125,12 @@ export function ContinueDialog({ assetId, candidateId, outputId, fixedMode, onCl
           {plan.data && !plan.data.ok ? <ErrorBanner error={plan.data.error} /> : null}
           {!current && !plan.data && !plan.error ? <p className="secondary" role="status">Planning…</p> : null}
           {current ? (
-            <div className="stack">
+            <div className="branch-plan">
               <section aria-labelledby="bp-diff">
-                <h3 id="bp-diff" style={{ margin: "0 0 8px" }}>Differences between saved and current inputs ({current.differences.length})</h3>
+                <h3 id="bp-diff">Differences between saved and current inputs ({current.differences.length})</h3>
                 <DifferencesTable differences={current.differences} />
                 {current.differences.length > 0 ? (
-                  <p className="secondary" style={{ marginBottom: 0 }}>
+                  <p>
                     {mode === "saved"
                       ? "With saved inputs these changes are not applied. Exploring and review work against the saved basis, but a new promotion is always checked against the current requirements and will be blocked until you rebase."
                       : "With current inputs these changes apply to the new branch; the affected reused work is marked for reassessment."}
@@ -142,7 +144,7 @@ export function ContinueDialog({ assetId, candidateId, outputId, fixedMode, onCl
                   {blocker.recoveryActions.filter((action) => !action.url && !(action.operation && action.input !== undefined)).map((action) => <div key={action.label} className="secondary">{action.label}</div>)}
                 </Banner>
               ))}
-              <p id="bp-auth" style={{ margin: "16px 0 0" }}>
+              <p id="bp-auth" className="auth">
                 {concept ? <>Locking a concept needs <strong>{current.authorization.policy}</strong>.</> : <>Creating this branch needs <strong>{current.authorization.policy}</strong>.</>}{" "}
                 {current.authorization.allowed ? <Status tone="ok">You may do this</Status> : <><Status tone="warn">Not allowed</Status> {current.authorization.reason ?? "The effective policy does not permit you to do this."}</>}
               </p>

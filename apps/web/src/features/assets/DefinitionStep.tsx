@@ -1,76 +1,87 @@
 import { useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import type { OperationData } from "@brainforge/contracts";
-import { BLOCKED_TEXT } from "../../components/SpecEditor.tsx";
-import { ProblemList, Status } from "../../components/ui.tsx";
-import { FamilyEditor } from "../families/FamilyEditor.tsx";
-import { splitProblems } from "../families/useFamilies.tsx";
-import { useSpecFile } from "../../lib/spec-file.ts";
-import { specRoute } from "../../lib/use-project.ts";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import type { OperationData, Problem } from "@brainforge/contracts";
+import { Status } from "../../components/ui.tsx";
+import { FamilyEditor, ProblemSummary } from "../families/FamilyEditor.tsx";
+import { useSpecFile, type SpecFile } from "../../lib/spec-file.ts";
+import { ReferencesStep } from "./ReferencesStep.tsx";
+import "../families/families.css";
 
 type Inspect = OperationData<"asset.inspect">;
 
+/** Everything beside the editor: checks, references, and where the files live. */
+function Side({ inspect, file, problems, pending }: { inspect: Inspect; file: SpecFile; problems: Problem[]; pending: boolean }) {
+  const missing = inspect.yamlHash === undefined;
+  return (
+    <>
+      {missing ? null : (
+        <section id="def-problems" tabIndex={-1} className="def-section" aria-labelledby="def-problems-title">
+          <h2 id="def-problems-title">Checks</h2>
+          <ProblemSummary problems={problems} pending={pending} file={file} />
+        </section>
+      )}
+      <ReferencesStep assetId={inspect.summary.assetId} inspect={inspect} />
+      <details id="def-file" className="def-section">
+        <summary>Files and folders</summary>
+        <dl className="kv def-files">
+          <dt>Definition</dt>
+          <dd><code>{inspect.yamlPath}</code></dd>
+          {inspect.directories.map((dir) => (
+            <div key={dir.path} className="def-dir">
+              <dt className="mono">{dir.path}</dt>
+              <dd>{dir.exists ? `${dir.fileCount} ${dir.fileCount === 1 ? "file" : "files"}` : "Not created"}</dd>
+            </div>
+          ))}
+          {inspect.registeredArtifacts > 0 ? (
+            <>
+              <dt>Registered media</dt>
+              <dd>{inspect.registeredArtifacts} (trial media kept in place; not production approvals)</dd>
+            </>
+          ) : null}
+        </dl>
+      </details>
+    </>
+  );
+}
+
+/** What this asset is: the definition editor, or the create flow when no definition exists yet. */
 export function DefinitionStep({ inspect, autoCreate }: { inspect: Inspect; autoCreate: boolean }) {
   const { summary } = inspect;
   const missing = inspect.yamlHash === undefined;
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const section = params.get("section");
   const file = useSpecFile(inspect.yamlPath);
   const wizard = `/assets/new?id=${encodeURIComponent(summary.assetId)}`;
+
   useEffect(() => {
     if (autoCreate && missing) navigate(wizard, { replace: true });
   }, [autoCreate, missing, navigate, wizard]);
-  const { errors, warnings } = splitProblems(summary.problems);
-  return (
-    <div className="stack">
-      <section className="panel" aria-labelledby="asset-def-result">
-        <h2 id="asset-def-result">Definition</h2>
-        {summary.valid ? (
-          <div className="row">
-            <Status tone="ok">Valid</Status>
-            {warnings.length > 0 ? <Status tone="warn">{warnings.length} {warnings.length === 1 ? "warning" : "warnings"}</Status> : null}
-          </div>
-        ) : missing ? (
-          <>
-            <Status tone="warn">Definition missing</Status>
-            <p style={{ margin: "12px 0" }}>
-              <code>{inspect.yamlPath}</code> has not been written yet. Work and references in this folder are kept; production steps stay blocked until a valid definition exists.
-            </p>
-            <Link className="button primary" to={wizard}>Start from a family template</Link>
-          </>
-        ) : (
-          <Status tone="bad">Invalid — {errors.length} {errors.length === 1 ? "problem" : "problems"}</Status>
-        )}
-        {!missing && summary.problems.length > 0 ? <ProblemList problems={summary.problems} blocked={errors.length > 0 ? BLOCKED_TEXT : "Warnings never block exploring the concept; they name what a production step still needs."} onOpenFile={specRoute} /> : null}
-      </section>
 
-      {!missing ? (
-        <section aria-labelledby="asset-def-editor">
-          <h2 id="asset-def-editor" className="sr-only">Edit asset definition</h2>
-          <FamilyEditor file={file} assetId={summary.assetId} />
-        </section>
-      ) : null}
+  // ?section= deep link: wait for the file so the editor sections exist, then scroll and focus.
+  useEffect(() => {
+    if (!section || (!missing && file.loading)) return;
+    const target = document.getElementById(`def-${section}`);
+    if (!target) return;
+    if (target instanceof HTMLDetailsElement) target.open = true;
+    target.scrollIntoView({ block: "start" });
+    target.focus({ preventScroll: true });
+  }, [section, missing, file.loading]);
 
-      <section className="panel" aria-labelledby="asset-def-dirs">
-        <h2 id="asset-def-dirs">Asset folders</h2>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr><th scope="col">Path</th><th scope="col">Exists</th><th scope="col">Files</th></tr>
-            </thead>
-            <tbody>
-              {inspect.directories.map((dir) => (
-                <tr key={dir.path}>
-                  <th scope="row" className="mono">{dir.path}</th>
-                  <td>{dir.exists ? <Status tone="ok">Exists</Status> : <Status tone="idle">Not created</Status>}</td>
-                  <td>{dir.fileCount}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+  if (missing) {
+    return (
+      <div className="def-grid">
+        <div className="def-main def-missing">
+          <Status tone="warn">No definition yet</Status>
+          <h2>Start from a family template</h2>
+          <p className="secondary">
+            This asset has no definition file, so production steps stay blocked. Anything already in its folder is kept. A template gives you the deliverables and rules for its family; you edit them before saving.
+          </p>
+          <Link className="button primary" to={wizard}>Create definition</Link>
         </div>
-        <p style={{ marginBottom: 0 }}>Registered retained artifacts: {inspect.registeredArtifacts}</p>
-        {inspect.registeredArtifacts > 0 ? <p className="secondary">Feasibility-trial media registered in place; these are not production approvals.</p> : null}
-      </section>
-    </div>
-  );
+        <div className="def-side"><Side inspect={inspect} file={file} problems={[]} pending={false} /></div>
+      </div>
+    );
+  }
+  return <FamilyEditor file={file} assetId={summary.assetId} aside={({ problems, pending }) => <Side inspect={inspect} file={file} problems={problems} pending={pending} />} />;
 }

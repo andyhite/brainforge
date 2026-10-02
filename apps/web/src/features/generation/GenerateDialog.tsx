@@ -1,10 +1,13 @@
 import { Fragment, useState } from "react";
+import { Link } from "react-router-dom";
 import type { Candidate, GenerationPlan } from "@brainforge/contracts";
 import { useMutationOperation } from "../../api/hooks.ts";
-import { Banner, ErrorBanner, formatTime, Modal, NetworkProblem, Status } from "../../components/ui.tsx";
+import { ActionLinks, Banner, ErrorBanner, formatTime, Modal, NetworkProblem, Seg, Status } from "../../components/ui.tsx";
 import { outputUrl, pickOutput } from "./media.tsx";
 import { MotionPlanView } from "../processing/MotionPlanView.tsx";
+import { paths } from "../../lib/paths.ts";
 import { useProject } from "../../lib/use-project.ts";
+import "./generation.css";
 
 export interface GenerateRequest { mode: "fresh" | "variation"; parentCandidateId?: string }
 
@@ -23,6 +26,8 @@ export function GenerateDialog({ assetId, stepId = "concept", stepKind, branchId
   const [budgetId, setBudgetId] = useState("");
   const [started, setStarted] = useState<{ jobs: number } | undefined>(undefined);
 
+  const project = useProject();
+  const projectId = project.data?.project.projectId;
   const parent = candidates.find((candidate) => candidate.candidateId === parentId);
   const parentOutput = parent ? pickOutput(parent, "matted") : undefined;
   const variationMissingParent = mode === "variation" && (!parent || !parentOutput);
@@ -51,73 +56,85 @@ export function GenerateDialog({ assetId, stepId = "concept", stepKind, branchId
   const blocked = (planned?.blockers.length ?? 0) > 0;
   const noBudget = planned !== undefined && planned.budgets.length === 0;
   const selectedBudget = planned?.budgets.find((budget) => budget.budgetId === budgetId);
-  const startReason = !planned ? "Plan first." : blocked ? "Resolve the blockers above." : noBudget ? "No active budget covers this plan." : !budgetId ? "Choose a budget." : undefined;
+  const startReason = !planned ? "Plan first." : blocked ? "Resolve the blockers above." : noBudget ? "No budget covers this plan." : !budgetId ? "Choose a budget." : undefined;
 
   return (
-    <Modal open onOpenChange={(open) => { if (!open) onClose(); }} title={`${mode === "variation" ? "Generate variations" : "Generate"}: ${stepNoun}`} description="You will see the exact plan before anything is submitted.">
+    <Modal open wide onOpenChange={(open) => { if (!open) onClose(); }} title={`Plan generation: ${stepNoun}`} description="You see the exact plan before anything is submitted. Nothing starts until you press Start generation.">
       {started ? (
         <div className="stack">
-          <Banner tone="ok" title="Generation started">{started.jobs} {started.jobs === 1 ? "job is" : "jobs are"} queued. Candidates appear in the grid as each finishes; progress is on the Jobs page.</Banner>
-          <div className="row end"><button type="button" className="primary" onClick={onClose}>Close</button></div>
+          <Banner tone="ok" title="Generation started">
+            {started.jobs} {started.jobs === 1 ? "job is" : "jobs are"} queued. Each candidate appears in the candidate strip in this room as it finishes. Follow progress in <Link to={paths.activity()}>Activity</Link>.
+          </Banner>
+          <div className="row end"><button type="button" className="primary" onClick={onClose}>Done</button></div>
         </div>
       ) : (
         <div className="stack">
           {planned ? null : (
             <form onSubmit={(event) => { event.preventDefault(); void makePlan(); }} className="stack">
-              <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
-                <legend style={{ fontSize: 13, fontWeight: 600 }}>Mode</legend>
-                <div className="row">
-                  <label><input type="radio" name="gen-mode" checked={mode === "fresh"} onChange={() => setMode("fresh")} />Fresh batch from the asset definition</label>
-                  <label><input type="radio" name="gen-mode" checked={mode === "variation"} disabled={candidates.length === 0 || animation} onChange={() => setMode("variation")} />Variation of a candidate{animation ? " (not available for motion)" : ""}</label>
-                </div>
-              </fieldset>
+              <div className="field">
+                <span className="label" id="gen-mode-label">What to make</span>
+                <Seg label="What to make" value={mode} options={[
+                  { value: "fresh", label: "Fresh batch", title: "New candidates from the asset definition" },
+                  { value: "variation", label: animation ? "Variation (not for motion)" : "Variation of a candidate", title: animation ? "Variations aren’t available for motion" : candidates.length === 0 ? "No candidate to vary yet" : undefined },
+                ]} onChange={(next) => { if (next === "fresh" || (candidates.length > 0 && !animation)) setMode(next); }} />
+              </div>
               {mode === "variation" ? (
                 <div className="field">
-                  <label htmlFor="gen-parent">Base candidate</label>
-                  <select id="gen-parent" value={parentId} onChange={(event) => setParentId(event.target.value)}>
-                    {candidates.map((candidate) => <option key={candidate.candidateId} value={candidate.candidateId}>{candidate.label}{candidate.seed !== undefined ? ` · seed ${candidate.seed}` : ""}</option>)}
-                  </select>
-                  <div className="hint">Continues from this candidate's matted output through the identity-edit workflow.</div>
+                  <span className="label" id="gen-parent-label">Start from</span>
+                  <ul className="gen-parents" aria-labelledby="gen-parent-label">
+                    {candidates.map((candidate) => {
+                      const output = pickOutput(candidate, "matted");
+                      return (
+                        <li key={candidate.candidateId}>
+                          <button type="button" aria-pressed={candidate.candidateId === parentId} onClick={() => setParentId(candidate.candidateId)}>
+                            <span className="art checker">{output && projectId ? <img src={outputUrl(projectId, output.fileId, 128)} alt="" /> : null}</span>
+                            <span>{candidate.label}</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  <div className="hint">Continues from this candidate’s transparent image.</div>
                 </div>
               ) : null}
               <div className="field">
-                <label htmlFor="gen-count">Candidates</label>
+                <label htmlFor="gen-count">How many candidates</label>
                 <input id="gen-count" type="number" min={1} max={8} value={count} onChange={(event) => setCount(Number(event.target.value))} />
-                <div className="hint">{animation ? "Each candidate is one Wan run on the GPU: the same guides and motion with a different seed. " : "One start submits this many candidates to the GPU. "}The plan shows the batch limit.</div>
+                <div className="hint">{animation ? "Each candidate is one run with the same guides and motion but a different random seed. " : "Each one counts against your budget. "}The plan shows the limit.</div>
               </div>
               <div className="field">
-                <label htmlFor="gen-instr">Iteration instructions (optional)</label>
-                <textarea id="gen-instr" rows={3} maxLength={4000} value={instructions} onChange={(event) => setInstructions(event.target.value)} style={{ width: "100%" }} />
-                <div className="hint">Affect this run only; they never become authored requirements.</div>
+                <label htmlFor="gen-instr">Instructions for this run (optional)</label>
+                <textarea id="gen-instr" rows={3} maxLength={4000} value={instructions} onChange={(event) => setInstructions(event.target.value)} />
+                <div className="hint">Used for this run only. They never change the asset definition.</div>
               </div>
               {plan.error ? <NetworkProblem error={plan.error} /> : null}
               {plan.data && !plan.data.ok ? <ErrorBanner error={plan.data.error} /> : null}
               <div className="row end">
-                <button type="button" onClick={onClose}>Cancel</button>
-                <button type="submit" className="primary" disabled={plan.isPending || variationMissingParent || count < 1 || count > 8}>{plan.isPending ? "Planning…" : "Show plan"}</button>
+                <button type="button" className="ghost" onClick={onClose}>Cancel</button>
+                <button type="submit" className="primary" disabled={plan.isPending || variationMissingParent || count < 1 || count > 8}>{plan.isPending ? "Planning…" : "Plan"}</button>
               </div>
             </form>
           )}
           {planned ? (
             <>
-              <PlanView plan={planned} />
+              <PlanView plan={planned} candidates={candidates} />
               {blocked ? (
-                <Banner tone="bad" title="This plan cannot start">
-                  <ul style={{ margin: 0, paddingLeft: 20 }}>
+                <Banner tone="bad" title="This plan can’t start yet">
+                  <ul className="plan-blockers">
                     {planned.blockers.map((blocker) => (
                       <li key={blocker.code}>
                         {blocker.message}
-                        {blocker.recoveryActions.length > 0 ? <ul>{blocker.recoveryActions.map((action) => <li key={action.label}>{action.label}</li>)}</ul> : null}
+                        {blocker.recoveryActions.length > 0 ? <div className="row"><ActionLinks actions={blocker.recoveryActions} /></div> : null}
                       </li>
                     ))}
                   </ul>
                 </Banner>
               ) : null}
-              <section aria-label="Budget">
+              <section aria-label="Budget" className="plan-budget">
                 <h3>Budget</h3>
                 {noBudget ? (
-                  <Banner tone="warn" title="No active budget" actions={<button type="button" onClick={() => { onClose(); onGrantBudget(); }}>Grant a budget</button>}>
-                    Starting spends GPU time, so it needs a budget you granted. Nothing was submitted.
+                  <Banner tone="warn" title="No budget covers this plan" actions={<button type="button" onClick={() => { onClose(); onGrantBudget(); }}>Grant a budget…</button>}>
+                    Generation only starts under a budget you grant. Nothing was submitted.
                   </Banner>
                 ) : (
                   <div className="field">
@@ -125,22 +142,22 @@ export function GenerateDialog({ assetId, stepId = "concept", stepKind, branchId
                     <select id="gen-budget" value={budgetId} onChange={(event) => setBudgetId(event.target.value)}>
                       {planned.budgets.map((budget) => (
                         <option key={budget.budgetId} value={budget.budgetId}>
-                          {budget.remainingStarts} starts and {budget.remainingCandidateSubmissions} submissions left · expires {formatTime(budget.expiresAt)}
+                          {budget.remainingStarts} {budget.remainingStarts === 1 ? "start" : "starts"} and {budget.remainingCandidateSubmissions} candidates left · expires {formatTime(budget.expiresAt)}
                         </option>
                       ))}
                     </select>
-                    {selectedBudget && selectedBudget.remainingCandidateSubmissions < planned.count ? <div className="hint" role="alert">Only {selectedBudget.remainingCandidateSubmissions} submissions remain; this plan needs {planned.count}.</div> : null}
+                    {selectedBudget && selectedBudget.remainingCandidateSubmissions < planned.count ? <div className="hint" role="alert">Only {selectedBudget.remainingCandidateSubmissions} candidates remain; this plan needs {planned.count}.</div> : null}
                   </div>
                 )}
               </section>
               {start.error ? <NetworkProblem error={start.error} /> : null}
               {start.data && !start.data.ok ? <ErrorBanner error={start.data.error} /> : null}
-              {startReason ? <p className="secondary" role="status">Cannot start: {startReason}</p> : null}
+              {startReason ? <p className="secondary" role="status">Can’t start: {startReason}</p> : null}
               <div className="row end">
-                <button type="button" onClick={() => { setPlanned(undefined); plan.reset(); start.reset(); }}>Edit</button>
-                <button type="button" onClick={onClose}>Cancel</button>
+                <button type="button" className="ghost" onClick={() => { setPlanned(undefined); plan.reset(); start.reset(); }}>Change plan</button>
+                <button type="button" className="ghost" onClick={onClose}>Cancel</button>
                 <button type="button" className="primary" disabled={startReason !== undefined || start.isPending} onClick={() => void begin()}>
-                  {start.isPending ? "Starting…" : `Start ${planned.count} ${planned.count === 1 ? "candidate" : "candidates"}`}
+                  {start.isPending ? "Starting…" : "Start generation"}
                 </button>
               </div>
             </>
@@ -151,63 +168,74 @@ export function GenerateDialog({ assetId, stepId = "concept", stepKind, branchId
   );
 }
 
-function PlanView({ plan }: { plan: GenerationPlan }) {
+function PlanView({ plan, candidates }: { plan: GenerationPlan; candidates: Candidate[] }) {
   const project = useProject();
   const projectId = project.data?.project.projectId;
   const dimensions = plan.submissions.flatMap((submission) => {
     const { width, height } = submission.values;
     return typeof width === "number" && typeof height === "number" ? [`${width}×${height}`] : [];
   })[0];
+  const parentLabel = plan.parentCandidateId ? candidates.find((candidate) => candidate.candidateId === plan.parentCandidateId)?.label : undefined;
   return (
-    <div className="stack">
+    <div className="plan stack">
       <dl className="kv" aria-label="Plan summary">
-        <dt>Step</dt><dd><span className="mono">{plan.stepId}</span>{plan.branchId ? <> on branch <span className="mono">{plan.branchId}</span></> : null}</dd>
-        <dt>Mode</dt><dd>{plan.mode}{plan.parentCandidateId ? ` from ${plan.parentCandidateId}` : ""} · {plan.count} {plan.count === 1 ? "candidate" : "candidates"}{dimensions ? ` · ${dimensions} px` : ""}</dd>
-        <dt>Workflow</dt><dd className="mono">{plan.workflow.id} v{plan.workflow.version} <span className="secondary">graph {plan.workflow.graphHash.slice(0, 12)}</span></dd>
-        <dt>Plan hash</dt><dd className="mono">{plan.planHash.slice(0, 16)}…</dd>
+        <dt>Makes</dt>
+        <dd>
+          {plan.count} {plan.count === 1 ? "candidate" : "candidates"}{dimensions ? ` at ${dimensions} px` : ""}
+          {plan.mode === "variation" ? ` · a variation of ${parentLabel ?? "the chosen candidate"}` : " · fresh from the definition"}
+        </dd>
         <dt>Runs on</dt><dd>{plan.execution.computeLocation}{plan.preflight.comfyHost ? <span className="secondary"> ({plan.preflight.comfyHost})</span> : null}</dd>
         <dt>Cost</dt><dd>{plan.execution.costDescription}</dd>
-        <dt>External services</dt><dd>{plan.execution.externalServices.length > 0 ? plan.execution.externalServices.join(", ") : "none"}</dd>
-        <dt>Credentials</dt><dd>{plan.execution.credentialKeys.length > 0 ? plan.execution.credentialKeys.join(", ") : "none"}</dd>
-        <dt>Preflight</dt>
+        <dt>Generator</dt>
         <dd>
           {plan.preflight.ok ? <Status tone="ok">Nodes and models present</Status> : <Status tone="bad">Not ready</Status>}
           {plan.preflight.missingNodes.length > 0 ? <div>Missing nodes: <span className="mono">{plan.preflight.missingNodes.join(", ")}</span></div> : null}
           {plan.preflight.missingModels.length > 0 ? <div>Missing models: <span className="mono">{plan.preflight.missingModels.join(", ")}</span></div> : null}
         </dd>
-        <dt>Limits</dt><dd>up to {plan.limits.maxBatchCandidates} candidates per start · {plan.limits.maxConcurrentGenerations} at a time · {plan.limits.maxAttemptsPerStep} starts per step</dd>
+        <dt>Limits</dt><dd>Up to {plan.limits.maxBatchCandidates} candidates per start · {plan.limits.maxConcurrentGenerations} at a time · {plan.limits.maxAttemptsPerStep} starts per deliverable</dd>
       </dl>
+      {plan.notes.length > 0 ? <ul className="plan-notes">{plan.notes.map((note) => <li key={note}>{note}</li>)}</ul> : null}
       {plan.motion && projectId ? <MotionPlanView motion={plan.motion} projectId={projectId} /> : null}
       {plan.inputs.references.length > 0 && projectId ? (
         <section aria-label="References used">
           <h3>References used</h3>
-          <ul className="row" style={{ listStyle: "none", padding: 0, gap: 12, flexWrap: "wrap" }}>
+          <ul className="plan-refs">
             {plan.inputs.references.map((reference) => (
-              <li key={`${reference.role}-${reference.id}`} style={{ width: 120 }}>
-                <img src={outputUrl(projectId, reference.id, 240)} alt={`Reference for role ${reference.role}`} style={{ width: 120, height: 120, objectFit: "contain" }} />
-                <div className="secondary"><strong>{reference.role}</strong><div className="mono">{reference.sha256.slice(0, 10)}…</div></div>
+              <li key={`${reference.role}-${reference.id}`}>
+                <div className="art checker"><img src={outputUrl(projectId, reference.id, 240)} alt={`Reference for role ${reference.role}`} /></div>
+                <div className="secondary">{reference.role}</div>
               </li>
             ))}
           </ul>
         </section>
       ) : null}
       <section aria-label="Prompt">
-        <h3>Exact prompt</h3>
-        <pre className="plan-prompt">{plan.prompt}</pre>
+        <h3>Prompt</h3>
         <details>
-          <summary>Where each part comes from ({plan.promptSources.length})</summary>
+          <summary>Read the exact prompt</summary>
+          <pre className="plan-prompt">{plan.prompt}</pre>
+          <h4>Where each part comes from ({plan.promptSources.length})</h4>
           <ul>
             {plan.promptSources.map((part, index) => (
               <li key={`${part.label}-${index}`}><strong>{part.label}</strong> <span className="mono secondary">{part.source}</span><div>{part.text}</div></li>
             ))}
           </ul>
         </details>
-        {plan.iterationInstructions ? <p className="secondary">Iteration instructions (this run only): {plan.iterationInstructions}</p> : null}
+        {plan.iterationInstructions ? <p className="secondary">Your instructions for this run only: {plan.iterationInstructions}</p> : null}
       </section>
-      <section aria-label="Seeds">
-        <h3>Submissions and seeds</h3>
+      <details>
+        <summary>Technical details</summary>
+        <dl className="kv">
+          <dt>Workflow</dt><dd className="mono">{plan.workflow.id} v{plan.workflow.version} <span className="secondary">graph {plan.workflow.graphHash.slice(0, 12)}</span></dd>
+          <dt>Plan hash</dt><dd className="mono">{plan.planHash.slice(0, 16)}…</dd>
+          <dt>External services</dt><dd>{plan.execution.externalServices.length > 0 ? plan.execution.externalServices.join(", ") : "none"}</dd>
+          <dt>Credentials</dt><dd>{plan.execution.credentialKeys.length > 0 ? plan.execution.credentialKeys.join(", ") : "none"}</dd>
+          {Object.entries(plan.inputs.specHashes).map(([file, hash]) => <Fragment key={file}><dt className="mono">{file}</dt><dd className="mono">{hash.slice(0, 16)}…</dd></Fragment>)}
+          {plan.inputs.references.map((reference) => <Fragment key={reference.id}><dt>Reference {reference.role}</dt><dd className="mono">{reference.id} · {reference.sha256.slice(0, 16)}…</dd></Fragment>)}
+        </dl>
         <div className="table-wrap">
           <table>
+            <caption className="sr-only">Submissions and seeds</caption>
             <thead><tr><th>Label</th><th>Seed</th><th>Values</th></tr></thead>
             <tbody>
               {plan.submissions.map((submission) => (
@@ -219,13 +247,6 @@ function PlanView({ plan }: { plan: GenerationPlan }) {
             </tbody>
           </table>
         </div>
-      </section>
-      <details>
-        <summary>Pinned inputs</summary>
-        <dl className="kv">
-          {Object.entries(plan.inputs.specHashes).map(([file, hash]) => <Fragment key={file}><dt className="mono">{file}</dt><dd className="mono">{hash.slice(0, 16)}…</dd></Fragment>)}
-          {plan.inputs.references.map((reference) => <Fragment key={reference.id}><dt>Reference {reference.role}</dt><dd className="mono">{reference.id} · {reference.sha256.slice(0, 16)}…</dd></Fragment>)}
-        </dl>
       </details>
     </div>
   );

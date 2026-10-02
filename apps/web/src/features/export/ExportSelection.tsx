@@ -1,6 +1,7 @@
 import type { AssetVersion } from "@brainforge/contracts";
 import { useOperation } from "../../api/hooks.ts";
-import { STATE_LABEL } from "../production/ProductionState.tsx";
+
+const VERSION_WORDS: Record<AssetVersion["state"], string> = { active: "active", promoted: "promoted, not active", superseded: "replaced" };
 
 function VersionPin({ assetId, pinned, onPin }: { assetId: string; pinned: string | undefined; onPin: (versionId: string | undefined) => void }) {
   const query = useOperation("version.list", { assetId });
@@ -16,13 +17,14 @@ function VersionPin({ assetId, pinned, onPin }: { assetId: string; pinned: strin
       <select id={id} value={pinned ?? ""} onChange={(event) => onPin(event.target.value === "" ? undefined : event.target.value)} disabled={ordered.length === 0}>
         <option value="">{activeVersion ? `Active version (v${activeVersion.versionNumber})` : "Active version (none)"}</option>
         {ordered.map((version) => (
-          <option key={version.versionId} value={version.versionId}>Pin v{version.versionNumber} — {STATE_LABEL[version.state]}</option>
+          <option key={version.versionId} value={version.versionId}>Use v{version.versionNumber} ({VERSION_WORDS[version.state]})</option>
         ))}
       </select>
     </div>
   );
 }
 
+/** Narrow the export to some assets, or pin a specific promoted version instead of the active one. Pins show up in the plan, never silently. */
 export function ExportSelection({ assets, subset, onSubset, pins, onPin, defaultIds }: {
   assets: Array<{ assetId: string; name?: string | undefined }>;
   subset: string[] | null;
@@ -34,17 +36,13 @@ export function ExportSelection({ assets, subset, onSubset, pins, onPin, default
 }) {
   const explicit = subset !== null;
   return (
-    <section className="rel-pane" aria-labelledby="export-select-title">
-      <h2 id="export-select-title">What to export</h2>
-      <p className="rel-note">
-        By default every asset with an active version is exported. Choose assets to export only a subset, or pin a specific promoted version instead of the active one.
-        Pinned versions are shown in the plan, never applied silently.
-      </p>
+    <div className="rel-select">
+      <p className="rel-note">By default every asset with an active version is exported. Choose assets to export only some, or use a promoted version instead of the active one.</p>
       <label className="check">
         <input type="checkbox" checked={explicit} onChange={(event) => onSubset(event.target.checked ? defaultIds : null)} />
         Choose specific assets
       </label>
-      {assets.length === 0 ? <div className="rel-empty"><h2>No assets are defined yet</h2><p>Define and promote an asset before exporting.</p></div> : (
+      {assets.length === 0 ? <p className="secondary">No assets are defined yet.</p> : (
         <div className="table-wrap">
           <table className="rel-pick">
             <caption className="sr-only">Assets and the version to export</caption>
@@ -63,12 +61,12 @@ export function ExportSelection({ assets, subset, onSubset, pins, onPin, default
                     {explicit ? (
                       <td>
                         <input
-                          type="checkbox" aria-label={`Include ${asset.assetId}`} checked={subset.includes(asset.assetId)}
+                          type="checkbox" aria-label={`Include ${asset.name ?? asset.assetId}`} checked={subset.includes(asset.assetId)}
                           onChange={(event) => onSubset(event.target.checked ? [...subset, asset.assetId] : subset.filter((id) => id !== asset.assetId))}
                         />
                       </td>
                     ) : null}
-                    <th scope="row">{asset.name ?? asset.assetId}<div className="secondary mono" style={{ fontWeight: 400 }}>{asset.assetId}</div></th>
+                    <th scope="row">{asset.name ?? asset.assetId}</th>
                     <td>{included || pins[asset.assetId] ? <VersionPin assetId={asset.assetId} pinned={pins[asset.assetId]} onPin={(versionId) => onPin(asset.assetId, versionId)} /> : <span className="secondary">Not included</span>}</td>
                   </tr>
                 );
@@ -77,6 +75,6 @@ export function ExportSelection({ assets, subset, onSubset, pins, onPin, default
           </table>
         </div>
       )}
-    </section>
+    </div>
   );
 }

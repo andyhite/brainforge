@@ -3,10 +3,11 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import type { Candidate, CandidateOutput, OperationData } from "@brainforge/contracts";
 import { useMutationOperation } from "../../api/hooks.ts";
 import { Banner, ErrorBanner, NetworkProblem } from "../../components/ui.tsx";
+import { paths } from "../../lib/paths.ts";
 
 type Exported = OperationData<"candidate.export-cleanup">;
 
-const label = (output: CandidateOutput) => `${output.stage === "source" ? "Source" : "Processed"} · ${output.role === "matted" ? "matted" : "untouched"} · ${output.frameCount === 1 ? "image" : `${output.frameCount ?? "?"} frames${output.playbackFps ? ` at ${output.playbackFps} fps` : ""}`}`;
+const label = (output: CandidateOutput) => `${output.stage === "source" ? "Source" : "Game-ready"} · ${output.role === "matted" ? "transparent" : "original"} · ${output.frameCount === 1 ? "image" : `${output.frameCount ?? "?"} frames${output.playbackFps ? ` at ${output.playbackFps} fps` : ""}`}`;
 
 /** Parses "1, 4-6" (1-based, as shown in the player) into sorted unique zero-based indices. Throws a message naming the bad token. */
 function parseFrames(text: string, count: number): number[] {
@@ -89,13 +90,13 @@ export function CleanupPanel({ candidate, frameOutputs, assetId }: { candidate: 
     });
     if (result.ok) {
       setCreated({ candidateId: result.data.candidate.candidateId, label: result.data.candidate.label });
-      void navigate(`/assets/${encodeURIComponent(assetId)}/candidates/${encodeURIComponent(result.data.candidate.candidateId)}?output=${encodeURIComponent(result.data.output.outputId)}`);
+      void navigate(paths.step(assetId, candidate.stepId, { ...(candidate.branchId ? { branch: candidate.branchId } : {}), candidate: result.data.candidate.candidateId, output: result.data.output.outputId }));
     }
   };
 
   return (
-    <section className="panel" aria-labelledby="cleanup-title">
-      <h2 id="cleanup-title" style={{ margin: 0 }}>External cleanup</h2>
+    <section className="proc-section" aria-labelledby="cleanup-title">
+      <h3 id="cleanup-title">External cleanup</h3>
       <p className="secondary">
         Export frames, fix them in your own editor, then import them as a <strong>new unapproved candidate</strong> linked to this one. The originals stay untouched and nothing is approved automatically.
       </p>
@@ -176,9 +177,9 @@ export function CleanupPanel({ candidate, frameOutputs, assetId }: { candidate: 
         {inputError ? <p role="alert" className="field-error">{inputError}</p> : null}
         {importOp.error ? <NetworkProblem error={importOp.error} /> : null}
         {importOp.data && !importOp.data.ok ? <ErrorBanner error={importOp.data.error} /> : null}
-        {created ? <Banner tone="ok" title="Imported as a new candidate">{created.label} is unapproved and linked to this candidate. <Link to={`/assets/${encodeURIComponent(assetId)}/candidates/${encodeURIComponent(created.candidateId)}`}>Open it</Link></Banner> : null}
+        {created ? <Banner tone="ok" title="Imported as a new candidate">{created.label} is undecided and linked to this candidate. <Link to={paths.step(assetId, candidate.stepId, { ...(candidate.branchId ? { branch: candidate.branchId } : {}), candidate: created.candidateId })}>Open it</Link></Banner> : null}
         <div className="row end">
-          <button type="submit" className="primary" disabled={!output || importOp.isPending}>{importOp.isPending ? "Importing…" : "Import as a new candidate"}</button>
+          <button type="submit" disabled={!output || importOp.isPending}>{importOp.isPending ? "Importing…" : "Import as a new candidate"}</button>
         </div>
       </form>
     </section>

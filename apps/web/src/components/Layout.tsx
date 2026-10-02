@@ -1,99 +1,122 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { ProjectEventsProvider, useLiveState, type LiveState } from "../api/events.tsx";
 import { useMutationOperation, useOperation } from "../api/hooks.ts";
+import { useJobAttention, useReviewQueue } from "../lib/attention.ts";
+import { paths } from "../lib/paths.ts";
 import { useProjectRoot } from "../lib/project-context.tsx";
 import { useProject } from "../lib/use-project.ts";
 import { Icon, type IconName } from "./Icon.tsx";
-import { Status, type Tone } from "./ui.tsx";
-
-const NAV: { to: string; label: string; icon: IconName }[] = [
-  { to: "/", label: "Workbench", icon: "workbench" },
-  { to: "/review", label: "Review", icon: "review" },
-  { to: "/library", label: "Releases", icon: "releases" },
-  { to: "/jobs", label: "Activity", icon: "activity" },
-];
+import { JumpPalette } from "./JumpPalette.tsx";
+import { MenuButton, type MenuEntry } from "./ui.tsx";
 
 type Theme = "system" | "light" | "dark";
+const THEME_STORAGE = "brainforge.appearance";
+const THEMES: Array<{ value: Theme; label: string; icon: IconName }> = [
+  { value: "system", label: "Match the system", icon: "monitor" },
+  { value: "light", label: "Light", icon: "sun" },
+  { value: "dark", label: "Dark", icon: "moon" },
+];
 
 function savedTheme(): Theme {
   try {
-    const value = localStorage.getItem("brainforge.appearance");
+    const value = localStorage.getItem(THEME_STORAGE);
     return value === "light" || value === "dark" ? value : "system";
   } catch {
     return "system";
   }
 }
 
-const LIVE_LABEL: Record<LiveState, { tone: Tone; text: string } | undefined> = {
-  idle: undefined,
-  connecting: { tone: "info", text: "Connecting to live updates…" },
-  live: { tone: "ok", text: "Live" },
-  reconnecting: { tone: "warn", text: "Reconnecting — view may be stale" },
-  resync: { tone: "info", text: "Resyncing from the server" },
+/** Only an unhealthy connection earns space in the top bar; "live" is the silent default. */
+const LIVE_PROBLEM: Partial<Record<LiveState, string>> = {
+  connecting: "Connecting…",
+  reconnecting: "Reconnecting: this view may be out of date",
+  resync: "Catching up with the server…",
 };
 
-function LiveIndicator() {
-  const state = useLiveState();
-  const label = LIVE_LABEL[state];
-  if (!label) return null;
-  return <span role="status" aria-live="polite"><Status tone={label.tone}>{label.text}</Status></span>;
+function LiveStatus() {
+  const text = LIVE_PROBLEM[useLiveState()];
+  if (!text) return null;
+  return <span className="live-status" role="status" aria-live="polite"><Icon name="refresh" size="sm" />{text}</span>;
 }
 
-function ProjectSwitcher() {
+function ActivityStatus({ current }: { current: boolean }) {
+  const { running, attention } = useJobAttention();
+  const label = attention.length > 0
+    ? `${attention.length} ${attention.length === 1 ? "job needs" : "jobs need"} attention`
+    : running.length > 0 ? `${running.length} generating` : "Activity";
+  return (
+    <Link className="activity-status" to={paths.activity()} aria-current={current ? "page" : undefined} title="Jobs, decisions and preferences">
+      {attention.length > 0 ? <span className="dot" aria-hidden="true" /> : running.length > 0 ? <span className="dot running" aria-hidden="true" /> : <Icon name="activity" size="sm" />}
+      <span className="label">{label}</span>
+    </Link>
+  );
+}
+
+function ProjectMenu() {
   const { root, select } = useProjectRoot();
+  const project = useProject();
   const navigate = useNavigate();
   const recent = useOperation("project.recent", {}, { project: null });
-  const roots = new Set<string>();
-  if (root) roots.add(root);
-  if (recent.data?.ok) for (const item of recent.data.data.projects) roots.add(item.root);
-  const names = new Map<string, string>();
-  if (recent.data?.ok) for (const item of recent.data.data.projects) if (item.name) names.set(item.root, item.name);
+  const summary = project.data?.project;
+  const others = recent.data?.ok ? recent.data.data.projects.filter((item) => item.root !== root) : [];
+  const items: MenuEntry[] = [];
+  if (summary) items.push({ heading: summary.root }, { label: "Project settings", icon: "settings", to: paths.settings() }, "separator");
+  if (others.length > 0) {
+    items.push({ heading: "Switch project" });
+    for (const item of others.slice(0, 6)) {
+      items.push({ label: item.name ?? item.root.split("/").pop() ?? item.root, description: item.root, icon: "folder", onSelect: () => { select(item.root); navigate(paths.home()); } });
+    }
+    items.push("separator");
+  }
+  items.push({ label: "Open or create a project…", icon: "plus", to: paths.openProject() });
+  const name = summary?.name ?? (root ? root.split("/").pop() : undefined) ?? "Open a project";
   return (
-    <div className="project-switcher">
-      <label htmlFor="project-switcher" className="sr-only">Project</label>
-      <select
-        id="project-switcher"
-        value={root ?? ""}
-        onChange={(event) => {
-          if (event.target.value === "__open__") navigate("/projects/open");
-          else select(event.target.value || undefined);
-        }}
-      >
-        {root ? null : <option value="">No project selected</option>}
-        {[...roots].map((item) => <option key={item} value={item}>{names.get(item) ? `${names.get(item)} — ${item}` : item}</option>)}
-        <option value="__open__">Open another directory…</option>
-      </select>
-    </div>
+    <MenuButton
+      className="project-menu" label={`Project: ${name}`} items={items}
+      trigger={<><Icon name="sheet" className="mark" /><span className="name">{name}</span>{summary && !summary.writable ? <span className="status warn"><Icon name="lock" size="sm" />Read-only</span> : null}<Icon name="chevron-down" size="sm" className="chev" /></>}
+    />
+  );
+}
+
+function ThemeMenu({ theme, onChange }: { theme: Theme; onChange: (theme: Theme) => void }) {
+  const icon = THEMES.find((item) => item.value === theme)?.icon ?? "monitor";
+  return (
+    <MenuButton
+      label="Appearance" align="end" triggerClassName="icon-button"
+      trigger={<Icon name={icon} />}
+      items={[{ heading: "Appearance" }, ...THEMES.map((item) => ({ label: item.label, checked: item.value === theme, onSelect: () => onChange(item.value) }))]}
+    />
   );
 }
 
 export function Layout() {
   const project = useProject();
-  const [theme, setTheme] = useState<Theme>(savedTheme);
   const location = useLocation();
+  const [theme, setTheme] = useState<Theme>(savedTheme);
+  const [jumpOpen, setJumpOpen] = useState(false);
+  const queue = useReviewQueue();
   const summary = project.data?.project;
   const path = location.pathname;
-  const workspace = /^\/assets\/[^/]+(?:\/candidates\/[^/]+)?$/.test(path) && path !== "/assets/new";
-  const section = path === "/review" || path.includes("/candidates/")
-    ? "/review"
-    : path === "/library" || path === "/export"
-      ? "/library"
-      : path === "/jobs" || path === "/history"
-        ? "/jobs"
-        : path.startsWith("/settings") || path === "/projects/open" ? "/settings" : "/";
-  const sections = section === "/library"
-    ? [{ to: "/library", label: "Production versions" }, { to: "/export", label: "Export" }]
-    : section === "/jobs"
-      ? [{ to: "/jobs", label: "Jobs" }, { to: "/history", label: "History & preferences" }]
-      : section === "/" && !workspace
-        ? [{ to: "/", label: "Project readiness" }, { to: "/assets", label: "All assets" }]
-        : [];
+  const room = path === "/review" || /^\/assets\/[^/]+\/steps\/[^/]+$/.test(path);
+  const tab = path === "/review" ? "review" : path.startsWith("/releases") ? "releases" : path === "/" || path.startsWith("/assets") ? "home" : undefined;
 
   useLayoutEffect(() => {
     document.documentElement.dataset.theme = theme;
-    try { localStorage.setItem("brainforge.appearance", theme); } catch { /* The selected appearance still applies when storage is unavailable. */ }
+    try { localStorage.setItem(THEME_STORAGE, theme); } catch { /* The selected appearance still applies when storage is unavailable. */ }
   }, [theme]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k" && summary) {
+        event.preventDefault();
+        setJumpOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [summary]);
+
   const reopen = useMutationOperation("project.open");
   const notOpen = project.envelope?.ok === false && project.envelope.error.code === "PROJECT_NOT_OPEN";
   const reopenedFor = useRef<string | undefined>(undefined);
@@ -106,64 +129,35 @@ export function Layout() {
 
   return (
     <ProjectEventsProvider projectId={summary?.projectId}>
-      <div className={`shell${workspace ? " workspace-shell" : ""}`}>
-        <a className="skip-link" href="#main">Skip to workspace</a>
+      <div className="shell">
+        <a className="skip-link" href="#main">Skip to content</a>
         <header className="topbar">
-          <Link className="brand" to="/" aria-label="Brainforge workbench">
-            <span className="brand-symbol"><Icon name="workbench" /></span>
-            Brainforge
-          </Link>
-          <ProjectSwitcher />
-          {summary && summary.state !== "open" ? <Status tone="warn">{summary.state === "closing" ? "Closing" : "Closed"}</Status> : null}
-          {summary && !summary.writable ? <Status tone="warn">Read-only</Status> : null}
-          <span className="spacer" />
-          <LiveIndicator />
-          <div className="appearance-control">
-            <label htmlFor="appearance">Appearance</label>
-            <select id="appearance" value={theme} onChange={(event) => setTheme(event.target.value as Theme)}>
-              <option value="system">System</option>
-              <option value="dark">Dark</option>
-              <option value="light">Light</option>
-            </select>
-          </div>
-          <details className="project-details">
-            <summary>Project details</summary>
-            <div className="project-details-body">
-              <h2>{summary?.name ?? "No project open"}</h2>
-              {summary ? (
-                <dl className="kv">
-                  <dt>Directory</dt><dd className="mono">{summary.root}</dd>
-                  <dt>ID</dt><dd className="mono">{summary.projectId}</dd>
-                  <dt>Revision</dt><dd>{summary.revision}</dd>
-                  <dt>State</dt><dd>{summary.state}</dd>
-                  <dt>Writable</dt><dd>{summary.writable ? "Yes" : "No — read-only"}</dd>
-                </dl>
-              ) : <p className="secondary">Open a game directory to begin.</p>}
-              <Link to="/settings">Project settings</Link>
-            </div>
-          </details>
-        </header>
-        <div className="navigation-bar">
-          <nav className="nav" aria-label="Primary">
-            {NAV.map((item) => (
-              <Link key={item.to} to={item.to} aria-current={section === item.to ? "page" : undefined}>
-                <Icon name={item.icon} />
-                {item.label}
+          <ProjectMenu />
+          {summary ? (
+            <nav className="tabs" aria-label="Primary">
+              <Link to={paths.home()} aria-current={tab === "home" ? "page" : undefined}>Home</Link>
+              <Link to={paths.review()} aria-current={tab === "review" ? "page" : undefined}>
+                Review{queue.total > 0 ? <span className="count" aria-label={`${queue.total} waiting`}>{queue.total}</span> : null}
               </Link>
-            ))}
-          </nav>
-          <Link className="settings-link" to="/settings" aria-current={section === "/settings" ? "page" : undefined}>
-            <Icon name="settings" /><span>Settings</span>
-          </Link>
-        </div>
-        {sections.length > 0 ? (
-          <nav className="section-nav" aria-label={`${NAV.find((item) => item.to === section)?.label ?? "Project"} views`}>
-            {sections.map((item) => <NavLink key={item.to} to={item.to} end={item.to === "/"}>{item.label}</NavLink>)}
-          </nav>
-        ) : null}
-        <main className={`main${workspace ? " is-workspace" : ""}`} id="main" tabIndex={-1}>
-          <div className="main-inner"><Outlet /></div>
+              <Link to={paths.releases()} aria-current={tab === "releases" ? "page" : undefined}>Releases</Link>
+            </nav>
+          ) : null}
+          <div className="top-end">
+            <LiveStatus />
+            {summary ? <ActivityStatus current={path.startsWith("/activity")} /> : null}
+            {summary ? (
+              <button type="button" className="jump" onClick={() => setJumpOpen(true)} aria-keyshortcuts="Meta+K">
+                <Icon name="search" size="sm" /><span className="jump-label">Jump to…</span><kbd>⌘K</kbd>
+              </button>
+            ) : null}
+            <ThemeMenu theme={theme} onChange={setTheme} />
+            <Link className="button icon-button" to={paths.settings()} aria-label="Settings" aria-current={path.startsWith("/settings") ? "page" : undefined}><Icon name="settings" /></Link>
+          </div>
+        </header>
+        <main className={`main${room ? " is-room" : ""}`} id="main" tabIndex={-1}>
+          <Outlet />
         </main>
+        {summary ? <JumpPalette open={jumpOpen} onOpenChange={setJumpOpen} /> : null}
       </div>
     </ProjectEventsProvider>
   );

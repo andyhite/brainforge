@@ -1,9 +1,11 @@
 import { useState } from "react";
 import type { Candidate, CandidateOutput } from "@brainforge/contracts";
+import { Seg } from "../../components/ui.tsx";
+
 
 export type Backdrop = "checker" | "light" | "dark";
 const BACKDROPS: Array<{ value: Backdrop; label: string }> = [
-  { value: "checker", label: "Checkerboard" },
+  { value: "checker", label: "Checker" },
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
 ];
@@ -19,13 +21,7 @@ export function useBackdrop(): [Backdrop, (next: Backdrop) => void] {
 
 /** Transparency must stay visible: the choice is explicit and never composited into the file. */
 export function BackdropPicker({ value, onChange }: { value: Backdrop; onChange: (next: Backdrop) => void }) {
-  return (
-    <div role="group" aria-label="Preview background" className="viewer-tools" style={{ marginBottom: 0 }}>
-      {BACKDROPS.map((item) => (
-        <button key={item.value} type="button" aria-pressed={value === item.value} onClick={() => onChange(item.value)}>{item.label}</button>
-      ))}
-    </div>
-  );
+  return <Seg label="Preview background" value={value} options={BACKDROPS} onChange={onChange} />;
 }
 
 export type OutputRole = CandidateOutput["role"];
@@ -40,11 +36,11 @@ export function outputUrl(projectId: string, fileId: string, max?: number): stri
   return max ? `${base}?max=${max}` : base;
 }
 
+const ROLES: Array<{ value: OutputRole; label: string; title: string }> = [
+  { value: "matted", label: "Transparent", title: "Background removed, as it goes into the game" },
+  { value: "untouched", label: "Original", title: "Exactly what the generator returned" },
+];
+
 export function RolePicker({ value, onChange }: { value: OutputRole; onChange: (next: OutputRole) => void }) {
-  return (
-    <div role="group" aria-label="Output shown" className="viewer-tools" style={{ marginBottom: 0 }}>
-      <button type="button" aria-pressed={value === "matted"} onClick={() => onChange("matted")}>Matted (alpha)</button>
-      <button type="button" aria-pressed={value === "untouched"} onClick={() => onChange("untouched")}>Untouched</button>
-    </div>
-  );
+  return <Seg label="Output shown" value={value} options={ROLES} onChange={onChange} />;
 }

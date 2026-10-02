@@ -1,5 +1,6 @@
 import type { Branch, FieldDifference, InputMode } from "@brainforge/contracts";
 import { Status } from "../../components/ui.tsx";
+import "./branches.css";
 
 export function formatValue(value: unknown): string {
   if (value === undefined || value === null) return "(not set)";
@@ -19,18 +20,18 @@ export function InputModeBadge({ mode }: { mode: InputMode }) {
 function AffectsList({ affects }: { affects: string[] }) {
   if (affects.length === 0) return <>—</>;
   const list = (
-    <ul className="plain-list" style={{ margin: 0, display: "flex", flexWrap: "wrap", gap: "4px 12px" }}>
+    <ul className="affects">
       {affects.map((item) => {
         const [step, stage] = item.split(":");
-        return <li key={item}><code>{step}</code>{stage ? <span className="secondary"> ({stage})</span> : null}</li>;
+        return <li key={item}><code>{step}</code>{stage ? <span className="stage"> ({stage})</span> : null}</li>;
       })}
     </ul>
   );
-  return affects.length <= 5 ? list : <details><summary>{affects.length} steps</summary>{list}</details>;
+  return affects.length <= 5 ? list : <details><summary>{affects.length} deliverables</summary>{list}</details>;
 }
 
 export function DifferencesTable({ differences, savedLabel = "Saved", currentLabel = "Current" }: { differences: FieldDifference[]; savedLabel?: string; currentLabel?: string }) {
-  if (differences.length === 0) return <p className="secondary" style={{ margin: 0 }}>No relevant differences: the saved and current inputs agree.</p>;
+  if (differences.length === 0) return <p className="diff-empty">No relevant differences: the saved and current inputs agree.</p>;
   return (
     <div className="table-wrap">
       <table>
@@ -46,9 +47,9 @@ export function DifferencesTable({ differences, savedLabel = "Saved", currentLab
         <tbody>
           {differences.map((difference) => (
             <tr key={difference.field}>
-              <th scope="row" className="mono" style={{ overflowWrap: "anywhere" }}>{difference.field}</th>
-              <td style={{ overflowWrap: "anywhere" }}>{formatValue(difference.saved)}</td>
-              <td style={{ overflowWrap: "anywhere" }}>{formatValue(difference.current)}</td>
+              <th scope="row" className="mono diff-field">{difference.field}</th>
+              <td className="diff-value">{formatValue(difference.saved)}</td>
+              <td className="diff-value">{formatValue(difference.current)}</td>
               <td><AffectsList affects={difference.affects} /></td>
             </tr>
           ))}
@@ -66,7 +67,7 @@ function parseReason(reason: string): { stage: Stage; text: string } {
   return { stage: "step", text: reason };
 }
 
-const STAGE_TEXT: Record<Stage, string> = { raw: "Raw stage", processed: "Processed stage", step: "Whole step" };
+const STAGE_TEXT: Record<Stage, string> = { raw: "Generated frames", processed: "Game-ready clip", step: "Whole deliverable" };
 
 /** Reassessment reasons with a raw/processed marker; says plainly when only the processed stage is stale. */
 export function ReassessmentReasons({ reasons }: { reasons: string[] }) {
@@ -74,8 +75,8 @@ export function ReassessmentReasons({ reasons }: { reasons: string[] }) {
   const onlyProcessed = parsed.length > 0 && parsed.every((item) => item.stage === "processed");
   return (
     <>
-      {onlyProcessed ? <p style={{ margin: "0 0 4px" }}>Only the processed stage is stale; the raw generated frames are still valid and are not regenerated.</p> : null}
-      <ul style={{ margin: 0, paddingLeft: 20 }}>
+      {onlyProcessed ? <p className="reasons-note">Only the game-ready clip is stale; the generated frames are still valid and are not regenerated.</p> : null}
+      <ul className="reasons">
         {parsed.map((item, index) => (
           <li key={`${index}-${item.text}`}>
             {item.stage !== "step" ? <><Status tone="warn">{STAGE_TEXT[item.stage]}</Status>{" "}</> : null}

@@ -34,31 +34,41 @@ export function ProjectEventsProvider({ projectId, children }: { projectId: stri
       setState("idle");
       return;
     }
-    let after = 0;
+    // Queries load current state on mount, so the first connection only needs new events. Replaying the whole
+    // history (`after=0`) refetched every query once per historical event and flooded the browser.
+    let after: number | undefined;
     let source: EventSource | undefined;
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timer: number | undefined;
+    let flush: number | undefined;
+    let specChanged = false;
     let closed = false;
-    const refetch = () => void queryClient.invalidateQueries({ queryKey: ["op"] });
+    // A burst of events (a batch finishing, a reconnect catching up) becomes one refetch.
+    const schedule = (spec: boolean) => {
+      specChanged ||= spec;
+      if (flush !== undefined) return;
+      flush = window.setTimeout(() => {
+        flush = undefined;
+        void queryClient.invalidateQueries({ queryKey: ["op"] });
+        if (specChanged) window.dispatchEvent(new Event(SPEC_CHANGED_EVENT));
+        specChanged = false;
+      }, 120);
+    };
 
     const connect = () => {
       setState((previous) => (previous === "idle" ? "connecting" : "reconnecting"));
-      source = new EventSource(`/api/projects/${encodeURIComponent(projectId)}/events?after=${after}`);
+      source = new EventSource(`/api/projects/${encodeURIComponent(projectId)}/events${after === undefined ? "" : `?after=${after}`}`);
       source.onopen = () => setState("live");
       source.addEventListener("change", (event) => {
         if (!(event instanceof MessageEvent)) return;
         const sequence = Number(event.lastEventId);
-        if (Number.isFinite(sequence) && sequence > after) after = sequence;
+        if (Number.isFinite(sequence) && sequence > (after ?? -1)) after = sequence;
         setState("live");
-        refetch();
         const data: unknown = typeof event.data === "string" ? safeParse(event.data) : undefined;
-        if (typeof data === "object" && data !== null && "type" in data && typeof data.type === "string" && data.type.startsWith("spec.")) {
-          window.dispatchEvent(new Event(SPEC_CHANGED_EVENT));
-        }
+        schedule(typeof data === "object" && data !== null && "type" in data && typeof data.type === "string" && data.type.startsWith("spec."));
       });
       source.addEventListener("resync", () => {
         setState("resync");
-        refetch();
-        window.dispatchEvent(new Event(SPEC_CHANGED_EVENT));
+        schedule(true);
         setTimeout(() => setState((s) => (s === "resync" ? "live" : s)), 4000);
       });
       source.onerror = () => {
@@ -66,21 +76,34 @@ export function ProjectEventsProvider({ projectId, children }: { projectId: stri
         // EventSource retries by itself unless the server answered with an error status.
         if (source && source.readyState === EventSource.CLOSED && !closed) {
           source.close();
-          timer = setTimeout(connect, 3000);
+          timer = window.setTimeout(connect, 3000);
         }
       };
     };
     connect();
-    const onOnline = () => {
-      refetch();
-      window.dispatchEvent(new Event(SPEC_CHANGED_EVENT));
+    const onOnline = () => schedule(true);
+    // A page kept in the back/forward cache holds its stream open, and HTTP/1.1 allows six connections per
+    // host: a few address-bar navigations used to stall every request until those cached pages were evicted.
+    const onHide = () => {
+      source?.close();
+      clearTimeout(timer);
+    };
+    const onShow = (event: PageTransitionEvent) => {
+      if (!event.persisted || closed) return;
+      connect();
+      schedule(true);
     };
     window.addEventListener("online", onOnline);
+    window.addEventListener("pagehide", onHide);
+    window.addEventListener("pageshow", onShow);
     return () => {
       closed = true;
       source?.close();
       clearTimeout(timer);
+      clearTimeout(flush);
       window.removeEventListener("online", onOnline);
+      window.removeEventListener("pagehide", onHide);
+      window.removeEventListener("pageshow", onShow);
     };
   }, [projectId, queryClient]);
 

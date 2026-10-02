@@ -1,16 +1,12 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import type { Annotation, Geometry } from "@brainforge/contracts";
+import type { Backdrop, Tool, Zoom } from "../animation/stage.ts";
 
-export type Background = "checker" | "light" | "dark";
-type Tool = "pan" | "pin" | "rect";
-
-const BACKGROUNDS: Array<{ id: Background; label: string }> = [
-  { id: "checker", label: "Checkerboard" },
-  { id: "light", label: "Light" },
-  { id: "dark", label: "Dark" },
-];
 const MIN_SCALE = 0.05;
 const MAX_SCALE = 32;
+/** Room kept free around the canvas for the toolbar above and the cell label. */
+const PAD_X = 48;
+const PAD_Y = 128;
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
 interface View {
@@ -33,18 +29,23 @@ export interface AnnotatedViewerProps {
   onDraftChange: (geometry: Geometry | undefined) => void;
   /** Enter pressed on the viewer while a draft exists: move to the note form. */
   onDraftCommit: () => void;
+  background: Backdrop;
+  zoom: Zoom;
+  /** The wheel or keys changed the zoom to something the room's zoom control does not offer. */
+  onZoomChange: (zoom: Zoom) => void;
+  tool: Tool;
+  /** Laid over the top edge of the stage. */
+  toolbar?: ReactNode;
 }
 
 /**
- * Zoom/pan image viewer with a normalized [0,1] annotation overlay. The overlay lives inside the transformed
+ * Zoom/pan image stage with a normalized [0,1] annotation overlay. The overlay lives inside the transformed
  * image box, so it stays aligned at every zoom and pan; markers are counter-scaled to keep a constant size.
  */
-export function AnnotatedViewer({ src, alt, width, height, annotations, selectedId, onSelect, draft, onDraftChange, onDraftCommit }: AnnotatedViewerProps) {
+export function AnnotatedViewer({ src, alt, width, height, annotations, selectedId, onSelect, draft, onDraftChange, onDraftCommit, background, zoom, onZoomChange, tool, toolbar }: AnnotatedViewerProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
-  const [view, setView] = useState<View>({ fit: true, scale: 1, x: 0, y: 0 });
-  const [background, setBackground] = useState<Background>("checker");
-  const [tool, setTool] = useState<Tool>("pan");
+  const [view, setView] = useState<View>({ fit: zoom === "fit" || zoom === "custom", scale: typeof zoom === "number" ? zoom : 1, x: 0, y: 0 });
   const [failed, setFailed] = useState(false);
   const drag = useRef<{ kind: "pan"; px: number; py: number; vx: number; vy: number } | { kind: "rect"; ox: number; oy: number } | undefined>(undefined);
 
@@ -59,14 +60,24 @@ export function AnnotatedViewer({ src, alt, width, height, annotations, selected
   }, []);
 
   useEffect(() => {
-    setView({ fit: true, scale: 1, x: 0, y: 0 });
     setFailed(false);
   }, [src]);
 
-  const fitScale = size.w > 0 && size.h > 0 ? Math.min((size.w - 24) / width, (size.h - 24) / height) : 1;
+  // The room's zoom control wins whenever it changes.
+  useEffect(() => {
+    if (zoom === "fit") setView({ fit: true, scale: 1, x: 0, y: 0 });
+    else if (zoom !== "custom") setView({ fit: false, scale: zoom, x: 0, y: 0 });
+  }, [zoom]);
+
+  const fitScale = size.w > 0 && size.h > 0 ? Math.max(MIN_SCALE, Math.min((size.w - PAD_X) / width, (size.h - PAD_Y) / height)) : 1;
   const scale = view.fit ? fitScale : view.scale;
   const x = view.fit ? 0 : view.x;
   const y = view.fit ? 0 : view.y;
+
+  // Report what the view really is, so the room's zoom control never claims 1× while the wheel has moved on.
+  useEffect(() => {
+    onZoomChange(view.fit ? "fit" : view.scale === 1 ? 1 : view.scale === 2 ? 2 : "custom");
+  }, [view.fit, view.scale, onZoomChange]);
 
   const zoomAbout = useCallback((factor: number, cx: number, cy: number) => {
     setView((v) => {
@@ -103,11 +114,12 @@ export function AnnotatedViewer({ src, alt, width, height, annotations, selected
     if (event.button !== 0 && event.button !== 1) return;
     event.currentTarget.focus();
     event.currentTarget.setPointerCapture(event.pointerId);
-    if (tool === "pan" || event.button === 1) {
+    if (tool === "none" || event.button === 1) {
       drag.current = { kind: "pan", px: event.clientX, py: event.clientY, vx: x, vy: y };
     } else if (tool === "pin") {
       const p = toNormalized(event);
       onDraftChange({ kind: "pin", x: p.x, y: p.y });
+      onDraftCommit();
     } else {
       const p = toNormalized(event);
       drag.current = { kind: "rect", ox: p.x, oy: p.y };
@@ -119,9 +131,7 @@ export function AnnotatedViewer({ src, alt, width, height, annotations, selected
     const d = drag.current;
     if (!d) return;
     if (d.kind === "pan") {
-      const dx = event.clientX - d.px;
-      const dy = event.clientY - d.py;
-      setView({ fit: false, scale, x: d.vx + dx, y: d.vy + dy });
+      setView({ fit: false, scale, x: d.vx + (event.clientX - d.px), y: d.vy + (event.clientY - d.py) });
     } else {
       const p = toNormalized(event);
       onDraftChange({ kind: "rect", x: Math.min(d.ox, p.x), y: Math.min(d.oy, p.y), width: Math.abs(p.x - d.ox), height: Math.abs(p.y - d.oy) });
@@ -131,7 +141,9 @@ export function AnnotatedViewer({ src, alt, width, height, annotations, selected
   const onPointerUp = () => {
     const d = drag.current;
     drag.current = undefined;
-    if (d?.kind === "rect" && draft?.kind === "rect" && (draft.width * width < 3 || draft.height * height < 3)) onDraftChange(undefined);
+    if (d?.kind !== "rect") return;
+    if (draft?.kind === "rect" && (draft.width * width < 3 || draft.height * height < 3)) onDraftChange(undefined);
+    else onDraftCommit();
   };
 
   const nudge = (dx: number, dy: number, big: boolean): boolean => {
@@ -168,30 +180,12 @@ export function AnnotatedViewer({ src, alt, width, height, annotations, selected
   const counter = `translate(-50%, -50%) scale(${1 / scale})`;
 
   return (
-    <div className="annot-viewer">
-      <div className="viewer-bar">
-      <div className="viewer-tools" role="toolbar" aria-label="Viewer controls">
-        <button type="button" onClick={() => zoomAbout(1.25, 0, 0)} aria-label="Zoom in">+</button>
-        <button type="button" onClick={() => zoomAbout(0.8, 0, 0)} aria-label="Zoom out">－</button>
-        <button type="button" aria-pressed={view.fit} onClick={() => setView({ fit: true, scale: 1, x: 0, y: 0 })}>Fit</button>
-        <button type="button" aria-pressed={!view.fit && view.scale === 1} onClick={() => setView({ fit: false, scale: 1, x: 0, y: 0 })}>100%</button>
-        <span className="secondary" aria-live="polite">{Math.round(scale * 100)}%</span>
-        <span aria-hidden="true" style={{ width: 8 }} />
-        {BACKGROUNDS.map((option) => (
-          <button key={option.id} type="button" aria-pressed={background === option.id} onClick={() => setBackground(option.id)}>{option.label}</button>
-        ))}
-      </div>
-      <div className="viewer-tools" role="toolbar" aria-label="Annotation tools">
-        <button type="button" aria-pressed={tool === "pan"} onClick={() => setTool("pan")}>Pan</button>
-        <button type="button" aria-pressed={tool === "pin"} onClick={() => setTool("pin")}>Pin</button>
-        <button type="button" aria-pressed={tool === "rect"} onClick={() => setTool("rect")}>Rectangle</button>
-        <button type="button" onClick={() => onDraftChange({ kind: "whole" })}>Note on whole image</button>
-      </div>
-      </div>
+    <div className="room-stage" data-bg={background}>
+      {toolbar}
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
       <div
         ref={stageRef}
-        className={`annot-stage viewer-stage ${background}`}
+        className="annot-stage"
         tabIndex={0}
         role="application"
         aria-label={`${alt}. Zoom and pan area. Press Enter to place a pin at the centre, arrow keys to move it, Escape to cancel, plus and minus to zoom.`}
@@ -202,14 +196,16 @@ export function AnnotatedViewer({ src, alt, width, height, annotations, selected
         onKeyDown={onKeyDown}
       >
         {failed ? (
-          <p role="alert" style={{ padding: 16 }}>The image could not be loaded. The registered file may be missing on disk.</p>
+          <p role="alert" className="annot-failed">The image could not be loaded. The registered file may be missing on disk.</p>
         ) : (
           <div
             className="annot-canvas"
             style={{ width, height, marginLeft: -width / 2, marginTop: -height / 2, transform: `translate(${x}px, ${y}px) scale(${scale})` }}
           >
+            <span className="cell-size" style={{ transform: `translateY(-100%) scale(${1 / scale})` }}>{width} × {height}</span>
             <img src={src} alt={alt} width={width} height={height} draggable={false} style={{ imageRendering: scale > 1 ? "pixelated" : "auto" }} onError={() => setFailed(true)} />
             <svg className="annot-svg" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
+              <rect x={0} y={0} width={1} height={1} className="cell-guide-rect" vectorEffect="non-scaling-stroke" />
               {annotations.map((a, i) => a.geometry.kind === "rect" ? (
                 <rect key={a.annotationId} x={a.geometry.x} y={a.geometry.y} width={a.geometry.width} height={a.geometry.height} className={`annot-rect${a.annotationId === selectedId ? " selected" : ""}${a.requiresRevision ? " required" : ""}`} vectorEffect="non-scaling-stroke" data-n={i + 1} />
               ) : null)}

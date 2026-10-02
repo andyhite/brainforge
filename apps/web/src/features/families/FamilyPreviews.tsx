@@ -1,3 +1,4 @@
+import { paths } from "../../lib/paths.ts";
 import { useQueries } from "@tanstack/react-query";
 import { AssetSpec, type Deliverable } from "@brainforge/contracts";
 import { callOperation } from "../../api/client.ts";
@@ -53,10 +54,9 @@ export function FamilyPreviews({ assetId, deliverableId, candidateId, outputId, 
   const family = spec.family;
   const symmetryWarning = detail.data?.ok ? detail.data.data.output.warnings.find((w) => w.code === "SYMMETRY")?.message : undefined;
   const mirrored = detail.data?.ok && detail.data.data.output.recipe && detail.data.data.output.recipe.tileRepeat !== "none" ? detail.data.data.output.recipe.tileRepeat : undefined;
-  const symmetry = symmetryWarning ?? (mirrored ? `SYMMETRY WARNING: ${mirrored} reflects one half of the image onto the other, so the outer edges match. The picture becomes mirror-symmetric on that axis. This is not evidence that the original art tiles; check the seams visually.` : undefined);
+  const symmetry = symmetryWarning ?? (mirrored ? `Mirror repeat (${mirrored}) copies one half of the image onto the other, so the outer edges match and the picture is mirror-symmetric on that axis. That does not show the original art tiles; check the seams yourself.` : undefined);
 
   const entries: StateEntry[] = [];
-  const base = `/assets/${encodeURIComponent(assetId)}/candidates/`;
   for (const d of spec.deliverables) {
     if (d.id === deliverableId) {
       entries.push({ key: d.id, label: d.ui?.state ?? d.id, deliverableId: d.id, src: outputUrl(projectId, output.fileId, 320), width: output.width, height: output.height, link: undefined, current: true });
@@ -67,7 +67,7 @@ export function FamilyPreviews({ assetId, deliverableId, candidateId, outputId, 
     const sibling = at >= 0 ? others[at] : undefined;
     const cand = envelope?.ok ? envelope.data.candidate : undefined;
     const out = cand ? (cand.outputs.find((o) => o.outputId === sibling?.outputId) ?? cand.outputs.find((o) => o.stage === "processed") ?? cand.outputs[0]) : undefined;
-    entries.push({ key: d.id, label: d.ui?.state ?? d.id, deliverableId: d.id, src: out ? outputUrl(projectId, out.fileId, 320) : undefined, width: out?.width ?? 128, height: out?.height ?? 128, link: cand ? `${base}${encodeURIComponent(cand.candidateId)}` : undefined, current: false });
+    entries.push({ key: d.id, label: d.ui?.state ?? d.id, deliverableId: d.id, src: out ? outputUrl(projectId, out.fileId, 320) : undefined, width: out?.width ?? 128, height: out?.height ?? 128, link: cand ? paths.step(assetId, d.id, { candidate: cand.candidateId, ...(out ? { output: out.outputId } : {}) }) : undefined, current: false });
   }
   const stateful = spec.deliverables.filter((d) => d.ui?.state !== undefined).length;
   const stills = entries.filter((e) => spec.deliverables.find((d) => d.id === e.deliverableId)?.kind !== "animation");

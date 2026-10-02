@@ -11,12 +11,15 @@ const todo = (what: string): string => q(`${PLACEHOLDER} ${what}`);
 const SHEET = (id: string): string[] => [
   "  - id: construction-sheet",
   "    kind: reference-sheet",
-  `    description: ${todo(`one line on what the sheet must keep identical across its three views of the ${id}`)}`,
-  "    output: { width: 1536, height: 768 }",
+  `    description: ${todo(`4-view turnaround of the ${id}: full-body front, side and back views, and a facial close-up; describe the features shared across views`)}`,
+  "    overrides:",
+  "      workflows: { variation: krea2-construction-sheet, variationOpaque: krea2-construction-sheet-opaque }",
+  "    output: { width: 2048, height: 1024 }",
   "    regions:",
-  `      - { id: front, x: 0, y: 0, width: 512, height: 768, view: ${q("front view, facing the camera")} }`,
-  `      - { id: profile, x: 512, y: 0, width: 512, height: 768, view: ${q("side profile facing right")} }`,
-  `      - { id: rear, x: 1024, y: 0, width: 512, height: 768, view: ${q("rear view, facing away from the camera")} }`,
+  `      - { id: front, x: 0, y: 0, width: 512, height: 1024, view: ${q("full-body front view, facing the camera")} }`,
+  `      - { id: profile, x: 512, y: 0, width: 512, height: 1024, view: ${q("full-body side profile facing right")} }`,
+  `      - { id: rear, x: 1024, y: 0, width: 512, height: 1024, view: ${q("full-body rear view, facing away from the camera")} }`,
+  `      - { id: face, x: 1536, y: 0, width: 512, height: 1024, view: ${q("facial close-up, facing the camera")} }`,
 ];
 
 /** The deliverables and extra top-level blocks of each family's starter file. */

@@ -1,38 +1,71 @@
+import { useRef, type KeyboardEvent, type PointerEvent } from "react";
+import { Icon } from "../../components/Icon.tsx";
+
 interface Props {
   count: number;
   index: number;
   onIndex: (index: number) => void;
   onStep: (delta: number) => void;
-  /** Per frame: a note covers it. Drawn as ticks under the slider so feedback is findable. */
+  /** Per frame: a note covers it. Drawn as lit ticks and amber range bars so feedback is findable. */
   covered: boolean[];
-  status: string;
+  /** Spoken value, e.g. the frame number with its source frame. */
+  valueText: string;
 }
 
-/** Scrub slider with previous/next buttons. Frames are labelled one-based; the status line also shows the zero-based source frame. */
-export function FrameStepper({ count, index, onIndex, onStep, covered, status }: Props) {
+/** Contiguous runs of covered frames, as [first, last]. */
+function runs(covered: boolean[]): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  covered.forEach((on, i) => {
+    if (!on) return;
+    const last = out[out.length - 1];
+    if (last && last[1] === i - 1) last[1] = i;
+    else out.push([i, i]);
+  });
+  return out;
+}
+
+/** Tick timeline with previous/next buttons. Frames are labelled one-based; drag or use the arrow keys to scrub. */
+export function FrameStepper({ count, index, onIndex, onStep, covered, valueText }: Props) {
+  const ref = useRef<HTMLDivElement>(null);
+  const at = (event: PointerEvent): number => {
+    const rect = ref.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return index;
+    return Math.min(count - 1, Math.max(0, Math.floor(((event.clientX - rect.left) / rect.width) * count)));
+  };
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "ArrowLeft") onStep(-1);
+    else if (event.key === "ArrowRight") onStep(1);
+    else if (event.key === "Home") onIndex(0);
+    else if (event.key === "End") onIndex(count - 1);
+    else return;
+    event.preventDefault();
+  };
   return (
     <div className="frame-stepper">
-      <div className="row">
-        <button type="button" onClick={() => onStep(-1)} aria-label="Previous frame">Prev</button>
-        <input
-          type="range"
-          min={0}
-          max={Math.max(0, count - 1)}
-          step={1}
-          value={index}
-          onChange={(e) => onIndex(Number(e.target.value))}
-          aria-label="Frame"
-          aria-valuetext={`Frame ${index + 1} of ${count}`}
-          style={{ flex: 1 }}
-        />
-        <button type="button" onClick={() => onStep(1)} aria-label="Next frame">Next</button>
-      </div>
-      {covered.some(Boolean) ? (
-        <div className="frame-notes-track" aria-hidden="true" title="Frames with notes">
-          {covered.map((c, i) => <span key={i} className={c ? "has-note" : undefined} />)}
+      <button type="button" className="icon-button sm" aria-label="Previous frame" onClick={() => onStep(-1)}><Icon name="step-back" /></button>
+      <div
+        ref={ref}
+        className="timeline"
+        role="slider"
+        tabIndex={0}
+        aria-label="Frame"
+        aria-valuemin={1}
+        aria-valuemax={count}
+        aria-valuenow={index + 1}
+        aria-valuetext={valueText}
+        onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); onIndex(at(event)); }}
+        onPointerMove={(event) => { if (event.buttons === 1) onIndex(at(event)); }}
+        onKeyDown={onKeyDown}
+      >
+        <div className="ticks" style={{ gridTemplateColumns: `repeat(${count}, 1fr)` }} aria-hidden="true">
+          {covered.map((on, i) => <i key={i} className={on ? "on" : undefined} />)}
         </div>
-      ) : null}
-      <p className="secondary mono" role="status" aria-live="off" style={{ margin: "4px 0 0" }}>{status}</p>
+        {runs(covered).map(([first, last]) => (
+          <span key={first} className="range" aria-hidden="true" style={{ left: `${(first / count) * 100}%`, width: `${((last - first + 1) / count) * 100}%` }} />
+        ))}
+        <span className="head" aria-hidden="true" style={{ left: `${((index + 0.5) / count) * 100}%` }} />
+      </div>
+      <button type="button" className="icon-button sm" aria-label="Next frame" onClick={() => onStep(1)}><Icon name="step-forward" /></button>
     </div>
   );
 }

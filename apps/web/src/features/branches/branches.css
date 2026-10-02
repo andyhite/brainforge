@@ -1,0 +1,23 @@
+/* Branch plans, differences and comparison: dialogs and panels used by the asset menu, the room and promotion. */
+.branch-plan { display: grid; gap: 18px; }
+.branch-plan h3, .branch-compare h3, .branch-compare h4 { margin: 0 0 6px; font-size: 13px; font-weight: 640; }
+.branch-plan p, .branch-compare p, .diff-empty { margin: 0; color: var(--text-muted); font-size: 13px; }
+.branch-plan ul { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.branch-plan li { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.branch-plan li.block { display: block; }
+.branch-plan li .why { color: var(--text-muted); }
+.branch-plan .auth { margin-top: 4px; }
+
+.diff-field { overflow-wrap: anywhere; }
+.diff-value { overflow-wrap: anywhere; }
+.affects { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.affects .stage { color: var(--text-muted); }
+
+.reasons { margin: 0; padding-left: 20px; font-size: 13px; }
+.reasons-note { margin: 0 0 4px; font-size: 13px; }
+
+.branch-compare { display: grid; gap: 22px; }
+.branch-compare th small { display: block; margin-top: 2px; font-weight: 450; color: var(--text-faint); }
+.branch-compare .compare-cell { display: grid; gap: 4px; justify-items: start; font-size: 12.5px; }
+.branch-compare .compare-cell .faint { color: var(--text-faint); }
+.branch-compare .basis + .basis { margin-top: 16px; }

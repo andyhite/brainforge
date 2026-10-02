@@ -38,7 +38,7 @@ export function EffectiveSettings({ assetId }: { assetId?: string }) {
     <div className="stack">
       {conflicts.length > 0 ? (
         <Banner tone="warn" title="Conflicting values">
-          <ul style={{ margin: 0, paddingLeft: 20 }}>
+          <ul className="plain-list">
             {conflicts.map((conflict) => (
               <li key={conflict.field}>
                 <span className="mono">{conflict.field}</span>:{" "}

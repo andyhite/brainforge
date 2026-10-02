@@ -1,7 +1,8 @@
 import { useOperation } from "../../api/hooks.ts";
 import { Banner, ErrorBanner, NetworkProblem, Status, formatTime } from "../../components/ui.tsx";
 import { FamilyPreviews } from "../families/FamilyPreviews.tsx";
-import { MatchBadge, VersionStateBadge } from "./ProductionState.tsx";
+import { whoLabel } from "../review/room-lib.ts";
+import "./releases.css";
 
 function show(value: unknown): string {
   if (value === undefined) return "—";
@@ -9,25 +10,16 @@ function show(value: unknown): string {
   return JSON.stringify(value);
 }
 
+/** Everything about one saved version: what it holds, how it differs from today’s requirements, who activated it. Rendered inside a disclosure. */
 export function VersionDetail({ versionId }: { versionId: string }) {
   const query = useOperation("version.inspect", { versionId });
   if (query.error) return <NetworkProblem error={query.error} />;
-  if (!query.data) return <p className="secondary" role="status">Loading version…</p>;
+  if (!query.data) return <p className="secondary" role="status">Loading details…</p>;
   if (!query.data.ok) return <ErrorBanner error={query.data.error} />;
   const { version, manifest, differences, activations } = query.data.data;
+  const siblings = manifest.deliverables.map((d) => ({ deliverableId: d.deliverableId, candidateId: d.candidateId, outputId: d.outputId }));
   return (
-    <section className="rel-detail" aria-labelledby={`vd-${versionId}`}>
-      <h3 id={`vd-${versionId}`}>Version {version.versionNumber} details</h3>
-      <div className="row" style={{ gap: 8 }}><VersionStateBadge state={version.state} /><MatchBadge matches={version.matchesCurrent} /></div>
-      <dl className="kv">
-        <dt>Version id</dt><dd className="mono">{manifest.versionId}</dd>
-        <dt>Branch</dt><dd className="mono">{manifest.branchId}</dd>
-        <dt>Requirements hash</dt><dd className="mono">{manifest.requirementsHash}</dd>
-        <dt>Created</dt><dd>{formatTime(manifest.createdAt)} by {manifest.createdBy} ({version.createdByType})</dd>
-        <dt>Review decisions</dt><dd>{manifest.reviewDecisionIds.length}</dd>
-        <dt>Directory</dt><dd className="mono">{version.directory}</dd>
-      </dl>
-
+    <div className="rel-detail">
       <h4>Deliverables</h4>
       <ul className="plain-list">
         {manifest.deliverables.map((item) => (
@@ -39,14 +31,14 @@ export function VersionDetail({ versionId }: { versionId: string }) {
       </ul>
 
       <h4>Previews</h4>
-      <p className="secondary">Asset-viewer checks drawn from this version&rsquo;s exact files and the metadata the asset declares.</p>
+      <p className="secondary">Checks drawn from this version’s exact files and the metadata the asset declares.</p>
       {manifest.deliverables.map((item) => (
         <details key={item.deliverableId}>
           <summary>{item.deliverableId} · {item.kind}</summary>
-          <FamilyPreviews assetId={manifest.assetId} deliverableId={item.deliverableId} candidateId={item.candidateId} outputId={item.outputId} parts="deliverable" siblings={manifest.deliverables.map((d) => ({ deliverableId: d.deliverableId, candidateId: d.candidateId, outputId: d.outputId }))} />
+          <FamilyPreviews assetId={manifest.assetId} deliverableId={item.deliverableId} candidateId={item.candidateId} outputId={item.outputId} parts="deliverable" siblings={siblings} />
         </details>
       ))}
-      {manifest.deliverables[0] ? <FamilyPreviews assetId={manifest.assetId} deliverableId={manifest.deliverables[0].deliverableId} candidateId={manifest.deliverables[0].candidateId} outputId={manifest.deliverables[0].outputId} parts="set" siblings={manifest.deliverables.map((d) => ({ deliverableId: d.deliverableId, candidateId: d.candidateId, outputId: d.outputId }))} /> : null}
+      {manifest.deliverables[0] ? <FamilyPreviews assetId={manifest.assetId} deliverableId={manifest.deliverables[0].deliverableId} candidateId={manifest.deliverables[0].candidateId} outputId={manifest.deliverables[0].outputId} parts="set" siblings={siblings} /> : null}
 
       {manifest.members && manifest.members.length > 0 ? (
         <>
@@ -63,12 +55,12 @@ export function VersionDetail({ versionId }: { versionId: string }) {
         </>
       ) : null}
 
-      <h4>Differences against current requirements</h4>
-      {differences.length === 0 ? <p className="secondary">No differences: this version matches the current requirements.</p> : (
+      <h4>Differences from the current requirements</h4>
+      {differences.length === 0 ? <p className="secondary">None: this version matches the current requirements.</p> : (
         <div className="table-wrap">
           <table>
             <caption className="sr-only">Fields that differ between this version and the current requirements</caption>
-            <thead><tr><th scope="col">Field</th><th scope="col">This version</th><th scope="col">Current</th></tr></thead>
+            <thead><tr><th scope="col">Field</th><th scope="col">This version</th><th scope="col">Now</th></tr></thead>
             <tbody>
               {differences.map((diff) => (
                 <tr key={diff.field}><th scope="row" className="mono">{diff.field}</th><td className="mono">{show(diff.version)}</td><td className="mono">{show(diff.current)}</td></tr>
@@ -83,13 +75,23 @@ export function VersionDetail({ versionId }: { versionId: string }) {
         <ol className="plain-list" aria-label="Activation history">
           {activations.map((event) => (
             <li key={event.eventId}>
-              <span className="chip">{event.actorType}</span> {event.actorId} {event.kind === "restore" ? "restored" : "activated"} this version
+              {whoLabel(event.actorId)} {event.kind === "restore" ? "restored" : "activated"} this version
               <span className="secondary"> · <time dateTime={event.createdAt}>{formatTime(event.createdAt)}</time>
-                {event.acknowledgedObsolete ? " · acknowledged obsolete" : ""}{event.reason ? ` · ${event.reason}` : ""}</span>
+                {event.acknowledgedObsolete ? " · acknowledged it was out of date" : ""}{event.reason ? ` · ${event.reason}` : ""}</span>
             </li>
           ))}
         </ol>
       )}
+
+      <h4>Record</h4>
+      <dl className="kv">
+        <dt>Version id</dt><dd className="mono">{manifest.versionId}</dd>
+        <dt>Branch</dt><dd className="mono">{manifest.branchId}</dd>
+        <dt>Requirements hash</dt><dd className="mono">{manifest.requirementsHash}</dd>
+        <dt>Created</dt><dd>{formatTime(manifest.createdAt)} by {whoLabel(manifest.createdBy).toLowerCase()}</dd>
+        <dt>Review decisions</dt><dd>{manifest.reviewDecisionIds.length}</dd>
+        <dt>Directory</dt><dd className="mono">{version.directory}</dd>
+      </dl>
 
       <h4>Files ({manifest.files.length})</h4>
       {manifest.files.length === 0 ? <Banner tone="warn" title="No files listed" /> : (
@@ -105,6 +107,6 @@ export function VersionDetail({ versionId }: { versionId: string }) {
           </table>
         </div>
       )}
-    </section>
+    </div>
   );
 }

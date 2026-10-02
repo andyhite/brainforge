@@ -55,37 +55,37 @@ export function ActivateDialog({ version, restore, active, open, onOpenChange, o
   };
 
   return (
-    <Modal open={open} onOpenChange={onOpenChange} title={`${verb} — version ${version.versionNumber}`} description="Activation only changes which immutable version is current. It does not export and never deletes other versions.">
+    <Modal open={open} onOpenChange={onOpenChange} title={`${verb}: version ${version.versionNumber}`} description="Activating only changes which version counts as current. It doesn’t export anything and never deletes other versions.">
       {obsolete ? (
-        <Banner tone="warn" title="Obsolete: requirements changed">
-          This version was built against earlier requirements. It stays available, but it does not count as currently complete.
+        <Banner tone="warn" title="Out of date: its requirements changed">
+          This version was built before the asset’s requirements changed. You can still use it, but it won’t count as complete.
         </Banner>
       ) : null}
       {obsolete ? (
-        <div className="field" style={{ marginTop: 16 }}>
+        <div className="field">
           <label className="check" htmlFor={ackId}>
             <input id={ackId} type="checkbox" checked={ack} onChange={(event) => setAck(event.target.checked)} />
-            I understand this version no longer matches current requirements and does not count as currently complete
+            I understand this version no longer matches the current requirements and won’t count as complete
           </label>
         </div>
       ) : null}
-      <div className="field" style={{ marginTop: 16 }}>
+      <div className="field">
         <label htmlFor={reasonId}>Reason (optional)</label>
         <input id={reasonId} type="text" value={reason} maxLength={2000} onChange={(event) => setReason(event.target.value)} />
       </div>
       <div aria-live="polite">
         {failure ? (
           failure.code === "REVISION_CONFLICT"
-            ? <Banner tone="warn" title="Someone else changed the active version" actions={<button type="button" onClick={() => onOpenChange(false)}>Close and refresh</button>}>The list has been refreshed with the current active version. Review it, then try again.</Banner>
+            ? <Banner tone="warn" title="The active version changed meanwhile" actions={<button type="button" onClick={() => onOpenChange(false)}>Close and refresh</button>}>The list now shows the current active version. Review it, then try again.</Banner>
             : <ErrorBanner error={failure} />
         ) : null}
-        {network ? <Banner tone="bad" title="No response from the server">{network} Retrying reuses the same request, so it cannot activate twice.</Banner> : null}
+        {network ? <Banner tone="bad" title="No response from the server">{network} Retrying reuses the same request, so it can’t activate twice.</Banner> : null}
       </div>
-      <div className="row end" style={{ marginTop: 16 }}>
+      <div className="row end">
         <button type="button" onClick={() => onOpenChange(false)}>Cancel</button>
         <button type="button" className="primary" disabled={busy || (obsolete && !ack)} onClick={() => void submit()}>{busy ? "Working…" : verb}</button>
       </div>
-      {obsolete && !ack ? <p className="secondary">Tick the acknowledgement to enable “{verb}”.</p> : null}
+      {obsolete && !ack ? <p className="secondary">Tick the box to enable “{verb}”.</p> : null}
     </Modal>
   );
 }

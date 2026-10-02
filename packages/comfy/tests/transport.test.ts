@@ -171,6 +171,16 @@ describe("preflight", () => {
     expect((await preflight(await loadWorkflow("wan22-motion", 1), client)).ok).toBe(true);
   });
 
+  test("construction sheets need the 4-view LoRA; the baseline variation does not", async () => {
+    fake.hideModel("Krea2_Character_Design_4-View_V1.safetensors");
+    for (const id of ["krea2-construction-sheet", "krea2-construction-sheet-opaque"]) {
+      const report = await preflight(await loadWorkflow(id, 1), client);
+      expect(report.ok).toBe(false);
+      expect(report.missingModels.map((m) => m.filename)).toEqual(["Krea2_Character_Design_4-View_V1.safetensors"]);
+    }
+    expect((await preflight(await loadWorkflow("krea2-variation", 1), client)).ok).toBe(true);
+  });
+
   test("reports a missing node and a missing model for the variation workflow", async () => {
     fake.injectFault("object-info-missing-node");
     fake.hideModel("krea2_identity_edit_v1_2.safetensors");

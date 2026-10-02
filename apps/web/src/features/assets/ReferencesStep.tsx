@@ -3,7 +3,8 @@ import { useState, type ChangeEvent, type FormEvent } from "react";
 import type { OperationData } from "@brainforge/contracts";
 import { fileUrl, useMutationOperation, useOperation } from "../../api/hooks.ts";
 import { Viewer } from "../../components/Viewer.tsx";
-import { ErrorBanner, NetworkProblem, Status } from "../../components/ui.tsx";
+import { ErrorBanner, Modal, NetworkProblem, Status } from "../../components/ui.tsx";
+import "../families/families.css";
 import { useProject } from "../../lib/use-project.ts";
 
 type Inspect = OperationData<"asset.inspect">;
@@ -67,10 +68,35 @@ export function ReferencesStep({ assetId, inspect }: { assetId: string; inspect:
   };
 
   return (
-    <div className="stack">
-      <section className="panel" aria-labelledby="asset-ref-import">
-        <h2 id="asset-ref-import">Import reference</h2>
-        <form className="stack" onSubmit={(event) => void submit(event)}>
+    <section id="def-references" tabIndex={-1} className="def-section" aria-labelledby="asset-ref-list">
+      <div className="def-side-head">
+        <h2 id="asset-ref-list">References</h2>
+        {referencesDir ? <span className="secondary">{referencesDir.fileCount} {referencesDir.fileCount === 1 ? "file" : "files"} on disk</span> : null}
+      </div>
+      {list.error ? <NetworkProblem error={list.error} /> : null}
+      {list.data && !list.data.ok ? <ErrorBanner error={list.data.error} /> : null}
+      {list.data?.ok && references.length === 0 ? <p className="secondary">No references yet. Import an image the model should look at.</p> : null}
+      {references.length > 0 ? (
+        <ul className="ref-list">
+          {references.map((ref) => (
+            <li key={ref.referenceId}>
+              {projectId ? <span className="thumb-box ref-thumb"><img src={fileUrl(projectId, ref.referenceId, 128)} alt={ref.label} loading="lazy" /></span> : <span className="thumb-box ref-thumb" />}
+              <span>
+                <span className="ref-name" title={ref.label}>{ref.label}</span>
+                <span className="ref-meta">
+                  {ref.scope === "asset" ? "This asset" : "Whole project"}
+                  {ref.width !== undefined && ref.height !== undefined ? ` · ${ref.width}×${ref.height}` : ""}
+                </span>
+              </span>
+              <button type="button" className="ghost sm" onClick={() => setViewing(ref)} aria-label={`View ${ref.label}`}>View</button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      <details className="ref-import-box">
+        <summary>Import a reference…</summary>
+        <form className="ref-import" onSubmit={(event) => void submit(event)}>
           <div className="field">
             <label htmlFor="asset-ref-file">Image file</label>
             <input id="asset-ref-file" type="file" accept="image/*" onChange={onPick} key={result?.ok ? result.data.referenceId : "pick"} />
@@ -80,10 +106,10 @@ export function ReferencesStep({ assetId, inspect }: { assetId: string; inspect:
             <input id="asset-ref-label" value={label} onChange={(e) => setLabel(e.target.value)} required />
           </div>
           <fieldset>
-            <legend>Scope</legend>
+            <legend>Who can use it</legend>
             <div className="row">
-              <label><input type="radio" name="asset-ref-scope" checked={scope === "asset"} onChange={() => setScope("asset")} /> Asset-scoped</label>
-              <label><input type="radio" name="asset-ref-scope" checked={scope === "project"} onChange={() => setScope("project")} /> Project-shared</label>
+              <label><input type="radio" name="asset-ref-scope" checked={scope === "asset"} onChange={() => setScope("asset")} /> This asset</label>
+              <label><input type="radio" name="asset-ref-scope" checked={scope === "project"} onChange={() => setScope("project")} /> Whole project</label>
             </div>
           </fieldset>
           {readError ? <p role="alert"><Status tone="bad">{readError}</Status></p> : null}
@@ -91,52 +117,21 @@ export function ReferencesStep({ assetId, inspect }: { assetId: string; inspect:
           {result && !result.ok ? <ErrorBanner error={result.error} /> : null}
           {result?.ok ? (
             <p role="status">
-              <Status tone="ok">Imported</Status>{" "}
-              <span className="mono">{result.data.referenceId}</span> · sha256 <span className="mono">{result.data.sha256.slice(0, 12)}</span>
-              {result.data.width !== undefined && result.data.height !== undefined ? ` · ${result.data.width}×${result.data.height}` : ""}
+              <Status tone="ok">Imported {result.data.label}</Status>
+              {result.data.width !== undefined && result.data.height !== undefined ? <span className="secondary"> {result.data.width}×{result.data.height}</span> : null}
             </p>
           ) : null}
           <div className="row">
-            <button type="submit" className="primary" disabled={importReference.isPending || !file || label.trim() === ""}>
+            <button type="submit" disabled={importReference.isPending || !file || label.trim() === ""}>
               {importReference.isPending ? "Importing…" : "Import reference"}
             </button>
           </div>
         </form>
-      </section>
+      </details>
 
-      <section className="panel" aria-labelledby="asset-ref-list">
-        <h2 id="asset-ref-list">References</h2>
-        {referencesDir ? <p>{referencesDir.fileCount} {referencesDir.fileCount === 1 ? "file" : "files"} on disk</p> : null}
-        {list.error ? <NetworkProblem error={list.error} /> : null}
-        {list.data && !list.data.ok ? <ErrorBanner error={list.data.error} /> : null}
-        {list.data?.ok && references.length === 0 ? <p className="secondary">No references imported yet.</p> : null}
-        {references.length > 0 ? (
-          <ul className="stack" style={{ listStyle: "none", padding: 0 }}>
-            {references.map((ref) => (
-              <li key={ref.referenceId} className="row">
-                {projectId ? <img className="thumb" src={fileUrl(projectId, ref.referenceId)} alt={ref.label} /> : null}
-                <span>
-                  {ref.label}{" "}
-                  <Status tone={ref.scope === "asset" ? "info" : "idle"}>{ref.scope === "asset" ? "Asset-scoped" : "Project-shared"}</Status>
-                  <br />
-                  <span className="secondary mono">
-                    {ref.referenceId} · sha256 {ref.sha256.slice(0, 12)}
-                    {ref.width !== undefined && ref.height !== undefined ? ` · ${ref.width}×${ref.height}` : ""}
-                  </span>
-                </span>
-                <button type="button" onClick={() => setViewing(ref)} aria-label={`View ${ref.label}`}>View</button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </section>
-
-      {viewing && projectId ? (
-        <section className="panel" aria-labelledby="asset-ref-viewer">
-          <h2 id="asset-ref-viewer">Viewing {viewing.label}</h2>
-          <Viewer src={fileUrl(projectId, viewing.referenceId)} alt={viewing.label} caption={viewing.referenceId} />
-        </section>
-      ) : null}
-    </div>
+      <Modal open={viewing !== null && projectId !== undefined} onOpenChange={(open) => { if (!open) setViewing(null); }} title={viewing?.label ?? "Reference"} description="Check the image on light, dark and transparency backgrounds." wide>
+        {viewing && projectId ? <Viewer src={fileUrl(projectId, viewing.referenceId)} alt={viewing.label} /> : null}
+      </Modal>
+    </section>
   );
 }

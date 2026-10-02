@@ -42,7 +42,7 @@ function Regions({ base, regions }: { base: Path; regions: Array<Record<string, 
     <Group legend="Reference-sheet regions" hint="Named source-pixel rectangles of the sheet. Each becomes a separately hashed crop that other deliverables can bind by region id.">
       <ul className="plain-list">
         {regions.map((_, i) => (
-          <li key={i} className="panel fam-row">
+          <li key={i} className="fam-row">
             <div className="grid-2">
               <TextField path={[...base, i, "id"]} label="Region id" compact />
               <TextField path={[...base, i, "view"]} label="View phrase" compact hint="A concrete picture phrase sent to the model for this region." />
@@ -51,7 +51,7 @@ function Regions({ base, regions }: { base: Path; regions: Array<Record<string, 
               <NumberField path={[...base, i, "width"]} label="Width" min={1} unit="px" compact />
               <NumberField path={[...base, i, "height"]} label="Height" min={1} unit="px" compact />
             </div>
-            <button type="button" disabled={disabled} onClick={() => patch((doc) => removeAt(doc, [...base, i]))}>Remove region {String(regions[i]?.id ?? i + 1)}</button>
+            <button type="button" className="ghost sm" disabled={disabled} onClick={() => patch((doc) => removeAt(doc, [...base, i]))}>Remove region {String(regions[i]?.id ?? i + 1)}</button>
           </li>
         ))}
       </ul>
@@ -105,7 +105,7 @@ function ReferenceRoles({ base, others, roles, sheet }: { base: Path; others: Ar
           const path = [...base, role];
           const target = others.find((o) => o.id === value.deliverableId);
           return (
-            <li key={role} className="panel fam-row">
+            <li key={role} className="fam-row">
               <div className="grid-2">
                 <div className="field compact">
                   <label htmlFor={`fe-${path.join("-")}-type`}>Role “{role}” binds to</label>
@@ -128,7 +128,7 @@ function ReferenceRoles({ base, others, roles, sheet }: { base: Path; others: Ar
                     : <TextField path={[...path, "outputRole"]} label="Output role" compact hint="The region id of a reference sheet." />}
                 </div>
               )}
-              <button type="button" disabled={disabled} onClick={() => patch((doc) => removeAt(doc, path))}>Remove role {role}</button>
+              <button type="button" className="ghost sm" disabled={disabled} onClick={() => patch((doc) => removeAt(doc, path))}>Remove role {role}</button>
             </li>
           );
         })}
@@ -164,16 +164,16 @@ export function DeliverableCard({ index, count }: { index: number; count: number
   const title = `${String(d.id ?? `deliverable-${index + 1}`)} · ${KIND_LABEL[kind] ?? kind}`;
 
   return (
-    <li className="panel fam-deliverable">
-      <div className="row" style={{ justifyContent: "space-between" }}>
-        <h4 style={{ margin: 0 }}>{title}{d.required === false ? " · optional" : ""}</h4>
-        <span className="row" style={{ gap: 8 }}>
-          <button type="button" disabled={disabled || index === 0} aria-label={`Move ${d.id ?? "deliverable"} up`} onClick={() => patch((doc) => moveAt(doc, ["deliverables"], index, index - 1))}>Move up</button>
-          <button type="button" disabled={disabled || index === count - 1} aria-label={`Move ${d.id ?? "deliverable"} down`} onClick={() => patch((doc) => moveAt(doc, ["deliverables"], index, index + 1))}>Move down</button>
-          <button type="button" disabled={disabled} onClick={() => patch((doc) => removeAt(doc, base))}>Remove {String(d.id ?? "deliverable")}</button>
+    <li className="fam-deliverable">
+      <div className="fam-deliverable-head">
+        <h4>{title}{d.required === false ? " · optional" : ""}</h4>
+        <span className="row">
+          <button type="button" className="ghost sm" disabled={disabled || index === 0} aria-label={`Move ${d.id ?? "deliverable"} up`} onClick={() => patch((doc) => moveAt(doc, ["deliverables"], index, index - 1))}>Move up</button>
+          <button type="button" className="ghost sm" disabled={disabled || index === count - 1} aria-label={`Move ${d.id ?? "deliverable"} down`} onClick={() => patch((doc) => moveAt(doc, ["deliverables"], index, index + 1))}>Move down</button>
+          <button type="button" className="danger sm" disabled={disabled} onClick={() => patch((doc) => removeAt(doc, base))}>Remove {String(d.id ?? "deliverable")}</button>
         </span>
       </div>
-      <div className="grid-2" style={{ marginTop: 12 }}>
+      <div className="grid-2">
         <IdField index={index} />
         <SelectField
           path={[...base, "kind"]}
@@ -226,9 +226,9 @@ export function DeliverableCard({ index, count }: { index: number; count: number
             {envField("parallax") ? <><NumberField path={[...base, "environment", "parallax", "x"]} label="Parallax x" step={0.1} compact hint="1 moves with the camera, 0 stays." /><NumberField path={[...base, "environment", "parallax", "y"]} label="Parallax y" step={0.1} compact /></> : null}
           </div>
           {envField("connections") ? (
-            <fieldset className="recipe-group fam-group">
+            <fieldset className="fam-group">
               <legend>Connection labels</legend>
-              <p className="secondary" style={{ marginTop: 0 }}>Matching labels declare which tiles may meet. They do not prove the edges match pixel for pixel — check the seams visually.</p>
+              <p className="secondary">Matching labels declare which tiles may meet. They do not prove the edges match pixel for pixel — check the seams visually.</p>
               <div className="grid-2">
                 {(["north", "east", "south", "west"] as const).map((side) => <TextField key={side} path={[...base, "environment", "connections", side]} label={side[0]!.toUpperCase() + side.slice(1)} compact />)}
               </div>
@@ -238,7 +238,7 @@ export function DeliverableCard({ index, count }: { index: number; count: number
           {envField("seamlessAxes") ? (
             <fieldset className="pick-group">
               <legend>Seamless axes</legend>
-              <div className="row" style={{ gap: 12 }}>
+              <div className="row">
                 {(["x", "y"] as const).map((axis) => {
                   const current = Array.isArray(d.environment?.seamlessAxes) ? (d.environment?.seamlessAxes as string[]) : [];
                   return (

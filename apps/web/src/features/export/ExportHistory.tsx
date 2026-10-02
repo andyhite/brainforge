@@ -1,10 +1,11 @@
 import type { ExportRecord } from "@brainforge/contracts";
 import { useOperation } from "../../api/hooks.ts";
-import { Banner, ErrorBanner, NetworkProblem, Status, formatTime, type Tone } from "../../components/ui.tsx";
+import { Banner, ErrorBanner, NetworkProblem, Status, formatTime, timeAgo, type Tone } from "../../components/ui.tsx";
+import { whoLabel } from "../review/room-lib.ts";
 
 const STATE: Record<ExportRecord["state"], { tone: Tone; text: string }> = {
-  committed: { tone: "ok", text: "Committed" },
-  prepared: { tone: "warn", text: "Prepared — not switched" },
+  committed: { tone: "ok", text: "Exported" },
+  prepared: { tone: "warn", text: "Prepared, not switched" },
   failed: { tone: "bad", text: "Failed" },
 };
 
@@ -16,79 +17,64 @@ function ExportInspect({ exportId }: { exportId: string }) {
   const { export: record, manifest, conflicts } = query.data.data;
   return (
     <div className="rel-detail" role="region" aria-label={`Export ${exportId.slice(0, 8)} details`}>
-      <h3>Export {record.exportId.slice(0, 8)}</h3>
       <dl className="kv">
-        <dt>Preset</dt><dd>{record.preset}</dd>
+        <dt>Layout</dt><dd>{record.preset}</dd>
         <dt>Stable path</dt><dd className="mono">{record.publicRoot}</dd>
         <dt>Backing release</dt><dd className="mono">{record.releasePath}</dd>
-        <dt>Created by</dt><dd>{record.createdBy}</dd>
+        <dt>Created by</dt><dd>{whoLabel(record.createdBy)}</dd>
         <dt>Assets</dt><dd>{record.selection.map((item) => item.assetId).join(", ") || "none"}</dd>
         {manifest ? <><dt>Owned files</dt><dd>{manifest.ownedFiles.length}</dd></> : null}
       </dl>
       {record.error ? <Banner tone="bad" title="Why it failed">{record.error}</Banner> : null}
       {conflicts.length > 0 ? (
         <Banner tone="warn" title={`${conflicts.length} owned ${conflicts.length === 1 ? "file was" : "files were"} changed outside Brainforge`}>
-          They are preserved, and the next export is blocked until you restore or move them.
-          <ul aria-label="Conflicting files">{conflicts.map((item) => <li key={item.path}><code>{item.path}</code> — {item.reason}</li>)}</ul>
+          They are kept, and the next export is blocked until you restore or move them.
+          <ul aria-label="Conflicting files">{conflicts.map((item) => <li key={item.path}><code>{item.path}</code>: {item.reason}</li>)}</ul>
         </Banner>
-      ) : record.state === "committed" ? <p><Status tone="ok">Every owned file matches its recorded hash</Status></p> : null}
+      ) : record.state === "committed" ? <p><Status tone="ok">Every file this export wrote still matches</Status></p> : null}
       {manifest ? (
         <details>
-          <summary>Owned files ({manifest.ownedFiles.length})</summary>
-          <ul className="plain-list mono rel-files">{manifest.ownedFiles.map((file) => <li key={file.path} style={{ overflowWrap: "anywhere" }}>{file.path} <span className="secondary">{file.size} B</span></li>)}</ul>
+          <summary>Files this export owns ({manifest.ownedFiles.length})</summary>
+          <ul className="plain-list mono rel-files">{manifest.ownedFiles.map((file) => <li key={file.path}>{file.path} <span className="secondary">{file.size} B</span></li>)}</ul>
         </details>
       ) : null}
     </div>
   );
 }
 
+/** Past exports, newest first. Exported files are copies; the current export is what the stable path resolves to. */
 export function ExportHistory({ selected, onSelect: setSelected }: { selected: string | undefined; onSelect: (exportId: string | undefined) => void }) {
   const query = useOperation("export.list", { limit: 20 });
+  if (query.error) return <NetworkProblem error={query.error} />;
+  if (!query.data) return <p className="secondary" role="status">Loading past exports…</p>;
+  if (!query.data.ok) return <ErrorBanner error={query.data.error} />;
+  if (query.data.data.exports.length === 0) return <p className="secondary">Nothing has been exported yet.</p>;
   return (
-    <section className="rel-pane" id="export-history" aria-labelledby="export-history-title">
-      <h2 id="export-history-title">Export history</h2>
-      <p className="rel-note">Exported files are copies. The current export is what <code>current</code> resolves to; earlier exports are preserved.</p>
-      {query.error ? <NetworkProblem error={query.error} /> : !query.data ? <p className="secondary" role="status">Loading history…</p> : !query.data.ok ? <ErrorBanner error={query.data.error} /> : query.data.data.exports.length === 0 ? (
-        <p className="secondary">Nothing has been exported yet.</p>
-      ) : (
-        <div className="table-wrap">
-          <table className="rel-history">
-            <caption className="sr-only">Exports, newest first</caption>
-            <thead>
-              <tr><th scope="col">Export</th><th scope="col">State</th><th scope="col">Preset</th><th scope="col">When</th><th scope="col">Notes</th><th scope="col"><span className="sr-only">Actions</span></th></tr>
-            </thead>
-            <tbody>
-              {query.data.data.exports.map((record) => {
-                const state = STATE[record.state];
-                return (
-                  <tr key={record.exportId} aria-current={record.current ? "true" : undefined}>
-                    <th scope="row" className="mono">{record.exportId.slice(0, 8)}</th>
-                    <td>
-                      <span className="row" style={{ gap: 8 }}>
-                        <Status tone={state.tone}>{state.text}</Status>
-                        {record.current ? <Status tone="info">Current</Status> : null}
-                      </span>
-                    </td>
-                    <td>{record.preset}</td>
-                    <td>{formatTime(record.committedAt ?? record.createdAt)}</td>
-                    <td>
-                      {record.error ? <div>{record.error}</div> : null}
-                      {record.warnings.map((warning) => <div key={warning} className="secondary">{warning}</div>)}
-                      {!record.error && record.warnings.length === 0 ? "—" : null}
-                    </td>
-                    <td>
-                      <button type="button" aria-expanded={selected === record.exportId} onClick={() => setSelected(selected === record.exportId ? undefined : record.exportId)}>
-                        {selected === record.exportId ? "Hide details" : "Inspect"}<span className="sr-only"> export {record.exportId.slice(0, 8)}</span>
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-      <div aria-live="polite">{selected ? <ExportInspect key={selected} exportId={selected} /> : null}</div>
-    </section>
+    <>
+      <ul className="rows rel-history" aria-label="Exports, newest first">
+        {query.data.data.exports.map((record) => {
+          const state = STATE[record.state];
+          const open = selected === record.exportId;
+          return (
+            <li key={record.exportId} aria-current={record.current ? "true" : undefined}>
+              <div className="rel-history-row">
+                <Status tone={state.tone}>{state.text}</Status>
+                {record.current ? <span className="stamp">Current</span> : null}
+                <span className="rel-meta">
+                  <time dateTime={record.committedAt ?? record.createdAt} title={formatTime(record.committedAt ?? record.createdAt)}>{timeAgo(record.committedAt ?? record.createdAt)}</time>
+                  {" · "}{record.selection.length} {record.selection.length === 1 ? "asset" : "assets"} · {record.preset}
+                  {record.error ? ` · ${record.error}` : ""}
+                </span>
+                <button type="button" className="sm" aria-expanded={open} onClick={() => setSelected(open ? undefined : record.exportId)}>
+                  {open ? "Hide details" : "Details"}<span className="sr-only"> for export {record.exportId.slice(0, 8)}</span>
+                </button>
+              </div>
+              {record.warnings.map((warning) => <div key={warning} className="rel-meta">{warning}</div>)}
+              {open ? <ExportInspect key={record.exportId} exportId={record.exportId} /> : null}
+            </li>
+          );
+        })}
+      </ul>
+    </>
   );
 }

@@ -255,15 +255,25 @@ describe("deliverable generation", () => {
     expect(sheetPlan.notes.join()).toContain("single reference");
   });
 
-  test("a single-viewpoint default perspective reaches concept prompts but not a reference sheet's", async () => {
-    const f = await game();
-    await put(f.root, "brainforge/project.yaml", patchYamlField(PROJECT_YAML, "defaults.perspective", "PERSPECTIVE-MARKER one fixed viewpoint"));
+  test("concept-only inputs reach concept prompts but not a reference sheet's, which keeps its own instructions and correction", async () => {
+    const asset = CORTEX()
+      .replace("description: A guarded teenager with an exposed brain.\n", "description: SUBJECT-MARKER guarded teenager.\nidentity:\n  eyes: IDENTITY-MARKER\nstyleIds: [marker]\n")
+      .replace("Construction sheet in flat colours.", "SHEET-MARKER construction sheet.");
+    const f = await game(asset);
+    let project = patchYamlField(PROJECT_YAML, "defaults.perspective", "PERSPECTIVE-MARKER one fixed viewpoint");
+    project = patchYamlField(project, "defaults.palette", "PALETTE-MARKER");
+    await put(f.root, "brainforge/project.yaml", `${project}artDirection: ART-MARKER\n`);
+    await put(f.root, "brainforge/styles/marker.yaml", "schema: brainforge.style.v2\nid: marker\npalette: [STYLE-MARKER]\n");
     await f.grant({ stepId: "construction-sheet" });
     const branchId = await lockedBranch(f);
-    const sheet = await f.plan({ stepId: "construction-sheet", branchId });
+    const sheet = await f.plan({ stepId: "construction-sheet", branchId, iterationInstructions: "CORRECTION-MARKER" });
     expect(sheet.blockers).toEqual([]);
-    expect(sheet.prompt).not.toContain("PERSPECTIVE-MARKER");
-    expect((await f.plan({ stepId: "concept" })).prompt).toContain("PERSPECTIVE-MARKER");
+    const concept = (await f.plan({ stepId: "concept" })).prompt;
+    for (const m of ["SUBJECT-MARKER", "IDENTITY-MARKER", "PERSPECTIVE-MARKER", "PALETTE-MARKER", "ART-MARKER", "STYLE-MARKER"]) {
+      expect(concept).toContain(m);
+      expect(sheet.prompt).not.toContain(m);
+    }
+    for (const m of ["SHEET-MARKER", "CORRECTION-MARKER"]) expect(sheet.prompt.split(m)).toHaveLength(2);
   });
 
   test("authored view phrases lay the sheet out positionally and reference strength is pinned, with a per-plan override", async () => {

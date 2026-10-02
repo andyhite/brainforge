@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { Candidate } from "@brainforge/contracts";
+import { Icon } from "../../components/Icon.tsx";
+import { Seg } from "../../components/ui.tsx";
 import { BackdropPicker, outputUrl, pickOutput, type Backdrop, type OutputRole } from "./media.tsx";
+import "./generation.css";
 
 interface View { zoom: number; x: number; y: number }
 const FIT: View = { zoom: 1, x: 0, y: 0 };
@@ -44,7 +47,7 @@ function Pane({ images, maxDim, view, setView, backdrop, caption, projectId }: {
   };
 
   return (
-    <figure style={{ margin: 0 }}>
+    <figure className="compare-figure">
       <div
         ref={ref}
         className={`stage-bg ${backdrop} compare-pane`}
@@ -79,13 +82,13 @@ function Pane({ images, maxDim, view, setView, backdrop, caption, projectId }: {
           />
         ))}
       </div>
-      <figcaption className="secondary" style={{ marginTop: 4 }}>{caption}</figcaption>
+      <figcaption className="compare-caption">{caption}</figcaption>
     </figure>
   );
 }
 
-export function CompareView({ candidates, role, backdrop, onBackdrop, projectId, onClose }: {
-  candidates: Candidate[]; role: OutputRole; backdrop: Backdrop; onBackdrop: (next: Backdrop) => void; projectId: string; onClose: () => void;
+export function CompareView({ candidates, role, backdrop, onBackdrop, projectId }: {
+  candidates: Candidate[]; role: OutputRole; backdrop: Backdrop; onBackdrop: (next: Backdrop) => void; projectId: string;
 }) {
   const [view, setViewState] = useState<View>(FIT);
   const [mode, setMode] = useState<"side" | "overlay">("side");
@@ -104,54 +107,48 @@ export function CompareView({ candidates, role, backdrop, onBackdrop, projectId,
   const top = resolved.find((item) => item.candidate.candidateId === topId && item.candidate.candidateId !== base?.candidate.candidateId) ?? resolved.find((item) => item.candidate.candidateId !== base?.candidate.candidateId);
 
   return (
-    <section className="panel" aria-label="Compare candidates">
-      <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
-        <h2 style={{ margin: 0 }}>Compare {resolved.length} candidates</h2>
-        <button type="button" onClick={onClose}>Close compare</button>
-      </div>
-      <div className="row" style={{ marginBottom: 12 }}>
-        <div role="group" aria-label="Compare mode" className="viewer-tools" style={{ marginBottom: 0 }}>
-          <button type="button" aria-pressed={mode === "side"} onClick={() => setMode("side")}>Side by side</button>
-          <button type="button" aria-pressed={mode === "overlay"} disabled={resolved.length < 2} onClick={() => setMode("overlay")}>Overlay</button>
-        </div>
+    <section className="compare" aria-label="Compare candidates">
+      <div className="compare-bar">
+        <h2>Comparing {resolved.length} {resolved.length === 1 ? "candidate" : "candidates"}</h2>
+        <Seg label="Compare mode" value={mode} options={[{ value: "side", label: "Side by side" }, { value: "overlay", label: "Overlay", title: resolved.length < 2 ? "Needs two candidates with images" : undefined }]} onChange={(next) => { if (next === "side" || resolved.length >= 2) setMode(next); }} />
         <BackdropPicker value={backdrop} onChange={onBackdrop} />
-        <div className="viewer-tools" style={{ marginBottom: 0 }}>
-          <button type="button" onClick={() => setView((previous) => ({ ...previous, zoom: clampZoom(previous.zoom / 1.25) }))} aria-label="Zoom out">−</button>
-          <span className="secondary" aria-live="polite">{Math.round(view.zoom * 100)}%</span>
-          <button type="button" onClick={() => setView((previous) => ({ ...previous, zoom: clampZoom(previous.zoom * 1.25) }))} aria-label="Zoom in">+</button>
+        <div className="seg" role="group" aria-label="Zoom, shared by every pane">
+          <button type="button" onClick={() => setView((previous) => ({ ...previous, zoom: clampZoom(previous.zoom / 1.25) }))} aria-label="Zoom out"><Icon name="minus" /></button>
+          <span className="compare-zoom" aria-live="polite">{Math.round(view.zoom * 100)}%</span>
+          <button type="button" onClick={() => setView((previous) => ({ ...previous, zoom: clampZoom(previous.zoom * 1.25) }))} aria-label="Zoom in"><Icon name="plus" /></button>
           <button type="button" onClick={() => setView(() => FIT)}>Fit</button>
         </div>
       </div>
-      {missing.length > 0 ? <p role="alert" className="secondary">No image output for: {missing.map((candidate) => candidate.label).join(", ")}.</p> : null}
+      {missing.length > 0 ? <p role="alert" className="secondary">No image for: {missing.map((candidate) => candidate.label).join(", ")}.</p> : null}
       {mode === "side" ? (
         <div className="compare-grid" style={{ gridTemplateColumns: `repeat(${Math.min(resolved.length, 2)}, minmax(0, 1fr))` }}>
           {resolved.map((item) => (
             <Pane key={item.candidate.candidateId} projectId={projectId} images={[{ ...item, opacity: 1 }]} maxDim={maxDim} view={view} setView={setView} backdrop={backdrop}
-              caption={`${item.candidate.label}${item.candidate.seed !== undefined ? ` · seed ${item.candidate.seed}` : ""} · ${item.width}×${item.height}`} />
+              caption={`${item.candidate.label} · ${item.width}×${item.height}`} />
           ))}
         </div>
       ) : base && top ? (
         <>
-          <div className="row" style={{ marginBottom: 12 }}>
-            <div className="field" style={{ margin: 0 }}>
+          <div className="compare-bar">
+            <div className="field">
               <label htmlFor="cmp-base">Base</label>
               <select id="cmp-base" value={base.candidate.candidateId} onChange={(event) => setBaseId(event.target.value)}>
                 {resolved.map((item) => <option key={item.candidate.candidateId} value={item.candidate.candidateId}>{item.candidate.label}</option>)}
               </select>
             </div>
-            <div className="field" style={{ margin: 0 }}>
-              <label htmlFor="cmp-top">Overlaid</label>
+            <div className="field">
+              <label htmlFor="cmp-top">Laid over it</label>
               <select id="cmp-top" value={top.candidate.candidateId} onChange={(event) => setTopId(event.target.value)}>
                 {resolved.filter((item) => item.candidate.candidateId !== base.candidate.candidateId).map((item) => <option key={item.candidate.candidateId} value={item.candidate.candidateId}>{item.candidate.label}</option>)}
               </select>
             </div>
-            <div className="field" style={{ margin: 0 }}>
-              <label htmlFor="cmp-opacity">Overlay opacity {Math.round(opacity * 100)}%</label>
+            <div className="field">
+              <label htmlFor="cmp-opacity">Overlay strength {Math.round(opacity * 100)}%</label>
               <input id="cmp-opacity" type="range" min={0} max={1} step={0.01} value={opacity} onChange={(event) => setOpacity(Number(event.target.value))} />
             </div>
           </div>
           <Pane projectId={projectId} maxDim={maxDim} view={view} setView={setView} backdrop={backdrop}
-            images={[{ ...base, opacity: 1 }, { ...top, opacity }]} caption={`${base.candidate.label} with ${top.candidate.label} overlaid at ${Math.round(opacity * 100)}%`} />
+            images={[{ ...base, opacity: 1 }, { ...top, opacity }]} caption={`${base.candidate.label} with ${top.candidate.label} laid over it at ${Math.round(opacity * 100)}%`} />
         </>
       ) : null}
     </section>

@@ -4,27 +4,30 @@ import { Link } from "react-router-dom";
 import type { AssetVersion, OperationError, PromotionDeliverableRow, PromotionPlan } from "@brainforge/contracts";
 import { callOperation, newRequestId } from "../../api/client.ts";
 import { ActionLinks, Banner, ErrorBanner, Status, type Tone } from "../../components/ui.tsx";
+import { paths } from "../../lib/paths.ts";
 import { useProjectRoot } from "../../lib/project-context.tsx";
 import { DeliverableThumb } from "./DeliverableThumb.tsx";
 import { BasisMismatch } from "../branches/BasisMismatch.tsx";
 import { MemberPins } from "../families/MemberPins.tsx";
+import "./releases.css";
 
 const ROW_STATE: Record<PromotionDeliverableRow["state"], { tone: Tone; text: string }> = {
   ready: { tone: "ok", text: "Ready" },
   missing: { tone: "bad", text: "Missing" },
   "not-approved": { tone: "warn", text: "Not approved" },
-  "stale-approval": { tone: "warn", text: "Approval is stale" },
-  "unresolved-feedback": { tone: "warn", text: "Unresolved feedback" },
-  "bytes-changed": { tone: "bad", text: "Bytes changed" },
-  "blocked-dependency": { tone: "warn", text: "Blocked by dependency" },
+  "stale-approval": { tone: "warn", text: "Approval is out of date" },
+  "unresolved-feedback": { tone: "warn", text: "Has open notes" },
+  "bytes-changed": { tone: "bad", text: "File changed after approval" },
+  "blocked-dependency": { tone: "warn", text: "Waiting on another deliverable" },
 };
 
 function isStalePlan(error: OperationError): boolean {
   return error.code === "REVISION_CONFLICT" || /plan(\s?hash)?\b.*(changed|stale|mismatch|differ)|stale plan/i.test(error.message);
 }
 
-export function PromotePanel({ assetId, branchId, base, activeVersionId, onActivate }: {
-  assetId: string; branchId: string | undefined; base: string; activeVersionId: string | null | undefined; onActivate: (version: AssetVersion) => void;
+/** Promotion: plan first (exactly what will be bundled), then start. It never activates and never exports. */
+export function PromotePanel({ assetId, branchId, activeVersionId, onActivate, showHeading = true }: {
+  assetId: string; branchId: string | undefined; activeVersionId: string | null | undefined; onActivate: (version: AssetVersion) => void; showHeading?: boolean;
 }) {
   const { root } = useProjectRoot();
   const queryClient = useQueryClient();
@@ -93,20 +96,20 @@ export function PromotePanel({ assetId, branchId, base, activeVersionId, onActiv
   }
 
   return (
-    <section className="rel-pane rel-plan" aria-labelledby="promote-title">
-      <h2 id="promote-title">Promote a version</h2>
-      <p className="rel-note">All required deliverables must be ready; nothing is promoted partially. A promoted version is immutable and is not active until you activate it.</p>
+    <section className="rel-promote" aria-labelledby={showHeading ? "promote-title" : undefined}>
+      {showHeading ? <h2 id="promote-title">Promote a new version</h2> : null}
+      <p className="rel-note">Promoting saves every required deliverable as one version that can’t change. It isn’t active and isn’t in the game until you activate and export it.</p>
       <div className="row">
-        <button type="button" className={plan ? undefined : "primary"} onClick={() => void runPlan()} disabled={planning || starting}>{planning ? "Planning…" : plan ? "Plan again" : "Plan promotion"}</button>
+        <button type="button" onClick={() => void runPlan()} disabled={planning || starting}>{planning ? "Planning…" : plan ? "Plan again" : "Plan promotion…"}</button>
       </div>
-      <div aria-live="polite" style={{ marginTop: 12 }}>
+      <div aria-live="polite" className="rel-live">
         {promoted && promoted.versionId !== activeVersionId ? (
-          <Banner tone="ok" title="Promoted — not active" actions={<button type="button" className="primary" onClick={() => onActivate(promoted)}>Activate version {promoted.versionNumber}</button>}>
-            Version {promoted.versionNumber} was created and is immutable. It does not change the active version until you activate it.
+          <Banner tone="ok" title={`Version ${promoted.versionNumber} promoted, not active`} actions={<button type="button" onClick={() => onActivate(promoted)}>Activate version {promoted.versionNumber}…</button>}>
+            It can’t change and the active version is the same as before. Activating is a separate step.
           </Banner>
         ) : null}
         {planError ? <ErrorBanner error={planError} /> : null}
-        {network ? <Banner tone="bad" title="No response from the server">{network} Retrying promotion reuses the same request, so it cannot create a second version.</Banner> : null}
+        {network ? <Banner tone="bad" title="No response from the server">{network} Retrying reuses the same request, so it can’t create a second version.</Banner> : null}
         {startError ? (
           isStalePlan(startError)
             ? <Banner tone="warn" title="The plan changed" actions={<button type="button" onClick={() => void runPlan()}>Plan again</button>}>Something it depends on changed after you planned. Nothing was promoted. Review a fresh plan before starting.</Banner>
@@ -114,47 +117,30 @@ export function PromotePanel({ assetId, branchId, base, activeVersionId, onActiv
         ) : null}
       </div>
       {plan ? (
-        <div>
-          <p className="rel-note" style={{ marginTop: 16 }}>
-            <strong>Promotion policy: {plan.capability.policy}</strong> — {plan.capability.allowed ? "you can promote." : (plan.capability.reason ?? "you cannot promote.")}
-            {" "}Next version: <strong>v{plan.nextVersionNumber}</strong> on branch <span className="mono">{plan.branchId.slice(0, 8)}</span>.
+        <div className="rel-plan">
+          <p className="rel-note">
+            This will create <strong>version {plan.nextVersionNumber}</strong>
+            {plan.capability.allowed ? "." : <> — but promotion policy <strong>{plan.capability.policy}</strong> doesn’t allow you to promote.</>}
           </p>
-          <div className="rel-decision">
-            <div className="row">
-              <button type="button" className="primary" disabled={blocked || starting || planning} aria-describedby="promote-why" onClick={() => void start()}>
-                {starting ? "Promoting…" : `Start promotion of v${plan.nextVersionNumber}`}
-              </button>
-            </div>
-            <div id="promote-why" className="rel-why" aria-live="polite">
-              {blocked ? (
-                <>
-                  Start is disabled because:
-                  <ul>{reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
-                </>
-              ) : <>Every required deliverable is ready. Starting creates one immutable version; the active version does not change.</>}
-            </div>
-          </div>
-          <ul className="rel-rows" aria-label="Deliverables in this promotion plan">
+          <ul className="rows" aria-label="Outputs that will be bundled into this version">
             {plan.deliverables.map((row) => {
               const state = ROW_STATE[row.state];
-              const candidate = row.candidateId ? `/assets/${encodeURIComponent(assetId)}/candidates/${encodeURIComponent(row.candidateId)}` : undefined;
+              const room = paths.step(assetId, row.deliverableId, { ...(branchId ? { branch: branchId } : {}), ...(row.candidateId ? { candidate: row.candidateId } : {}), ...(row.outputId ? { output: row.outputId } : {}) });
               return (
-                <li key={row.deliverableId}>
-                  <div className="rel-row-head">
-                    <Link to={`${base}?step=${encodeURIComponent(row.deliverableId)}${branchId ? `&branch=${encodeURIComponent(branchId)}` : ""}`}>{row.deliverableId}</Link>
-                    <Status tone={state.tone}>{state.text}</Status>
+                <li key={row.deliverableId} className="rel-plan-row">
+                  <span className="rel-plan-art">
+                    {row.candidateId ? <DeliverableThumb candidateId={row.candidateId} outputId={row.outputId} label={`Selected output for ${row.deliverableId}`} /> : <span className="art empty" aria-label={`${row.deliverableId}: nothing selected`}>None</span>}
+                  </span>
+                  <div className="rel-plan-body">
+                    <Link to={room}><strong>{row.deliverableId}</strong></Link>
+                    <div className="rel-meta">
+                      {row.required ? "Required" : "Optional"}
+                      {row.unresolvedFeedback > 0 ? ` · ${row.unresolvedFeedback} open ${row.unresolvedFeedback === 1 ? "note" : "notes"}` : ""}
+                      {row.reusesVersionId ? " · reuses an earlier version" : ""}
+                    </div>
+                    {row.message ? <div className="rel-meta">{row.message}</div> : null}
                   </div>
-                  {row.message ? <div className="rel-vmeta">{row.message}</div> : null}
-                  <div className="rel-vmeta">{row.kind} · {row.required ? "Required" : "Optional"} · Approval: {row.approval ?? "—"} · Unresolved feedback: {row.unresolvedFeedback > 0 && candidate ? <Link to={candidate}>{row.unresolvedFeedback} open {row.unresolvedFeedback === 1 ? "note" : "notes"}</Link> : row.unresolvedFeedback}</div>
-                  <div className="row" style={{ gap: 8 }}>
-                    {candidate && row.candidateId ? (
-                      <>
-                        <DeliverableThumb candidateId={row.candidateId} outputId={row.outputId} label={`Selected output for ${row.deliverableId}`} />
-                        <Link to={candidate}>Open {row.candidateId.slice(0, 8)}</Link>
-                      </>
-                    ) : <span className="secondary">None selected</span>}
-                    {row.reusesVersionId ? <Status tone="info">Reuses an earlier version</Status> : null}
-                  </div>
+                  <Status tone={state.tone}>{state.text}</Status>
                 </li>
               );
             })}
@@ -172,7 +158,7 @@ export function PromotePanel({ assetId, branchId, base, activeVersionId, onActiv
             }}
           />
           {plan.blockers.length > 0 ? (
-            <ul className="rel-blockers" aria-label="Promotion blockers">
+            <ul className="rel-blockers plain-list" aria-label="Promotion blockers">
               {plan.blockers.map((blocker) => (
                 <li key={`${blocker.code}-${blocker.message}`}>
                   <Banner tone="warn" title={blocker.code.replaceAll("-", " ").replaceAll("_", " ").toLowerCase()} actions={<ActionLinks actions={blocker.recoveryActions} />}>
@@ -184,6 +170,19 @@ export function PromotePanel({ assetId, branchId, base, activeVersionId, onActiv
               ))}
             </ul>
           ) : null}
+          <div className="rel-decision">
+            <button type="button" className="primary" disabled={blocked || starting || planning} aria-describedby="promote-why" onClick={() => void start()}>
+              {starting ? "Promoting…" : `Promote version ${plan.nextVersionNumber}`}
+            </button>
+            <div id="promote-why" className="rel-why" aria-live="polite">
+              {blocked ? (
+                <>
+                  Can’t promote yet:
+                  <ul>{reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
+                </>
+              ) : <>Every required deliverable is ready. Promoting creates one version that can’t change; the active version stays the same.</>}
+            </div>
+          </div>
         </div>
       ) : null}
     </section>

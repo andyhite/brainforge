@@ -47,25 +47,82 @@ Set the URL once in the UI (Settings → ComfyUI connection). It is a machine se
 
 Loopback does not mean free or local compute. The ComfyUI server may be a remote GPU behind a tunnel. Workflows list their compute location and cost description, and generation only runs under a human-granted budget.
 
+#### Four-view construction sheets
+
+Character templates opt their construction sheet into `krea2-construction-sheet` (or
+`krea2-construction-sheet-opaque` for opaque output). Other stills and motion retain their
+family workflows. Existing sheets are unchanged unless their deliverable opts in:
+
+```yaml
+overrides:
+  workflows:
+    variation: krea2-construction-sheet
+    variationOpaque: krea2-construction-sheet-opaque
+```
+
+Install `Krea2_Character_Design_4-View_V1.safetensors` in the ComfyUI host's `models/loras/`
+from [Civitai version 3325168](https://civitai.com/models/2937321?modelVersionId=3325168)
+(authenticated download may be required). Expected SHA256:
+`2a77c05e1a3e1be7c02ccb74c4d750198d968c942526acef5d8da035f93a54ce`.
+The workflow keeps the identity-edit adapter and stacks the four-view adapter at weight 1,
+with 8 sampling steps and CFG 1.
+
+Use front, profile and rear full-body regions followed by a facial close-up; the starter
+canvas is 2048×1024 with four 512×1024 regions. Prompt each region's framing explicitly.
+The crop rectangles are fixed, not detected: inspect the actual output before approving.
+For a baseline comparison, set `variation: krea2-variation` (or
+`variationOpaque: krea2-variation-opaque`) on that same deliverable.
+Run `workflow.preflight` before generating.
+Reference-sheet prompts use the locked reference for identity/style and include only the
+sheet instruction, region layout, identity-preservation instruction and per-run corrections.
+They do not re-send concept descriptions, identity prose, project art direction or palettes.
+
+Live Cortex comparison (2026-10-01): both workflows completed at 2048×1024 with the same
+prompt/reference and different seeds. The LoRA (`cand-030c259934`, seed 5494996) produced
+three body views plus a large face close-up; the baseline (`cand-93107344a6`, seed 891047626)
+produced five full-body figures and no close-up. This is one pair, not a reliability benchmark.
+The LoRA's front remains three-quarter, and its wider face panel means the four equal-width
+crops cut across figures. Neither candidate was approved. Crop alignment and strict front
+orientation remain review requirements; the opaque sheet workflow is not live-tested.
+
+The optional `krea2-quadview` recipe uses `QuadView_krea2_v1.safetensors` alone (not stacked
+with identity-edit), weight 1, 10 Euler/simple steps, CFG 1, reference strength 1 and a
+1536×1024 canvas. Its trigger/layout is face close-up first, then front/side/back full bodies;
+use matching deliverable regions rather than the face-last construction-sheet layout.
+The initial Cortex test (`cand-d7fda35b73`, seed 1541969294) completed with that layout but
+added ears/eyebrows and changed proportions. Inspection of ComfyUI history confirmed the
+correct adapter/reference wiring, but also found concept prose appended to the edit prompt.
+That prompt-composition bug is corrected for all reference sheets; the initial result is not
+a clean test of QuadView's reference fidelity. The recipe remains optional and unapproved.
+The corrected run (`cand-5263b2959d`, seed 455435835) removed the added ears/eyebrows and
+produced a square-on front body. ComfyUI history showed only the prompt and seed changed
+from the initial run; proportions and crops still require review. No candidate was approved
+and the default workflow was not changed.
+
+Workflow override keys are `still`, `variation`, `motion`, and their `Opaque` counterparts.
+They inherit project → family → asset → deliverable settings; alpha selects the exact key.
+Overrides cannot enable a generation stage the asset family does not support.
+
 ### Start a project
 
 In your game repo (the **game root**):
 
-1. In the UI, choose **Open another directory…** in the project switcher, then open or preview creation in your game directory. An agent can also call `project.init` (previews first, `confirm: true` to write).
+1. In the UI, choose **Open or create a project…** in the project menu (top left), then open or preview creation in your game directory. An agent can also call `project.init` (previews first, `confirm: true` to write).
 2. Brainforge creates `brainforge/` (and `brainforge/.gdignore`). It never touches the rest of your game.
 3. Author `project.yaml`, a style, and your first asset (see below).
 
-### The web workbench
+### The web app
 
-|Destination|Use it for|
+|Place|Use it for|
 |---|---|
-|**Workbench**|Project readiness, searchable assets, specifications, references, concepts, branches, and deliverable production.|
-|**Review**|The decision queue and artwork workspace: exact output selection, comparison, annotations, playback, and review.|
-|**Releases**|Production versions and export. Promotion, activation, and export remain separate explicit actions.|
-|**Activity**|Jobs, recovery actions, decision history, and preference review.|
-|**Settings**|Project lifecycle, ComfyUI connection, direction and policy, and agent setup.|
+|**Home**|What needs you next (one ranked list, one action each), how close the game is, and every asset.|
+|**Asset sheet**|One asset as a sheet of its deliverables. Each cell shows its art, what's waiting for you, or what it's blocked on. The **Definition** and **Versions** tabs hold the spec, the references and the immutable versions.|
+|**Room**|One deliverable: judge candidates on the stage (backgrounds, zoom, playback, compare), add notes tied to exact outputs and frames, and decide. An empty cell's room plans budgeted generation instead.|
+|**Review**|The room in queue mode across assets ("1 of 4 waiting", J/K to move).|
+|**Releases**|What's in the game. Promotion, activation and export remain separate, explicit actions.|
+|**Activity** and **Settings**|Behind the top-bar status and the gear: jobs, decisions and preferences; project, art direction, connection and agent setup.|
 
-The artwork workspace keeps asset/task navigation beside the image or animation and its decision inspector. Source and processed outputs share one selection with the decision controls; notes remain tied to exact output bytes. On narrow windows, **Show assets and steps** reveals navigation and **Decision & notes** opens a focus-managed inspector drawer. Application appearance follows the system or an explicit light/dark choice; checkerboard/light/dark artwork backgrounds are independent.
+**⌘K** jumps to any asset or deliverable. Back from a room returns to the same cell on the sheet. Appearance follows the system or an explicit light/dark choice; the checker, light and dark artwork backgrounds are independent of it. Design notes are in [docs/WEB-UI-REDESIGN.md](docs/WEB-UI-REDESIGN.md).
 
 ## Using it with an agent (CLI)
 

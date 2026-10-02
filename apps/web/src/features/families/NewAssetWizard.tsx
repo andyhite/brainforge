@@ -1,16 +1,19 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { isSeq } from "yaml";
 import { KebabId, type AssetFamily, type FamilyProfile, type OperationError } from "@brainforge/contracts";
 import { callOperation } from "../../api/client.ts";
 import { useOperation } from "../../api/hooks.ts";
 import { Banner, EmptyState, ErrorBanner, NetworkProblem, PageHeader, Status } from "../../components/ui.tsx";
+import { Icon } from "../../components/Icon.tsx";
+import { paths } from "../../lib/paths.ts";
 import { useSpecFile } from "../../lib/spec-file.ts";
 import { useProjectRoot } from "../../lib/project-context.tsx";
 import { isDefinitionMissing } from "../assets/missing.ts";
 import { FamilyEditor } from "./FamilyEditor.tsx";
 import { ALPHA_SHORT, MOTION_TEXT, useFamilies } from "./useFamilies.tsx";
 import { mutate, parseDraft, pushAt, setAt } from "./yaml-patch.ts";
+import "./families.css";
 
 interface Template { path: string; text: string; notes: string[] }
 
@@ -19,20 +22,26 @@ function FamilyCards({ profiles, value, onChange, memberOf }: { profiles: Family
   return (
     <fieldset className="pick-group">
       <legend>Family</legend>
-      <div className="family-cards" role="radiogroup" aria-label="Asset family">
-        {shown.map((profile) => (
-          <label key={profile.family} className={`family-card${value === profile.family ? " selected" : ""}`}>
-            <input type="radio" name="family" value={profile.family} checked={value === profile.family} onChange={() => onChange(profile.family)} />
-            <span className="family-card-title">{profile.label}</span>
-            <span className="family-card-summary">{profile.summary}</span>
-            <span className="family-card-facts">
-              <span className="chip">{ALPHA_SHORT[profile.alpha]}</span>
-              <span className="chip">{MOTION_TEXT[profile.motion]}</span>
-              {profile.collection === "container" ? <span className="chip">Forms a collection</span> : null}
-              {profile.collection === "member" ? <span className="chip">Can be a member</span> : null}
-            </span>
-          </label>
-        ))}
+      <div className="family-cards rows" role="radiogroup" aria-label="Asset family">
+        {shown.map((profile) => {
+          const on = value === profile.family;
+          return (
+            <label key={profile.family} className={`family-card${on ? " selected" : ""}`}>
+              <input type="radio" name="family" value={profile.family} checked={on} onChange={() => onChange(profile.family)} />
+              <span className="family-card-mark" aria-hidden="true">{on ? <Icon name="check" /> : null}</span>
+              <span className="family-card-title">{profile.label}</span>
+              <span className="family-card-fact">{ALPHA_SHORT[profile.alpha]}</span>
+              <span className={`family-card-summary${on ? " open" : ""}`}>{profile.summary}</span>
+              {on ? (
+                <span className="family-card-facts">
+                  <span>{MOTION_TEXT[profile.motion]}</span>
+                  {profile.collection === "container" ? <span>Forms a collection</span> : null}
+                  {profile.collection === "member" ? <span>Can be a member</span> : null}
+                </span>
+              ) : null}
+            </label>
+          );
+        })}
       </div>
     </fieldset>
   );
@@ -94,7 +103,7 @@ function EditStep({ template, memberOf, listInEnvironment }: { template: Templat
   }, [file.savedHash, memberOf, listInEnvironment, root, assetId]);
 
   if (!file.loading && !file.missing && file.loadError === undefined && !file.savedHash) {
-    return <Banner tone="warn" title="This asset already has a definition" actions={<Link className="button" to={`/assets/${encodeURIComponent(assetId)}`}>Open {assetId}</Link>}>{template.path} exists, so the wizard will not overwrite it. Edit it from its asset page.</Banner>;
+    return <Banner tone="warn" title="This asset already has a definition" actions={<Link className="button" to={paths.asset(assetId)}>Open {assetId}</Link>}>A definition file already exists, so the wizard will not overwrite it. Edit it from the asset’s Definition tab.</Banner>;
   }
   const saved = file.savedHash !== undefined && !file.dirty;
   return (
@@ -109,9 +118,9 @@ function EditStep({ template, memberOf, listInEnvironment }: { template: Templat
         </>
       }
       afterSave={saved ? (
-        <Banner tone="ok" title="Saved" actions={<Link className="button primary" to={`/assets/${encodeURIComponent(assetId)}`}>Open {assetId}</Link>}>
-          <code>{template.path}</code> was created. Keep editing, or open the asset to explore concepts.
-          {environmentNote ? <div role="status" className={`secondary`} style={{ marginTop: 4 }}><Status tone={environmentNote.tone === "ok" ? "ok" : "warn"}>{environmentNote.text}</Status></div> : null}
+        <Banner tone="ok" title="Saved" actions={<Link className="button primary" to={paths.asset(assetId)}>Open {assetId}</Link>}>
+          The definition was created. Keep editing, or open the asset to explore concepts.
+          {environmentNote ? <div role="status" className="secondary"><Status tone={environmentNote.tone === "ok" ? "ok" : "warn"}>{environmentNote.text}</Status></div> : null}
         </Banner>
       ) : null}
     />
@@ -149,8 +158,9 @@ export function NewAssetWizard() {
     if (prefilled) setName((current) => (current === "" ? prefilled : current));
   }, [params]);
 
-  if (root === undefined) return <><PageHeader title="New asset" /><EmptyState title="No project selected"><Link className="button primary" to="/projects/open">Open a project</Link></EmptyState></>;
-  if (families.error) return <><PageHeader title="New asset" /><NetworkProblem error={{ message: families.error }} /></>;
+  const shell = (children: ReactNode) => <div className="page narrow">{children}</div>;
+  if (root === undefined) return shell(<><PageHeader title="New asset" /><EmptyState title="No project selected"><Link className="button primary" to={paths.openProject()}>Open a project</Link></EmptyState></>);
+  if (families.error) return shell(<><PageHeader title="New asset" /><NetworkProblem error={{ message: families.error }} /></>);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -168,56 +178,66 @@ export function NewAssetWizard() {
     }
   };
 
+  const step = template ? 3 : family === undefined ? 1 : 2;
+  const steps = (
+    <ol className="wiz-steps" aria-label="Steps">
+      {["Choose a family", "Name it", "Review and save"].map((label, i) => (
+        <li key={label} aria-current={step === i + 1 ? "step" : undefined}>{step > i + 1 ? <Icon name="check" /> : <span aria-hidden="true">{i + 1}.</span>} {label}</li>
+      ))}
+    </ol>
+  );
+
   if (template) {
-    return (
+    return shell(
       <>
-        <PageHeader title={`New ${family ?? "asset"}: ${name}`}>
-          <button type="button" onClick={() => setTemplate(undefined)}>Change family or id</button>
+        <PageHeader title={`New ${families.profileOf(family)?.label.toLowerCase() ?? "asset"}: ${name}`} lede="This is the starter file for the family you picked. Edit what you want, then save to create the asset.">
+          <button type="button" className="ghost" onClick={() => setTemplate(undefined)}>Change family or id</button>
         </PageHeader>
+        {steps}
         <EditStep key={template.path} template={template} memberOf={memberOf} listInEnvironment={listIn} />
-      </>
+      </>,
     );
   }
 
-  return (
+  const selected = families.profileOf(family);
+  return shell(
     <>
-      <PageHeader title="New asset">
-        <Link to="/assets">All assets</Link>
-      </PageHeader>
+      <PageHeader title="New asset" lede="Pick what kind of art this is. The family sets which deliverables, backgrounds and motion the asset starts with." />
+      {steps}
       {memberOf ? (
         <Banner tone="info" title={`Creating a member of ${memberOf}`} actions={<button type="button" onClick={() => setParams((p) => { const next = new URLSearchParams(p); next.delete("memberOf"); return next; })}>Make it standalone</button>}>
           Only families that can belong to a collection are offered. The new asset is bound to {memberOf}&rsquo;s locked direction.
         </Banner>
       ) : null}
-      <form className="stack" onSubmit={(event) => void submit(event)} aria-label="New asset">
+      <form onSubmit={(event) => void submit(event)} aria-label="New asset">
         {families.loading ? <p className="secondary" role="status">Loading families…</p> : <FamilyCards profiles={families.profiles} value={family} onChange={setFamily} memberOf={memberOf} />}
-        <section className="panel" aria-labelledby="wiz-details">
-          <h2 id="wiz-details" style={{ marginTop: 0 }}>Name it</h2>
+        <section className="wiz-block" aria-labelledby="wiz-details">
+          <h2 id="wiz-details">Name it</h2>
           <div className="grid-2">
-            <div className="field">
-              <label htmlFor="wiz-id">Asset id</label>
-              <input id="wiz-id" value={assetId} onChange={(e) => { setAssetId(e.target.value); if (name === "" || name === assetId) setName(e.target.value); }} aria-invalid={idError !== null} aria-describedby="wiz-id-help" autoComplete="off" />
-              <span id="wiz-id-help" className={idError ? "field-error" : "secondary"}>{idError ?? "Kebab-case; becomes the folder name and cannot change later."}</span>
-            </div>
             <div className="field">
               <label htmlFor="wiz-name">Name</label>
               <input id="wiz-name" value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" />
             </div>
+            <div className="field">
+              <label htmlFor="wiz-id">Folder name</label>
+              <input id="wiz-id" value={assetId} onChange={(e) => { setAssetId(e.target.value); if (name === "" || name === assetId) setName(e.target.value); }} aria-invalid={idError !== null} aria-describedby="wiz-id-help" autoComplete="off" />
+              <span id="wiz-id-help" className={idError ? "field-error" : "hint"}>{idError ?? "Lowercase words joined by hyphens, like hero-knight. It names the asset’s folder and can’t change later."}</span>
+            </div>
           </div>
           <div className="field">
-            <label htmlFor="wiz-desc">Description <span className="secondary">(optional — the template marks it REPLACE: when empty)</span></label>
+            <label htmlFor="wiz-desc">Description <span className="secondary">(optional; you can write it in the next step)</span></label>
             <textarea id="wiz-desc" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
           </div>
           {memberOf ? (
             <label className="check"><input type="checkbox" checked={listIn} onChange={(e) => setListIn(e.target.checked)} /> Also list it as a required member of {memberOf} after saving</label>
           ) : null}
           {error ? ("code" in error ? <ErrorBanner error={error} /> : <Banner tone="bad" title="Request failed">{error.message}</Banner>) : null}
-          <div className="row">
-            <button type="submit" className="primary" disabled={!canSubmit}>{busy ? "Preparing…" : "Continue to the editor"}</button>
-            {family === undefined ? <span className="secondary">Pick a family first.</span> : null}
+          <div className="wiz-actions">
+            <button type="submit" className="primary" disabled={!canSubmit}>{busy ? "Preparing…" : "Continue"}</button>
+            <span className="secondary">{selected ? `${selected.label}: ${selected.summary}` : "Pick a family first."}</span>
           </div>
         </section>
       </form>
-    </>
+    </>,
   );
 }
