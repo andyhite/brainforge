@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import { ERROR_EXIT_CODE, ERROR_HTTP_STATUS, ErrorCode, OPERATION_NAMES, OPERATIONS } from "@brainforge/contracts";
 
+import { run } from "../src/cli.ts";
 const MAIN = join(import.meta.dir, "..", "src", "main.ts");
 
 interface Seen { path: string; agent: string | null; origin: string | null; body: unknown }
@@ -218,5 +219,45 @@ describe("visuals", () => {
     const r = await bf(["history.examples", "--input", '{"assetId":"cortex"}'], {}, undefined, game);
     const files = VisualFiles.parse(JSON.parse(r.stdout)).visualFiles;
     expect(files.map((f) => [f.fileId, f.path !== undefined])).toEqual([["ex-a", true], ["ex-r", true]]);
+  });
+});
+
+describe("output format", () => {
+  const inProc = async (argv: string[], isTTY: boolean) => {
+    let stdout = "";
+    const code = await run(argv, {}, { stdout: (t) => void (stdout += t), stderr: () => {}, readStdin: async () => "", isTTY });
+    return { code, stdout };
+  };
+  const isJson = (s: string) => { try { JSON.parse(s); return true; } catch { return false; } };
+
+  test("TTY defaults to text, non-TTY to JSON, for list, help and parse errors", async () => {
+    for (const argv of [["--list"], ["--help"], ["--bogus"]]) {
+      expect(isJson((await inProc(argv, false)).stdout)).toBe(true);
+      expect(isJson((await inProc(argv, true)).stdout)).toBe(false);
+    }
+  });
+
+  test("last of --json/--text wins, also on parse errors; flag values never select a format", async () => {
+    expect(isJson((await inProc(["--list", "--text", "--json"], true)).stdout)).toBe(true);
+    expect(isJson((await inProc(["--list", "--json", "--text"], false)).stdout)).toBe(false);
+    expect(isJson((await inProc(["--bogus", "--json"], true)).stdout)).toBe(true);
+    expect(isJson((await inProc(["--bogus", "--text"], false)).stdout)).toBe(false);
+    const r = await inProc(["project.recent", "--request-id", "--text", "--input", "--text", "--bogus"], false);
+    expect(r.code).toBe(2);
+    expect(isJson(r.stdout)).toBe(true);
+  });
+
+  test("text keeps errors, recovery actions, warnings and next actions; agent identity stays cli", async () => {
+    seen.length = 0;
+    reply = () => ({ status: 200, body: { ok: true, data: { k: "dv" }, nextActions: [{ label: "na-label", operation: "spec.read" }], warnings: ["warn-1"] } });
+    const ok = await bf(["project.recent", "--input", "{}", "--text"]);
+    reply = () => ({ status: 409, body: { ok: false, error: { code: "SPEC_CONFLICT", message: "boom-msg", recoveryActions: [{ label: "fix-label" }] }, requestId: "rq" } });
+    const bad = await bf(["project.recent", "--input", "{}", "--text"]);
+    reply = () => ({ status: 200, body: OK });
+    for (const s of ["dv", "na-label", "spec.read", "warn-1"]) expect(ok.stdout).toContain(s);
+    for (const s of ["SPEC_CONFLICT", "boom-msg", "fix-label", "rq"]) expect(bad.stdout).toContain(s);
+    expect(isJson(ok.stdout) || isJson(bad.stdout)).toBe(false);
+    expect(seen.map((s) => s.agent)).toEqual(["cli", "cli"]);
+    expect(bad.code).toBe(ERROR_EXIT_CODE.SPEC_CONFLICT);
   });
 });

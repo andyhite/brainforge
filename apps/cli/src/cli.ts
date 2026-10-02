@@ -9,6 +9,8 @@ export interface CliIo {
   stdout(text: string): void;
   stderr(text: string): void;
   readStdin(): Promise<string>;
+  /** True when stdout is a terminal; picks the default output format. */
+  isTTY: boolean;
 }
 
 interface Parsed {
@@ -20,12 +22,15 @@ interface Parsed {
   timeoutS?: string;
   list: boolean;
   help: boolean;
+  format?: Format;
 }
+type Format = "json" | "text";
 
 const VALUE_FLAGS: Record<string, true> = { "--project": true, "--input": true, "--input-file": true, "--request-id": true, "--timeout": true };
 
-export function parseArgs(argv: string[]): Parsed | { error: string } {
+export function parseArgs(argv: string[]): (Parsed & { error?: undefined }) | { error: string; format?: Format } {
   const out: Parsed = { list: false, help: false };
+  let error: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
     let flag = arg;
@@ -35,12 +40,12 @@ export function parseArgs(argv: string[]): Parsed | { error: string } {
       inline = arg.slice(arg.indexOf("=") + 1);
     }
     if (flag === "--") continue;
-    if (flag === "--json") continue;
+    if (flag === "--json" || flag === "--text") { out.format = flag === "--json" ? "json" : "text"; continue; }
     if (flag === "--list") { out.list = true; continue; }
     if (flag === "--help" || flag === "-h") { out.help = true; continue; }
     if (Object.hasOwn(VALUE_FLAGS, flag)) {
       const value = inline ?? argv[++i];
-      if (value === undefined) return { error: `Flag ${flag} requires a value.` };
+      if (value === undefined) { error ??= `Flag ${flag} requires a value.`; break; }
       if (flag === "--project") out.project = value;
       else if (flag === "--input") out.input = value;
       else if (flag === "--input-file") out.inputFile = value;
@@ -48,10 +53,12 @@ export function parseArgs(argv: string[]): Parsed | { error: string } {
       else out.timeoutS = value;
       continue;
     }
-    if (arg.startsWith("--")) return { error: `Unknown flag ${arg}.` };
-    if (out.op !== undefined) return { error: `Unexpected extra argument "${arg}".` };
+    // Keep scanning after a parse error so a later --json/--text still selects the error's format.
+    if (arg.startsWith("--")) { error ??= `Unknown flag ${arg}.`; continue; }
+    if (out.op !== undefined) { error ??= `Unexpected extra argument "${arg}".`; continue; }
     out.op = arg;
   }
+  if (error !== undefined) return out.format ? { error, format: out.format } : { error };
   return out;
 }
 
@@ -61,8 +68,28 @@ export function exitCodeFor(result: OperationResult): number {
   return parsed.success ? ERROR_EXIT_CODE[parsed.data] : 6;
 }
 
+function isLeaf(v: unknown): boolean {
+  return typeof v !== "object" || v === null || (Array.isArray(v) ? v.length === 0 : Object.keys(v).length === 0);
+}
+
+function leaf(v: unknown): string {
+  if (Array.isArray(v)) return "[]";
+  if (typeof v === "object" && v !== null) return "{}";
+  if (typeof v === "string") return /[\n\r]/.test(v) ? JSON.stringify(v) : v;
+  return String(v);
+}
+
+/** Generic indented key/list rendering, so every field of an envelope (data, warnings, actions, paths) survives. */
+function textLines(v: unknown, pad: string): string[] {
+  if (isLeaf(v)) return [`${pad}${leaf(v)}`];
+  if (Array.isArray(v)) return v.flatMap((item) => (isLeaf(item) ? [`${pad}- ${leaf(item)}`] : [`${pad}-`, ...textLines(item, `${pad}  `)]));
+  return Object.entries(v as Record<string, unknown>).flatMap(([key, item]) => (isLeaf(item) ? [`${pad}${key}: ${leaf(item)}`] : [`${pad}${key}:`, ...textLines(item, `${pad}  `)]));
+}
+
+let outputFormat: Format = "json";
+
 function emit(io: CliIo, value: unknown): void {
-  io.stdout(`${JSON.stringify(value)}\n`);
+  io.stdout(outputFormat === "json" ? `${JSON.stringify(value)}\n` : `${textLines(value, "").join("\n")}\n`);
 }
 
 /** Longest edge of the derivative fetched for each visual; sized for model image input. */
@@ -110,7 +137,8 @@ async function saveVisuals(data: unknown, options: CallOptions): Promise<VisualF
 /** Runs the CLI; stdout receives exactly one JSON document, diagnostics go to stderr. Returns the exit code. */
 export async function run(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
   const args = parseArgs(argv);
-  if ("error" in args) {
+  outputFormat = args.format ?? (io.isTTY ? "text" : "json");
+  if (args.error !== undefined) {
     emit(io, failure("", "INVALID_INPUT", args.error, [{ label: "Usage: bf <operation> [--project <dir>] --input '<json>'   (bf --list for operations)" }]));
     return 2;
   }
@@ -147,7 +175,8 @@ export async function run(argv: string[], env: Record<string, string | undefined
           "--project <absolute dir>": "Override discovery of the nearest ancestor containing brainforge/project.yaml.",
           "--request-id <id>": "Set the idempotency key; reuse it with identical input when retrying.",
           "--timeout <seconds>": `Stop waiting after this many seconds (default ${DEFAULT_TIMEOUT_MS / 1000}); does not cancel server work.`,
-          "--json": "Accepted for compatibility; stdout is always one JSON envelope.",
+          "--json": "Force the JSON envelope on stdout (default when stdout is not a terminal).",
+          "--text": "Force human-readable text on stdout (default when stdout is a terminal). The last of --json/--text wins.",
         },
         environment: { BF_SERVER_URL: "Server URL (default http://127.0.0.1:3210)." },
         examples: [
