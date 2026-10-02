@@ -13,17 +13,17 @@ Entry: `<brainforge checkout>/apps/cli/src/main.ts`, run with Bun. A thin HTTP c
 ## Usage
 
 ```sh
-brainforge --help                                   # CLI usage, flags, and examples (also -h)
-brainforge --list                                   # every operation: name, summary, mutating, humanOnly
-brainforge <op> --help                              # input JSON Schema of one operation
-brainforge <op> --input '<json>'                    # call it
-brainforge <op> --input-file input.json             # large input from a file
-printf '%s' '<json>' | brainforge <op> --input -   # input from stdin
+brainforge --help --json                           # CLI usage, flags, and examples (also -h)
+brainforge --list --json                             # every operation: name, summary, mutating, humanOnly
+brainforge <op> --help --json                      # input JSON Schema of one operation
+brainforge <op> --json --input '<json>'               # call it
+brainforge <op> --json --input-file input.json        # large input from a file
+printf '%s' '<json>' | brainforge <op> --json --input -   # input from stdin
 ```
 
 Flags: `--project <abs dir>` overrides discovery, `--request-id <id>` sets the idempotency key (reuse it on retry), `--timeout <seconds>` (default 60; only stops waiting, never cancels server work).
 
-Output: stdout is exactly one JSON envelope (`{ok:true,data,nextActions,warnings}` or `{ok:false,error:{code,message,recoveryActions,details?}}`); diagnostics go to stderr. Exit codes: 0 ok, non-zero per error code.
+Output: agents MUST pass `--json`. Default: stdout TTY → human-readable text, non-TTY → JSON; `--json`/`--text` override (last flag wins); format never changes the `agent:cli` identity or authorization. With `--json`, stdout is exactly one JSON envelope (`{ok:true,data,nextActions,warnings}` or `{ok:false,error:{code,message,recoveryActions,details?}}`); diagnostics go to stderr. Exit codes: 0 ok, non-zero per error code.
 
 `--help`, `<op> --help`, and `--list` work without a running server or a game project.
 

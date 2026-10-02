@@ -22,12 +22,13 @@ Local asset-production tool for a game project. Humans review, approve, lock, an
 ## CLI
 
 ```sh
-brainforge <op> --input '<json>'     # e.g. brainforge spec.read --input '{"path":"brainforge/project.yaml"}'
-brainforge --list                    # all operations
-brainforge <op> --help               # input JSON Schema of one operation
+brainforge <op> --json --input '<json>'   # e.g. brainforge spec.read --json --input '{"path":"brainforge/project.yaml"}'
+brainforge --list --json                  # all operations
+brainforge <op> --help --json             # input JSON Schema of one operation
 ```
 
-- stdout is one JSON envelope: `{ok:true,data,nextActions,warnings}` or `{ok:false,error:{code,message,recoveryActions,details?}}`. Non-zero exit on error. Your identity is `agent:cli`.
+- You MUST pass `--json` on every `brainforge` call. Default stdout: TTY → human-readable text, non-TTY → JSON; `--json`/`--text` force a format (last flag wins). Format never changes your identity `agent:cli` or authorization.
+- With `--json`, stdout is one JSON envelope: `{ok:true,data,nextActions,warnings}` or `{ok:false,error:{code,message,recoveryActions,details?}}`. Non-zero exit on error.
 - Large or quote-heavy input: `--input-file <path>` or `--input -` (stdin).
 - `--request-id <id>`: idempotency key for mutating ops; reuse it on retry. `--project <abs dir>`: override discovery.
 - Images: results with visuals (`review.material`, `revision.inspect`, `candidate.inspect`, `output.inspect`, `history.examples`) add `visualFiles: [{fileId, role, label, path?, error?}]`. Open every `path` with your image reader before judging. An entry with `error` was NOT saved: never claim you saw it.
