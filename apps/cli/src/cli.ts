@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import { ERROR_EXIT_CODE, OPERATIONS, OPERATION_NAMES, ErrorCode, Visual, isOperationName, type OperationResult } from "@brainforge/contracts";
 import { DEFAULT_TIMEOUT_MS, callOperation, failure, fetchProjectFile, type CallOptions } from "./client.ts";
+import { renderEnvelope, renderHelp, renderOperationHelp, setColor } from "./format.ts";
 
 export interface CliIo {
   stdout(text: string): void;
@@ -20,7 +21,6 @@ interface Parsed {
   inputFile?: string;
   requestId?: string;
   timeoutS?: string;
-  list: boolean;
   help: boolean;
   format?: Format;
 }
@@ -29,7 +29,7 @@ type Format = "json" | "text";
 const VALUE_FLAGS: Record<string, true> = { "--project": true, "--input": true, "--input-file": true, "--request-id": true, "--timeout": true };
 
 export function parseArgs(argv: string[]): (Parsed & { error?: undefined }) | { error: string; format?: Format } {
-  const out: Parsed = { list: false, help: false };
+  const out: Parsed = { help: false };
   let error: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
@@ -41,7 +41,6 @@ export function parseArgs(argv: string[]): (Parsed & { error?: undefined }) | { 
     }
     if (flag === "--") continue;
     if (flag === "--json" || flag === "--text") { out.format = flag === "--json" ? "json" : "text"; continue; }
-    if (flag === "--list") { out.list = true; continue; }
     if (flag === "--help" || flag === "-h") { out.help = true; continue; }
     if (Object.hasOwn(VALUE_FLAGS, flag)) {
       const value = inline ?? argv[++i];
@@ -68,28 +67,11 @@ export function exitCodeFor(result: OperationResult): number {
   return parsed.success ? ERROR_EXIT_CODE[parsed.data] : 6;
 }
 
-function isLeaf(v: unknown): boolean {
-  return typeof v !== "object" || v === null || (Array.isArray(v) ? v.length === 0 : Object.keys(v).length === 0);
-}
-
-function leaf(v: unknown): string {
-  if (Array.isArray(v)) return "[]";
-  if (typeof v === "object" && v !== null) return "{}";
-  if (typeof v === "string") return /[\n\r]/.test(v) ? JSON.stringify(v) : v;
-  return String(v);
-}
-
-/** Generic indented key/list rendering, so every field of an envelope (data, warnings, actions, paths) survives. */
-function textLines(v: unknown, pad: string): string[] {
-  if (isLeaf(v)) return [`${pad}${leaf(v)}`];
-  if (Array.isArray(v)) return v.flatMap((item) => (isLeaf(item) ? [`${pad}- ${leaf(item)}`] : [`${pad}-`, ...textLines(item, `${pad}  `)]));
-  return Object.entries(v as Record<string, unknown>).flatMap(([key, item]) => (isLeaf(item) ? [`${pad}${key}: ${leaf(item)}`] : [`${pad}${key}:`, ...textLines(item, `${pad}  `)]));
-}
-
 let outputFormat: Format = "json";
 
-function emit(io: CliIo, value: unknown): void {
-  io.stdout(outputFormat === "json" ? `${JSON.stringify(value)}\n` : `${textLines(value, "").join("\n")}\n`);
+/** JSON: indented envelope. Text: rendered envelope; `body` replaces the generic data tree. */
+function emit(io: CliIo, value: unknown, body?: (data: unknown) => string[]): void {
+  io.stdout(outputFormat === "json" ? `${JSON.stringify(value, null, 2)}\n` : renderEnvelope(value, body));
 }
 
 /** Longest edge of the derivative fetched for each visual; sized for model image input. */
@@ -138,15 +120,33 @@ async function saveVisuals(data: unknown, options: CallOptions): Promise<VisualF
 export async function run(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
   const args = parseArgs(argv);
   outputFormat = args.format ?? (io.isTTY ? "text" : "json");
+  setColor(outputFormat === "text" && io.isTTY && !env.NO_COLOR);
   if (args.error !== undefined) {
-    emit(io, failure("", "INVALID_INPUT", args.error, [{ label: "Usage: bf <operation> [--project <dir>] --input '<json>'   (bf --list for operations)" }]));
+    emit(io, failure("", "INVALID_INPUT", args.error, [{ label: "Usage: brainforge <operation> [--project <dir>] --input '<json>'   (brainforge --help for operations)" }]));
     return 2;
   }
 
-  if (args.list) {
+  if (args.help && args.op === undefined) {
     emit(io, {
       ok: true,
       data: {
+        usage: "brainforge <operation> [options]",
+        summary: "Run Brainforge operations through the local server.",
+        options: {
+          "--help, -h": "Show this help with every operation, or an operation's input JSON Schema when an operation is given.",
+          "--input <json|->": "JSON input (default {}); use - to read stdin.",
+          "--input-file <path>": "Read JSON input from a file instead of --input.",
+          "--project <absolute dir>": "Override discovery of the nearest ancestor containing brainforge/project.yaml.",
+          "--request-id <id>": "Set the idempotency key; reuse it with identical input when retrying.",
+          "--timeout <seconds>": `Stop waiting after this many seconds (default ${DEFAULT_TIMEOUT_MS / 1000}); does not cancel server work.`,
+          "--json": "Force the JSON envelope on stdout (default when stdout is not a terminal).",
+          "--text": "Force human-readable text on stdout (default when stdout is a terminal). The last of --json/--text wins.",
+        },
+        environment: { BF_SERVER_URL: "Server URL (default http://127.0.0.1:3210).", NO_COLOR: "Disable colour in text output." },
+        examples: [
+          "brainforge spec.read --help",
+          `brainforge spec.read --input '{"path":"brainforge/project.yaml"}'`,
+        ],
         operations: OPERATION_NAMES.map((name) => ({
           name,
           summary: OPERATIONS[name].summary,
@@ -157,46 +157,16 @@ export async function run(argv: string[], env: Record<string, string | undefined
       },
       nextActions: [],
       warnings: [],
-    });
-    return 0;
-  }
-
-  if (args.help && args.op === undefined) {
-    emit(io, {
-      ok: true,
-      data: {
-        usage: "brainforge <operation> [options]",
-        summary: "Run Brainforge operations through the local server.",
-        options: {
-          "--help, -h": "Show CLI help, or an operation's input JSON Schema when an operation is given.",
-          "--list": "List all operations and their summaries.",
-          "--input <json|->": "JSON input (default {}); use - to read stdin.",
-          "--input-file <path>": "Read JSON input from a file instead of --input.",
-          "--project <absolute dir>": "Override discovery of the nearest ancestor containing brainforge/project.yaml.",
-          "--request-id <id>": "Set the idempotency key; reuse it with identical input when retrying.",
-          "--timeout <seconds>": `Stop waiting after this many seconds (default ${DEFAULT_TIMEOUT_MS / 1000}); does not cancel server work.`,
-          "--json": "Force the JSON envelope on stdout (default when stdout is not a terminal).",
-          "--text": "Force human-readable text on stdout (default when stdout is a terminal). The last of --json/--text wins.",
-        },
-        environment: { BF_SERVER_URL: "Server URL (default http://127.0.0.1:3210)." },
-        examples: [
-          "brainforge --list",
-          "brainforge spec.read --help",
-          `brainforge spec.read --input '{"path":"brainforge/project.yaml"}'`,
-        ],
-      },
-      nextActions: [],
-      warnings: [],
-    });
+    }, renderHelp);
     return 0;
   }
 
   if (args.op === undefined) {
-    emit(io, failure("", "INVALID_INPUT", "Missing operation name.", [{ label: "List operations: bf --list" }]));
+    emit(io, failure("", "INVALID_INPUT", "Missing operation name.", [{ label: "List operations: brainforge --help" }]));
     return 2;
   }
   if (!isOperationName(args.op)) {
-    emit(io, failure("", "INVALID_INPUT", `Unknown operation "${args.op}".`, [{ label: "List operations: bf --list" }]));
+    emit(io, failure("", "INVALID_INPUT", `Unknown operation "${args.op}".`, [{ label: "List operations: brainforge --help" }]));
     return 2;
   }
 
@@ -215,7 +185,7 @@ export async function run(argv: string[], env: Record<string, string | undefined
       },
       nextActions: [],
       warnings: [],
-    });
+    }, renderOperationHelp);
     return 0;
   }
 

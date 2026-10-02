@@ -64,7 +64,6 @@ const Envelope = z.object({ ok: z.boolean(), error: z.object({ code: z.string(),
 
 function single(stdout: string) {
   expect(stdout.endsWith("\n")).toBe(true);
-  expect(stdout.trim().split("\n")).toHaveLength(1);
   return Envelope.parse(JSON.parse(stdout));
 }
 
@@ -174,8 +173,8 @@ describe("registry introspection", () => {
     }
   });
 
-  test("--list matches OPERATION_NAMES", async () => {
-    const r = await bf(["--list"]);
+  test("--help lists every operation in OPERATION_NAMES", async () => {
+    const r = await bf(["--help"]);
     expect(r.code).toBe(0);
     const data = z.object({ operations: z.array(z.object({ name: z.string(), summary: z.string() })) }).parse(single(r.stdout).data);
     expect(data.operations.map((o) => o.name)).toEqual([...OPERATION_NAMES]);
@@ -231,15 +230,15 @@ describe("output format", () => {
   const isJson = (s: string) => { try { JSON.parse(s); return true; } catch { return false; } };
 
   test("TTY defaults to text, non-TTY to JSON, for list, help and parse errors", async () => {
-    for (const argv of [["--list"], ["--help"], ["--bogus"]]) {
+    for (const argv of [["--help"], ["spec.read", "--help"], ["--bogus"]]) {
       expect(isJson((await inProc(argv, false)).stdout)).toBe(true);
       expect(isJson((await inProc(argv, true)).stdout)).toBe(false);
     }
   });
 
   test("last of --json/--text wins, also on parse errors; flag values never select a format", async () => {
-    expect(isJson((await inProc(["--list", "--text", "--json"], true)).stdout)).toBe(true);
-    expect(isJson((await inProc(["--list", "--json", "--text"], false)).stdout)).toBe(false);
+    expect(isJson((await inProc(["--help", "--text", "--json"], true)).stdout)).toBe(true);
+    expect(isJson((await inProc(["--help", "--json", "--text"], false)).stdout)).toBe(false);
     expect(isJson((await inProc(["--bogus", "--json"], true)).stdout)).toBe(true);
     expect(isJson((await inProc(["--bogus", "--text"], false)).stdout)).toBe(false);
     const r = await inProc(["project.recent", "--request-id", "--text", "--input", "--text", "--bogus"], false);

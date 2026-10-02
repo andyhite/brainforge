@@ -147,7 +147,7 @@ bun run install-cli
 Then, from inside the game directory (the project is found by walking up to the first `brainforge/project.yaml`; server URL from `BF_SERVER_URL`, default `http://127.0.0.1:3210`):
 
 ```sh
-brainforge --list
+brainforge --help
 brainforge spec.read --input '{"path":"brainforge/assets/cortex/asset.yaml"}'
 ```
 

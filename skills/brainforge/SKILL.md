@@ -23,7 +23,7 @@ Local asset-production tool for a game project. Humans review, approve, lock, an
 
 ```sh
 brainforge <op> --json --input '<json>'   # e.g. brainforge spec.read --json --input '{"path":"brainforge/project.yaml"}'
-brainforge --list --json                  # all operations
+brainforge --help --json                  # CLI flags + all operations
 brainforge <op> --help --json             # input JSON Schema of one operation
 ```
 

@@ -117,7 +117,7 @@ async function post(
 export async function callOperation(name: string, options: CallOptions = {}): Promise<OperationResult> {
   const requestId = options.requestId ?? crypto.randomUUID();
   if (!isOperationName(name)) {
-    return failure(requestId, "INVALID_INPUT", `Unknown operation "${name}".`, [{ label: "List operations: bf --list" }]);
+    return failure(requestId, "INVALID_INPUT", `Unknown operation "${name}".`, [{ label: "List operations: brainforge --help" }]);
   }
   const def = OPERATIONS[name];
   const cwd = options.cwd ?? process.cwd();
