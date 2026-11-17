@@ -8,6 +8,9 @@ An asset pipeline for one 2D game, being rebuilt from scratch. `PRODUCT.md` is t
 - Layout: Bun workspaces. `packages/*` holds engine libraries, `apps/*` holds the CLI and web UI, `spikes/*` holds experiments.
 - The gate is `scripts/check` (install, typecheck, tests). Roundhouse runs it; never run it directly in a managed session.
 - One test file while working: `mise exec -- bun test <path>`.
+- Keep tests fast: a test file runs in well under a second, the whole suite in seconds. The gate runs under a shared lock in the build loop, so every slow test stalls every other agent waiting to verify.
+- Mock every external dependency in tests: paid providers, network calls, and the Blender, `ffmpeg` and `godot` subprocesses. Inject them so a test can pass a fake. Never sleep or poll real time; inject the clock.
+- A check that needs the real tool or provider goes in a spike or a script run by hand, never in `bun test`.
 - Local tools run as subprocesses: Blender at `/Applications/Blender.app/Contents/MacOS/Blender` (headless: `--background --python <script>`), `ffmpeg`, `godot`.
 - Web UI changes: verify in Tern's browser block (`tern browser`), with a screenshot under `.evidence/<issue>/`.
 
