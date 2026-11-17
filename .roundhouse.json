@@ -1,6 +1,13 @@
 {
-	"check": "bun install --frozen-lockfile && bun run typecheck && bun run test",
+	"check": "scripts/check",
 	"shared": [
-		".evidence"
-	]
+		".evidence",
+		".envrc",
+		"spikes/*/.work"
+	],
+	"caches": [
+		"node_modules"
+	],
+	"busy": "bun install",
+	"push": false
 }

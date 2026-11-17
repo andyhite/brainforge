@@ -2,6 +2,9 @@ node_modules
 dist
 *.tsbuildinfo
 
+# Generated candidates, intermediate frames and downloads; shared across worktrees.
+.work/
+
 # Machine-local credentials; never commit API keys.
 .env.local
 .envrc

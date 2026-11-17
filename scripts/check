@@ -1,0 +1,14 @@
+#!/bin/sh
+# The project's gate: exits 0 when the workspace installs, typechecks and its tests pass.
+# Roundhouse runs it (.roundhouse.json "check"). Change what it checks here, never in .roundhouse.json.
+set -eu
+cd "$(dirname "$0")/.."
+
+# Bun comes from mise.toml when mise is installed, so the pinned version runs whatever PATH holds.
+run() { if command -v mise >/dev/null 2>&1; then mise exec -- "$@"; else "$@"; fi; }
+
+# Nothing to check until the workspace exists. The scaffold issue removes this line.
+[ -f package.json ] || { echo "scripts/check: no package.json yet, nothing to check"; exit 0; }
+
+run bun install --frozen-lockfile
+run bun run check
