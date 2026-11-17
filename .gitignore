@@ -1,0 +1,8 @@
+node_modules
+dist
+*.tsbuildinfo
+
+# Machine-local credentials; never commit API keys.
+.env.local
+.envrc
+.kata.local.toml

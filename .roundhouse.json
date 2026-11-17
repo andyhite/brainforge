@@ -1,0 +1,6 @@
+{
+	"check": "bun install --frozen-lockfile && bun run typecheck && bun run test",
+	"shared": [
+		".evidence"
+	]
+}
